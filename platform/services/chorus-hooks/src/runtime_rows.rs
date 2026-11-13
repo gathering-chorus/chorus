@@ -66,22 +66,9 @@ pub fn is_turn_start(row: &Value, raw: &Value) -> bool {
     }
 }
 
-/// The prompt: the row's prompt field, or the last transcript line of the
-/// row's prompt type (its text inside the row's prompt tag, when it names one).
-pub fn prompt(row: &Value, raw: &Value) -> Option<String> {
-    if let Some(f) = s(row, "fieldPrompt") { return at(raw, f).and_then(Value::as_str).map(String::from); }
-    let kind = s(row, "transcriptPromptType")?;
-    let path = at(raw, s(row, "fieldTranscript")?)?.as_str()?;
-    let text = std::fs::read_to_string(path).ok()?;
-    let content = text.lines().rev()
-        .filter_map(|l| serde_json::from_str::<Value>(l).ok())
-        .find(|v| v.get("type").and_then(Value::as_str) == Some(kind))?
-        .get("content")?.as_str()?.to_string();
-    let inner = s(row, "transcriptPromptTag").and_then(|tag| {
-        content.split_once(&format!("<{tag}>")).and_then(|(_, r)| r.split_once(&format!("</{tag}>"))).map(|(m, _)| m.trim().to_string())
-    });
-    Some(inner.unwrap_or(content))
-}
+mod runtime_prompt { include!("../../shared/runtime_prompt.rs"); }
+/// The prompt, through the row (#4965: the one reader, shared with chorus-principal's `seen`).
+pub use runtime_prompt::prompt;
 
 /// #4548 — with no reply field: the reply is the last line of the row's reply
 /// type after the latest prompt line. None when the turn has no reply yet, so a

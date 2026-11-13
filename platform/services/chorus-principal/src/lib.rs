@@ -1870,7 +1870,8 @@ fn seen(ctx: &Ctx, role: &str) -> i32 {
             return 2;
         }
     }
-    let (conv, delivered) = rows::turn_facts(&input);
+    let row = rows::runtime_for(&rows::runtime_table(), role).map(|(_, r)| r);
+    let (conv, delivered) = rows::turn_facts_on(&input, row.as_ref());
     // #4339 — Jeff spoke: this turn always writes, so the session says when
     let jeff = rows::speaker(&input) == rows::Speaker::Jeff;
     // #4340 — keep what actually arrived, so the projector can tell a message

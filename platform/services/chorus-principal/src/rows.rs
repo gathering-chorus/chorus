@@ -269,11 +269,23 @@ pub fn delivered_by_pulse(db: &str, prompt: &str) -> bool {
 /// pulse's wake line, never as its words, so a "[nudge from" label typed into
 /// the pane is Jeff's text, not a delivery. A message that never arrived never
 /// produces a turn, so it can never mark the presence reachable.
-pub fn turn_facts(hook_input: &str) -> (String, bool) {
+pub fn turn_facts(hook_input: &str) -> (String, bool) { turn_facts_on(hook_input, None) }
+
+mod runtime_prompt { include!("../../shared/runtime_prompt.rs"); }
+
+/// #4965 — the prompt read through the role's runtime row (`runtime_for`): agy's hook input
+/// carries none, so a delivery to Abby or Borg Queen never read as one and their Presence
+/// stayed "unknown". With no row, the input's own `prompt` field (Claude's hook input).
+pub fn turn_facts_on(hook_input: &str, row: Option<&Value>) -> (String, bool) {
     let v: Value = serde_json::from_str(hook_input).unwrap_or(Value::Null);
     let conv = conversation_of(&v);
-    let prompt = v.get("prompt").and_then(|s| s.as_str()).unwrap_or("");
-    (conv, is_delivery(prompt))
+    let prompt = match row {
+        // a row that names no prompt field and no transcript type falls back to the input's
+        Some(r) => runtime_prompt::prompt(r, &v)
+            .or_else(|| v.get("prompt").and_then(|s| s.as_str()).map(String::from)).unwrap_or_default(),
+        None => v.get("prompt").and_then(|s| s.as_str()).unwrap_or("").to_string(),
+    };
+    (conv, is_delivery(&prompt))
 }
 
 /// #4895 — the conversation a turn belongs to, by the one rule chorus-hooks' shim also
