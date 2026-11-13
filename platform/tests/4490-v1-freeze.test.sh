@@ -21,7 +21,12 @@
 #                       raising it. Measured per card in athena-make/src: #4522 (+202 -22),
 #                       #4022 (+28), #4531 (+26 -19), #4538 (+3 -93). #4522 is the largest and
 #                       reads as feature work on v1; flagged to Silas to confirm or move it out.
-FROZEN_LINES=10323  # #4576: +8 lines, the DAL-stamp fix Jeff asked for (2026-10-17), not a feature
+#    10323  2026-10-17  #4576: +8 lines, the DAL-stamp fix Jeff asked for, not a feature
+#    10988  2026-11-13  #4965 decision 2 (Jeff "yes all" 07:57): +665 from nine cards since 10-17
+#                       landed without raising it, so the gate was red for growth already on
+#                       main and caught nothing new. Raised to today's count so it measures new
+#                       growth again; shrinking v1 back is its own card (defect row 91).
+FROZEN_LINES=10988  # #4965 decision 2 — see history above
 set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 count() { cat "$1"/*.rs 2>/dev/null | wc -l | tr -d ' '; }
