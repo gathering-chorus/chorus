@@ -6,7 +6,7 @@
 # 034wwPUt showed green pass there. The run must have tested this werk (AC7's root) at a
 # commit HEAD descends from, and every file changed since must be on the after-proof list.
 
-load lib/card-run-4965.bash
+load "$BATS_TEST_DIRNAME/../../platform/tests/lib/card-run-4965.bash"
 WERK="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 
 fixture() {  # fixture <dir> <kind|path|owner|verdict ...>

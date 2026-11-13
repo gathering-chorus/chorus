@@ -6,7 +6,7 @@
 # code. newly_red (the original AC3 over a whole run) is kept and proven below; proof
 # run 034wwPUt's 19 newly red are named on the card, not fixed here.
 
-load lib/card-run-4965.bash
+load "$BATS_TEST_DIRNAME/../../platform/tests/lib/card-run-4965.bash"
 WERK="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 
 fixture() {  # fixture <dir> <kind|path|owner|verdict ...>

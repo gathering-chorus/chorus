@@ -5,7 +5,7 @@
 # AC4: each suite the 2026-11-13 nightly reported as unowned (platform/api ×3,
 # platform/pulse ×2) names an owner in #4965's all-scope run of its werk.
 
-load lib/card-run-4965.bash
+load "$BATS_TEST_DIRNAME/../../platform/tests/lib/card-run-4965.bash"
 WERK="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 
 fixture() {  # fixture <dir> <kind|path|owner|verdict ...>
