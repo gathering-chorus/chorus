@@ -8,7 +8,11 @@
 # on 2026-10-30 08:32). Two bursts of 20, 32 s apart so the second lands after the cache expires.
 # PASS: every call answers 200 within 1 s, and at most one /cws script runs at any moment.
 set -uo pipefail
-URL="${PULSE_URL:-http://127.0.0.1:3475/pulse}"
+# #4965 — not PULSE_URL: werk-test dead-ports it (127.0.0.1:9, #4005) for every suite, so
+# in the nightly all 40 calls hit the cage and read "000 in 5 ms", never the service this
+# test exists to measure. A live test sets its own URL (lib.rs: "genuinely-live
+# integration tests ... set their own URLs").
+URL="${PULSE_PROD_URL:-http://127.0.0.1:3475/pulse}"
 N="${BURST:-20}"; LIMIT="${LIMIT_S:-1.0}"; GAP="${GAP_S:-32}"
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 # count only prod pulse's own /cws children: werk pulses and hand-run /cws are not this service
