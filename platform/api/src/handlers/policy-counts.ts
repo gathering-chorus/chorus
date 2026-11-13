@@ -95,7 +95,7 @@ const cache = new Map<string, Cached>();
 const TTL_MS = 10 * 60 * 1000;
 
 export async function fetchPolicyCounts(gate: string, deps: PolicyCountsDeps): Promise<{ status: number; body: unknown }> {
-  if (!/^[a-z]+(,[a-z]+)*$/.test(gate)) return { status: 400, body: { error: 'gate must be a word or words with commas, e.g. arch or quality,data' } };
+  if (!gate.split(',').every((g) => /^[a-z]+$/.test(g))) return { status: 400, body: { error: 'gate must be a word or words with commas, e.g. arch or quality,data' } };
   const gates = new Set(gate.split(','));
   const now = (deps.now ?? Date.now)();
   const hit = cache.get(gate);
