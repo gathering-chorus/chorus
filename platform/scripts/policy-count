@@ -421,8 +421,15 @@ def service_design_html_first():
 
 
 def board(*args):
-    # canonical's board CLI (a werk has no .env for the board's token); CARDS in tests
-    cards = os.environ.get("CARDS") or os.path.join(os.environ.get("CHORUS_HOME", "."), "platform/scripts/cards")
+    # the main checkout's board CLI, found through git: a werk (and the demo stack serving from
+    # it) shares canonical's .git but not its .env, where the board's token lives. CARDS in tests.
+    cards = os.environ.get("CARDS")
+    if not cards:
+        g = subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                           capture_output=True, text=True)
+        if g.returncode != 0:
+            raise Broken("cannot find the main checkout: " + g.stderr.strip())
+        cards = os.path.join(os.path.dirname(g.stdout.strip()), "platform/scripts/cards")
     try:
         p = subprocess.run(["bash", cards, *args], capture_output=True, text=True, timeout=60)
     except (OSError, subprocess.TimeoutExpired) as e:

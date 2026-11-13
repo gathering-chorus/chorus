@@ -71,10 +71,9 @@ PY
 }
 
 @test "policy-validate runs all 15 on this tree and exits 0 at the measured baselines" {
-  # the board's token lives on canonical (a werk has no .env): its cards CLI, as the counter uses in prod
-  CANON="${CHORUS_HOME:-$ROOT}"
+  # no CARDS: the counter finds the main checkout's board CLI through git, as on the demo stack
   python3 -c "import json; json.dump({'data': json.load(open('$CHECKS'))}, open('$T/p.json', 'w'))"
-  run sh -c "cd '$ROOT' && CARDS='$CANON/platform/scripts/cards' CHORUS_HOME='$ROOT' POLICIES_JSON='$T/p.json' '$PV'"
+  run sh -c "cd '$ROOT' && unset CARDS && CHORUS_HOME='$ROOT' POLICIES_JSON='$T/p.json' '$PV'"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [[ "$output" == *"15 checks, 0 above baseline, 0 could not run"* ]] || { echo "$output"; return 1; }
 }
