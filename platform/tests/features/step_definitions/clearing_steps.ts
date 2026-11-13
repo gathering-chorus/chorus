@@ -191,7 +191,7 @@ When('Jeff enters the name {string} via LAN', function (name: string) {
   const r = curlPost(
     `${TEST_LAN}/api/message`,
     JSON.stringify({ from: name, text: `[e2e-identity] ${name} joined` }),
-    `-b "chorus_share_session=${jeffSession}"`
+    `-b "chorus_share_session=${jeffSession}" ${lanResolveOpt(TEST_LAN)}`
   );
   nameAccepted = r.status === 200;
   lastResponse = r;
@@ -237,7 +237,7 @@ When('Jeff sends a message {string} via the API from LAN', function (label: stri
   lastResponse = curlPost(
     `${TEST_LAN}/api/message`,
     JSON.stringify({ from: 'jeff', text: probeMarker }),
-    `-b "chorus_share_session=${jeffSession}"` // #4278 — identity is required since #3966
+    `-b "chorus_share_session=${jeffSession}" ${lanResolveOpt(TEST_LAN)}` // #4278 — identity is required since #3966
   );
   assert.strictEqual(lastResponse.status, 200, `POST failed: ${lastResponse.status} ${lastResponse.body}`);
 });
