@@ -2096,8 +2096,9 @@ app.post('/api/alerts/grafana', (req: Request, res: Response) => {
   const env = { ...process.env };
   delete env.CHORUS_ROLE;
   const r = routeGrafanaAlerts(req.body || {}, {
-    nudge: (to, text) => {
-      execFile('bash', [path.join(scripts, 'ops-nudge'), to, text], { env }, (err) => {
+    // #4970 — OPS_ALERT names the rule's Alert row: notify off there tells no one
+    nudge: (to, text, rule) => {
+      execFile('bash', [path.join(scripts, 'ops-nudge'), to, text], { env: { ...env, OPS_ALERT: rule } }, (err) => {
         if (err) console.error(`grafana alert to ${to} not delivered: ${err.message}`);
       });
     },

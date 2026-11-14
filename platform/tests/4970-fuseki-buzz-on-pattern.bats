@@ -11,9 +11,9 @@
 # the registry is still a fail (unmeasured is never fine).
 #
 # Buzz shadow is recorded, never told, while PULSE_BUZZ_DELIVER is off (Wren's row,
-# her go 17:47): the land sets notify off on it, the ICD carries that onto the rule
-# as labels.notify, and the webhook records alert.quiet and nudges no one. The
-# webhook's both-ways proof is the jest suite this file runs.
+# her go 17:47): the land sets notify off on its Alert row; the webhook hands the
+# rule uid to ops-nudge, which records alert.quiet and nudges no one. Grafana keeps
+# the rule and its state. The gate's both-ways proof is 4970-off-alerts-silent.bats.
 
 setup() {
   ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
@@ -54,20 +54,13 @@ judge() {
   [[ "$output" == warn* ]] || return 1
 }
 
-@test "Buzz shadow: the land sets notify off on Wren's row and re-lands its rule" {
-  L="$ROOT/platform/scripts/land-4970-rows"
-  grep -q 'BUZZ = "buzz-shadow-not-matching"' "$L" || return 1
-  grep -q '("alerts", BUZZ, {"notify": "off"})' "$L" || return 1
-  grep -q 'land_rule(BUZZ)' "$L" || return 1
-}
-@test "Buzz shadow: the ICD carries notify onto the rule's labels, and the shape takes only on or off" {
-  I="$ROOT/building/products/convergence/domains/integrations/icd-instances/icd-instance-grafana.ttl"
-  awk '/<icd\/mapping\/alerts\/notify> a icd:FieldMapping/,/fromProvider/' "$I" | grep -q 'icd:sourceField "labels.notify"' || return 1
+@test "Buzz shadow: the land sets notify off on Wren's row, and the shape takes only on or off" {
+  grep -q '"buzz-shadow-not-matching"' "$ROOT/platform/scripts/land-4970-rows" || return 1
   grep -q 'sh:path chorus:notify ; sh:maxCount 1 ; sh:in ( "on" "off" )' "$ROOT/roles/silas/ontology/alerts-4085.ttl" || return 1
 }
-@test "Buzz shadow: the webhook records notify off and nudges no one; absent or on still tells (jest, both ways)" {
+@test "Buzz shadow: the webhook hands the rule uid to ops-nudge (jest, both ways)" {
   cd "$ROOT/platform/api"
-  run npx jest tests/handlers/grafana-alerts.test.ts -t 'notify'
+  run npx jest tests/handlers/grafana-alerts.test.ts -t 'names no rule|rule uid from generatorURL'
   [ "$status" -eq 0 ] || return 1
   [[ "$output" == *"2 passed"* ]] || return 1
 }

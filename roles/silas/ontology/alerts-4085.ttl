@@ -240,9 +240,10 @@ chorus:AlertShape sh:property chorus:AlertShape-repeatInterval .
 chorus:AlertShape-repeatInterval a sh:PropertyShape ; sh:path chorus:repeatInterval ; sh:maxCount 1 ; sh:datatype xsd:string ;
     sh:pattern "^[0-9]+[smh]$" ; sh:message "repeatInterval is a Grafana duration: 4h, 8760h" .
 
-# #4970 AC5 — notify off: the rule fires in Grafana and is recorded on the spine
-# (alert.quiet), and no one is told. For an alert that is true but gates nothing
-# yet (Buzz shadow while PULSE_BUZZ_DELIVER is off). Absent means on.
+# #4970 — notify off: the alert still fires (Grafana keeps its state; a script
+# still runs) and ops-nudge records it on the spine (alert.quiet), and no one is
+# told. One field for both kinds: ops-nudge reads it by the script alert's
+# message prefix or the Grafana rule uid the webhook hands it. Absent means on.
 chorus:notify a owl:DatatypeProperty ; rdfs:label "notify" ; rdfs:domain chorus:Alert ; rdfs:range xsd:string ;
     rdfs:comment "off: recorded, never told. Absent or on: the owner is told." .
 chorus:AlertShape sh:property chorus:AlertShape-notify .

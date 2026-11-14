@@ -37,8 +37,7 @@
     icd:hasMapping <icd/mapping/alerts/evalInterval> ;
     icd:hasMapping <icd/mapping/alerts/name> ;
     icd:hasMapping <icd/mapping/alerts/contactPoint> ;
-    icd:hasMapping <icd/mapping/alerts/repeatInterval> ;
-    icd:hasMapping <icd/mapping/alerts/notify> .
+    icd:hasMapping <icd/mapping/alerts/repeatInterval> .
 
 <icd/field/alerts/label> a icd:CanonicalField ;
     icd:fieldOrder 1 ;
@@ -268,24 +267,4 @@
     icd:mapsToName "repeatInterval" ;
     icd:confidence "direct" ;
     icd:fieldDescription "How long Grafana waits before telling again about a rule still firing" ;
-    icd:fromProvider <icd/provider/grafana/alert-rules> .
-
-# #4970 AC5 — an alert can be recorded and not told: notify off rides on the rule
-# as a label, and chorus-api's webhook records it (alert.quiet) and nudges no one.
-# A row without notify is told, as before. Grafana keeps the rule and its state.
-<icd/field/alerts/notify> a icd:CanonicalField ;
-    icd:fieldOrder 13 ;
-    icd:canonicalName "notify" ;
-    icd:displayName "notify" ;
-    icd:datatype "xsd:string" ;
-    icd:fieldTypeDescription "off: the rule fires and is recorded, and no one is told. Absent or on: its owner is told" .
-
-<icd/mapping/alerts/notify> a icd:FieldMapping ;
-    icd:mappingOrder 13 ;
-    icd:sourceTable "alert-rule" ;
-    icd:sourceField "labels.notify" ;
-    icd:mapsTo <icd/field/alerts/notify> ;
-    icd:mapsToName "notify" ;
-    icd:confidence "direct" ;
-    icd:fieldDescription "off: the rule fires and is recorded, and no one is told. Absent or on: its owner is told" ;
     icd:fromProvider <icd/provider/grafana/alert-rules> .

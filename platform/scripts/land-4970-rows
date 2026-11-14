@@ -39,9 +39,22 @@ PLAN_DIR = os.path.join(land.ROOT, "designing/domains/monitors")
 SENSOR = os.path.join(PLAN_DIR, "infra-disk-sensor-4970.json")
 MONITOR = os.path.join(PLAN_DIR, "bedroom-disk-full-monitor-4970.json")
 RULE = "bedroom-disk-full"
-# AC5 (Wren's go 2026-11-14 17:47, her row): Buzz shadow is recorded, never told,
-# while PULSE_BUZZ_DELIVER is off. Its rule is re-landed so the label reaches Grafana.
-BUZZ = "buzz-shadow-not-matching"
+# AC5/AC6 (Jeff 2026-11-14 18:12: two DROP, eight REBUILD; Wren's go 17:47 for her
+# Buzz row): these alerts are recorded and tell no one. ops-nudge reads notify off
+# by the script alert's prefix or the Grafana rule uid. The REBUILD ones come back
+# as sensor/monitor/alert rows in one following card.
+QUIET = ["buzz-shadow-not-matching", "crawler-out-of-sync", "lancedb-stale", "messages-not-kept"]
+# Grafana rules provisioned from files, and the pipeline's pass wake, have no row
+# yet: each gets one, named by its rule uid or the name run-finished hands ops-nudge.
+NEW_QUIET = [
+    ("sensor-run-not-green", {"label": "Sensor run not green", "alertSource": "grafana", "grafanaRuleUid": "sensor-run-not-green",
+                              "alertRoute": "warning", "hasDomain": "alerts", "notify": "off"}),
+    ("shacl-violations-above-baseline", {"label": "SHACL violations above baseline", "alertSource": "grafana",
+                                         "grafanaRuleUid": "shacl-violations-above-baseline", "alertRoute": "warning",
+                                         "hasDomain": "alerts", "notify": "off"}),
+    ("run-finished-pass", {"label": "A pipeline run passed (DROP: never an alert)", "alertSource": "script",
+                           "alertFile": "chorus/platform/scripts/run-finished", "hasDomain": "alerts", "notify": "off"}),
+]
 
 land.DOOR_CLASS = {"sensors": ("/v1/heralds/sensors", "heralds", "sensors"),
                    "monitors": ("/v1/monitors/monitors", "monitors", "monitors"),
@@ -71,8 +84,9 @@ def plan(_live):
     name = alert.pop("name")
     return [("sensors", monitor_alert.name_of(sensor), fields(sensor)),
             ("monitors", monitor_alert.name_of(monitor), fields(monitor)),
-            ("alerts", name, alert),
-            ("alerts", BUZZ, {"notify": "off"})]
+            ("alerts", name, alert)] \
+        + [("alerts", n, {"notify": "off"}) for n in QUIET] \
+        + [("alerts", n, w) for n, w in NEW_QUIET]
 
 
 land.plan = plan
@@ -89,9 +103,9 @@ def main(argv):
     rc = land.main(argv)
     if rc != 0 or "--apply" not in argv:
         if "--apply" not in argv:
-            print(f"then: convergence-land-alert for {RULE} and {BUZZ} (not run in a dry run)")
+            print(f"then: convergence-land-alert alert={RULE} (not run in a dry run)")
         return rc
-    return 0 if all([land_rule(RULE), land_rule(BUZZ)]) else 1
+    return 0 if land_rule(RULE) else 1
 
 
 if __name__ == "__main__":

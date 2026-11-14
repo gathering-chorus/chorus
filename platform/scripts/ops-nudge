@@ -48,13 +48,14 @@ fi
 # CHORUS_HOOK_SHIM at a build of their own.
 SHIM="${CHORUS_HOOK_SHIM:-$(command -v chorus-hook-shim || echo "$HOME/.chorus/bin/chorus-hook-shim")}"
 
-# #4970 — one field turns an alert off. A script alert's message starts with its
-# Alert row's name ("crawler-out-of-sync: ..."); when that row says notify off,
-# the firing is recorded on the spine (alert.quiet) and no one is told. Grafana
-# alerts honour the same field through the webhook. A door that cannot be read
-# never silences anything: the gate fails open, so a real alert still goes out.
-ALERT_NAME="${CONTENT%%:*}"
-if [ "$ALERT_NAME" != "$CONTENT" ] && [[ "$ALERT_NAME" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
+# #4970 — one field turns an alert off, for both kinds. A script alert's message
+# starts with its Alert row's name ("crawler-out-of-sync: ..."); a Grafana alert
+# arrives from chorus-api's webhook with OPS_ALERT set to its rule uid. When that
+# row says notify off, the firing is recorded on the spine (alert.quiet) and no
+# one is told. A door that cannot be read never silences anything: the gate
+# fails open, so a real alert still goes out.
+if [ -n "${OPS_ALERT:-}" ]; then ALERT_NAME="$OPS_ALERT"; else ALERT_NAME="${CONTENT%%:*}"; [ "$ALERT_NAME" = "$CONTENT" ] && ALERT_NAME=""; fi
+if [[ "$ALERT_NAME" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]]; then
   ALERTS_DOOR="${ALERTS_DOOR:-http://localhost:3340/owl/v1/alerts/alerts}"
   NOTIFY=$(curl -s --max-time 3 "$ALERTS_DOOR/$ALERT_NAME" 2>/dev/null \
     | python3 -c 'import json,sys; print(json.load(sys.stdin).get("data",{}).get("notify",""))' 2>/dev/null || true)
