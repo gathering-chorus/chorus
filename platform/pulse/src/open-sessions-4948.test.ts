@@ -1,5 +1,7 @@
 // @test-type: unit — fetchOpenSessionRows against a stubbed fetch; no live door.
 // @domain: roles
+// @card: #4948
+// @owner: wren
 import { fetchOpenSessionRows } from './open-sessions';
 
 const NOW = Date.parse('2026-11-10T21:00:00Z');

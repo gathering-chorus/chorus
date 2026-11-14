@@ -37,6 +37,8 @@ chorus:agentRuntime a owl:ObjectProperty ; rdfs:label "agent runtime" ; rdfs:dom
 
 chorus:runtimeBinary a owl:DatatypeProperty ; rdfs:label "binary" ; rdfs:domain chorus:AgentRuntime ; rdfs:range xsd:string ;
     rdfs:comment "The program to start, as a path or a name on PATH (agy, claude)." .
+chorus:runtimeSource a owl:DatatypeProperty ; rdfs:label "index source" ; rdfs:domain chorus:AgentRuntime ; rdfs:range xsd:string ;
+    rdfs:comment "The name this runtime's turns are stamped and indexed under (antigravity, claude, gemini). The hook reads it from the row; a row without one fails loud, never stamps the tool vocabulary (#4965: agy turns read as external and the antigravity source went dead)." .
 chorus:runtimeLaunchArg a owl:DatatypeProperty ; rdfs:label "launch argument" ; rdfs:domain chorus:AgentRuntime ; rdfs:range xsd:string ;
     rdfs:comment "One argument after the binary, in sh:order. {home} is the principal's home." .
 chorus:runtimeAuth a owl:DatatypeProperty ; rdfs:label "sign-in" ; rdfs:domain chorus:AgentRuntime ; rdfs:range xsd:string ;
@@ -103,6 +105,7 @@ chorus:AgentRuntimeShape a sh:NodeShape ;
     chorus:writeAuthority "deploy" ;
     chorus:generatedBy "athena-model" ;
     sh:property [ sh:path chorus:runtimeBinary ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:runtimeSource ; sh:minCount 1 ; sh:maxCount 1 ; sh:pattern "^[a-z][a-z0-9-]*$" ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:runtimeLaunchArg ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:runtimeAuth ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "subscription" "api-key" "google-login" ) ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:runtimeKeyEnv ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;

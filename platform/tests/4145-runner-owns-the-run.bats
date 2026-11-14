@@ -50,6 +50,10 @@ EOS
   chmod +x "$T/runner.sh"
   printf '#!/bin/bash\necho "NUDGE to=$1 msg=$2" >> "%s/nudges.txt"\n' "$T" > "$T/nudge.sh"
   chmod +x "$T/nudge.sh"
+  # #4965 — since #4957 a red suite opens an AlertCase for its owner instead of a
+  # pane nudge; the fixture's alert-case records each call and holds no open subjects
+  printf '#!/bin/bash\necho "CASE $*" >> "%s/cases.txt"\n' "$T" > "$T/root/platform/scripts/alert-case"
+  chmod +x "$T/root/platform/scripts/alert-case"
   python3 - "$T" <<'EOS' &
 import sys, os, json, http.server, socketserver
 T = sys.argv[1]
@@ -162,9 +166,20 @@ EOS
   grep -q '^SUITE|jest|directing/clearing|kade|pass|' "$T/nightly.log"
 }
 
+@test "#4965 AC7: the run folder records the tree it tested (root) and its commit (head)" {
+  git -C "$T/root" init -q && git -C "$T/root" -c user.email=t@x.invalid -c user.name=t commit -q --allow-empty -m seed
+  # trace pinned: inside a real run TRACE is the outer run's (proof run 034wwPUt), which
+  # names the folder after the outer run, not this fixture
+  TRACE=034gpBats4145Fixture01 run run_all
+  d="$T/runs/034gpBats4145Fixture01"
+  [ "$(cat "$d/root")" = "$T/root" ] || { echo "root=$(cat "$d/root" 2>&1)"; return 1; }
+  [ "$(cat "$d/head")" = "$(git -C "$T/root" rev-parse HEAD)" ] || { echo "head=$(cat "$d/head" 2>&1)"; return 1; }
+}
+
 @test "reds nudge their owner as they land, then one grouped line per owner and one TOTAL; slow is named as speed" {
   run run_all
-  grep -q 'NUDGE to=silas msg=nightly RED now: platform/scripts/z.sh' "$T/nudges.txt"
+  grep -q '^CASE open test-nightly-first-red-nudge-4071 platform/scripts/z.sh silas nightly RED: platform/scripts/z.sh' "$T/cases.txt"
+  ! grep -q 'NUDGE to=silas msg=nightly RED now' "$T/nudges.txt" || return 1  # #4957: a case, not a pane nudge
   grep -q 'NUDGE to=silas msg=nightly: 1 suite(s) red — z.sh' "$T/nudges.txt"
   ! grep -q 'tests-domain' "$T/nudges.txt" || return 1  # #4154: no census row, so no census red to nudge
   grep -qE 'NUDGE to=kade msg=nightly TOTAL: 1 red across the board \(silas 1\) — bar is zero — 1 slow \(speed, not breakage: p.sh\)' "$T/nudges.txt"

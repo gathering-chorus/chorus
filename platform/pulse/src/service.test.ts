@@ -18,6 +18,18 @@ import { createApp, resetNudgeDedup } from './service';
 // #4432 — the peer set comes from the roles door; here a fixed stand-in so the
 // suite never reaches the live :3360. peers-4432.test.ts covers the door itself.
 jest.mock('./peers', () => ({ fetchPeers: async () => ['abby-normal', 'jeff', 'kade', 'silas', 'wren'] }));
+// #4965 — the same for Presence: the nudge path read the live door's identity rows
+// (2 s timeouts) on every POST, so under the nightly's load the suite's answer
+// depended on :3360. A fixed 'unread' keeps it off the door.
+jest.mock('./presence-target', () => {
+  const unread = { kind: 'unread', why: 'test: no Presence door' };
+  return {
+    ...jest.requireActual('./presence-target'),
+    fetchPresenceResolution: async () => unread,
+    fetchPresenceView: async () => ({ resolution: unread }),
+    resolveEnds: async () => ({ toRes: unread, sender: null }),
+  };
+});
 
 const CHAT_START = '/api/chat/start';
 

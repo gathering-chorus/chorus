@@ -1298,6 +1298,37 @@ fn grew_line(grew: &[(String, f64, f64)]) -> String {
 }
 
 #[cfg(test)]
+mod all_scope_root_4965 {
+    use super::*;
+
+    fn a(v: &[&str]) -> Vec<String> { v.iter().map(|s| s.to_string()).collect() }
+    const CANON: &str = "/c/chorus";
+    const BASE: &str = "/c/chorus-werk";
+    fn werk_exists(p: &str) -> bool { p == "/c/chorus-werk/kade-4965" }
+
+    #[test]
+    fn a_card_run_tests_the_cards_werk() {
+        assert_eq!(all_scope_root(&a(&["4965", "kade", "--scope=all"]), BASE, CANON, &werk_exists).unwrap(),
+                   "/c/chorus-werk/kade-4965");
+    }
+
+    #[test]
+    fn the_nightly_names_no_card_and_tests_canonical() {
+        assert_eq!(all_scope_root(&a(&["--scope=all"]), BASE, CANON, &werk_exists).unwrap(), CANON);
+        assert_eq!(all_scope_root(&a(&["", "", "--scope=all"]), BASE, CANON, &werk_exists).unwrap(), CANON);
+    }
+
+    /// NEGATIVE PROOF — the 11-13 shape: a card run that would read canonical is refused
+    #[test]
+    fn a_card_without_its_werk_is_refused_never_canonical() {
+        let e = all_scope_root(&a(&["4966", "kade", "--scope=all"]), BASE, CANON, &werk_exists).unwrap_err();
+        assert!(e.contains("no werk at /c/chorus-werk/kade-4966"), "{e}");
+        assert!(all_scope_root(&a(&["4965", "kade"]), "", CANON, &werk_exists).is_err());
+        assert!(all_scope_root(&a(&["4965", "--scope=all"]), BASE, CANON, &werk_exists).is_err());
+    }
+}
+
+#[cfg(test)]
 mod duration_growth_4645 {
     use super::*;
 
@@ -1644,11 +1675,41 @@ fn cases_of(lines: &[String]) -> Vec<(String, String, String, String)> {
     }).collect()
 }
 
+/// #4965 (Jeff 09:34, option B) — which tree an all-scope step tests. The
+/// nightly names no card and tests canonical (CHORUS_ROOT). A run a card
+/// started (`run <card> <role> --scope=all`) tests that card's werk: on 11-13
+/// run 034wsUGV tested canonical for #4965 and every fix in the werk read red.
+/// A card named without its werk is refused, never quietly tested on canonical.
+pub(crate) fn all_scope_root(
+    args: &[String],
+    werk_base: &str,
+    env_root: &str,
+    is_repo: &dyn Fn(&str) -> bool,
+) -> Result<String, String> {
+    let pos: Vec<&str> = args.iter().map(String::as_str)
+        .filter(|a| !a.starts_with("--") && !a.trim().is_empty()).collect();
+    match pos.as_slice() {
+        [] => Ok(env_root.to_string()),
+        [card, role, ..] => {
+            if werk_base.is_empty() {
+                return Err(format!("card {card} names no werk: CHORUS_WERK_BASE is unset"));
+            }
+            let werk = format!("{}/{}-{}", werk_base.trim_end_matches('/'), role, card);
+            if is_repo(&werk) { Ok(werk) } else { Err(format!("card {card} has no werk at {werk}")) }
+        }
+        [one] => Err(format!("an all-scope run names a card and a role, or neither; got only {one:?}")),
+    }
+}
+
 /// The context for a step: the run's log and graph rows pick up where the
 /// last step left them (its start stamp and the graph row count).
-fn step_ctx(d: &werk_test::run_dir::RunDir) -> Ctx {
-    let root = std::env::var("CHORUS_ROOT").or_else(|_| std::env::var("CHORUS_HOME"))
+fn step_ctx(d: &werk_test::run_dir::RunDir, args: &[String]) -> Result<Ctx, String> {
+    let env_root = std::env::var("CHORUS_ROOT").or_else(|_| std::env::var("CHORUS_HOME"))
         .unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".into());
+    let root = all_scope_root(args, &env_or("CHORUS_WERK_BASE", ""), &env_root, &|p| Path::new(p).join(".git").exists())?;
+    // every suite the run starts reads CHORUS_ROOT, so the children test the same tree
+    std::env::set_var("CHORUS_ROOT", &root);
+    eprintln!("werk-test: all-scope root {root}");
     werk_test::set_repo_root(Path::new(&root));
     let mut ctx = build_ctx(&root);
     ctx.tee_log = true;
@@ -1659,7 +1720,7 @@ fn step_ctx(d: &werk_test::run_dir::RunDir) -> Ctx {
         ctx.graph.order.set(n);
     }
     ctx.owners = werk_test::run_dir::pairs_of(&d.get("owners").unwrap_or_default()).into_iter().collect();
-    ctx
+    Ok(ctx)
 }
 
 fn keep_order(ctx: &Ctx, d: &werk_test::run_dir::RunDir) -> Result<(), String> {
@@ -1682,7 +1743,7 @@ pub fn step_all(
     if let Some(code) = pin(&d, Some(step), all_args)? {
         return Ok(code);
     }
-    let ctx = step_ctx(&d);
+    let ctx = step_ctx(&d, args)?;
     match step {
         "scope" => {
             let started_at = now_stamp();
@@ -1691,6 +1752,14 @@ pub fn step_all(
             }
             let (owners, registered) = read_registry(&ctx);
             d.put("run-ts", &[started_at])?;
+            // #4965 AC7 — the tree and commit this run tested, so a check reading the
+            // run can refuse one that tested another tree or an older head
+            d.put("root", &[ctx.root.clone()])?;
+            let head = Command::new("git").args(["-C", &ctx.root, "rev-parse", "HEAD"]).output().ok()
+                .filter(|o| o.status.success())
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                .unwrap_or_default();
+            d.put("head", &[head])?;
             d.put("owners", &werk_test::run_dir::pair_lines(owners.iter()))?;
             d.put("registered", &werk_test::run_dir::pair_lines(registered.iter().map(|(a, b)| (a, b))))?;
             // #4278 — every com.chorus.* agent's pid at the start; perf compares the end

@@ -21,7 +21,15 @@
 #                       raising it. Measured per card in athena-make/src: #4522 (+202 -22),
 #                       #4022 (+28), #4531 (+26 -19), #4538 (+3 -93). #4522 is the largest and
 #                       reads as feature work on v1; flagged to Silas to confirm or move it out.
-FROZEN_LINES=10323  # #4576: +8 lines, the DAL-stamp fix Jeff asked for (2026-10-17), not a feature
+#    10323  2026-10-17  #4576: +8 lines, the DAL-stamp fix Jeff asked for, not a feature
+#    10988  2026-11-13  #4965 decision 2 (Jeff "yes all" 07:57): +665 net from nine commits that
+#                       landed without raising it, so the gate was red for growth already on
+#                       main and caught nothing new. Measured per card in athena-make/src:
+#                       #4933 (+354 -19, two commits), #4916 (+101 -2), #4838 (+82),
+#                       #4715 (+96 -37), #4774 (+31 -1), #4717 (+30 -1), #4728 (+26 -3),
+#                       #4762 (+9 -1). Raised to today's count so it measures new growth
+#                       again; shrinking v1 back to the old line is a separate card, not yet filed.
+FROZEN_LINES=10988  # #4965 decision 2 — see history above
 set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 count() { cat "$1"/*.rs 2>/dev/null | wc -l | tr -d ' '; }

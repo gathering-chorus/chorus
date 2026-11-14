@@ -142,10 +142,16 @@ except Exception: rows = []
 for r in rows if isinstance(rows, list) else []:
     v = r.get(field)
     v = v[0] if isinstance(v, list) and v else v
-    if not isinstance(v, str) or not re.fullmatch(pat, v): continue
+    if not isinstance(v, str) or not re.search(pat, v): continue
     stem, ext = os.path.splitext(v)
     t = f"{stem}-{tag}{ext}"
-    if re.fullmatch(pat, t): print(t); sys.exit(0)
+    # #4965 (Silas) - shape patterns are anchored where they mean it (^urn:chorus:
+    # is a prefix), so fullmatch never took a real value. A value the tag would
+    # break is not sent, not even as served: that is the value of a live row
+    # (#4915; red in proof run 034wwPUt)
+    if not re.search(pat, t): continue
+    print(t)
+    sys.exit(0)
 print("UNMET " + pat)' "$1" "$2" "$3"
 }
 

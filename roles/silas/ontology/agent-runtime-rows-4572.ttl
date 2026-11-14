@@ -29,6 +29,7 @@ chorus:runtime-agy a chorus:AgentRuntime ;
     rdfs:label "Antigravity CLI (agy)" ;
     chorus:label "Antigravity CLI (agy)" ;
     chorus:runtimeBinary "agy" ;
+    chorus:runtimeSource "antigravity" ;
     chorus:runtimeAuth "google-login" ;
     # #4544: agy saves its refreshed Google token to the keychain every hour; her
     # account never logs in at the console, so macOS asked Jeff on his screen
@@ -80,6 +81,7 @@ chorus:runtime-gemini-cli a chorus:AgentRuntime ;
     rdfs:label "Gemini CLI" ;
     chorus:label "Gemini CLI" ;
     chorus:runtimeBinary "gemini" ;
+    chorus:runtimeSource "gemini" ;
     chorus:runtimeAuth "api-key" ;
     chorus:runtimeKeyEnv "GEMINI_API_KEY" ;
     chorus:runtimeHooksFile ".gemini/settings.json" ;
@@ -107,6 +109,7 @@ chorus:runtime-claude-code a chorus:AgentRuntime ;
     rdfs:label "Claude Code" ;
     chorus:label "Claude Code" ;
     chorus:runtimeBinary "claude" ;
+    chorus:runtimeSource "claude" ;
     chorus:runtimeAuth "subscription" ;
     chorus:runtimeHooksFile ".claude/settings.json" ;
     chorus:runtimeMcpFile ".mcp.json" ;

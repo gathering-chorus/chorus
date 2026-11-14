@@ -1,5 +1,7 @@
 // @test-type: unit — deriveActorState over fixture sessions; no live door.
 // @domain: roles
+// @card: #4948
+// @owner: wren
 /**
  * #4948 — an agent's session lasts from login to logout. Its expiresAt is written once at
  * login (the shape requires it) and never renewed, so pulse ignores it on a pane session;

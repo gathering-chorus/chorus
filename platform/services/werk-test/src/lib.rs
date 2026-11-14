@@ -7043,3 +7043,15 @@ pub fn unlisted_test_domains(changed: &[(String, String)], listed: &[String]) ->
         .filter(|(_, d)| !listed.iter().any(|l| l == d))
         .collect()
 }
+
+/// #4965 AC6 (from #4935) — the changed test files that declare no `@domain:` at
+/// all. The crawler reported them as test-declared-domain-missing after they
+/// landed; werk-test refuses them before anything runs, naming each file.
+/// Fixtures are not tests of their own and are not judged.
+pub fn untagged_test_files(changed: &[(String, String)]) -> Vec<String> {
+    changed.iter()
+        .filter(|(f, _)| is_test_file(f) && !f.contains("/fixtures/"))
+        .filter(|(_, c)| declared_domain(c).is_none())
+        .map(|(f, _)| f.clone())
+        .collect()
+}

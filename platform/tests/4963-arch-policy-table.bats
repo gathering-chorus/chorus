@@ -19,10 +19,25 @@ PAGE="$ROOT/platform/api/public/loom/policy-counts.html"
   ! grep -qE "localhost|127\.0\.0\.1|:33[0-9]{2}|:3360" "$PAGE" || { grep -nE "localhost|127\.0\.0\.1|:33[0-9]{2}" "$PAGE"; return 1; }
 }
 
+# boston_time <page> — the page shows times through the shared Boston clock (#4965: domain-flow-time
+# moved it off its own toLocaleString): it loads chorus-time/boston.js and calls bostonMinute
+boston_time() {
+  grep -q '<script src="/vendor/chorus-time/boston.js"></script>' "$1" || { echo "the page does not load chorus-time/boston.js"; return 1; }
+  grep -q 'chorusBoston.bostonMinute(' "$1" || { echo "the page does not format with chorusBoston.bostonMinute"; return 1; }
+}
+
 @test "the page fits a phone and names each rule's narrowing and its ceiling" {
   grep -q 'name="viewport" content="width=device-width' "$PAGE" || return 1
   grep -q "narrowed" "$PAGE" && grep -q "ceiling" "$PAGE" && grep -q "could not measure" "$PAGE" || return 1
-  grep -q "timeZone: 'America/New_York'" "$PAGE" || return 1
+  boston_time "$PAGE" || return 1
+}
+
+@test "NEGATIVE PROOF: a page that formats its own time, or never loads the Boston clock, is refused" {
+  own="$BATS_TEST_TMPDIR/own.html"; noscript="$BATS_TEST_TMPDIR/noscript.html"
+  sed 's|chorusBoston.bostonMinute(new Date(b.measuredAt))|new Date(b.measuredAt).toLocaleString()|' "$PAGE" > "$own"
+  sed '\|/vendor/chorus-time/boston.js|d' "$PAGE" > "$noscript"
+  run boston_time "$own"; [ "$status" -eq 1 ] && [[ "$output" == *"bostonMinute"* ]] || { echo "own: $output"; return 1; }
+  run boston_time "$noscript"; [ "$status" -eq 1 ] && [[ "$output" == *"boston.js"* ]] || { echo "noscript: $output"; return 1; }
 }
 
 @test "chorus-api serves the route and the page from this tree" {

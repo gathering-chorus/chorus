@@ -4377,6 +4377,11 @@ mod manifest_4773 {
         assert!(req.contains("\"targetMachine\":\"library\""), "request must carry targetMachine: {req}");
         assert!(req.contains("\"deployedBy\":\"deployer\""), "request must carry deployedBy=deployer: {req}");
         assert!(req.contains("\"landedFor\":\"silas\""), "request must carry landedFor=silas: {req}");
+        // #4965 — the fields platform/tests/4773 used to grep from a python stub the
+        // test never posted to (it posts here, to its own stub)
+        assert!(req.contains("\"cdhash\":\"cdhash123\""), "request must carry cdhash: {req}");
+        assert!(req.contains("\"deployedCommit\":\"commit123\""), "request must carry deployedCommit: {req}");
+        assert!(req.contains("\"sha256\":\"sha256abc\""), "request must carry sha256: {req}");
     }
 
     #[test]

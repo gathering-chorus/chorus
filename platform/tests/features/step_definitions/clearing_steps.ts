@@ -33,6 +33,18 @@ const PUBLIC = 'https://clearing.lightlifeurbangardens.com';
 const TEST_PORT = 12000 + Math.floor(Math.random() * 8000);
 const TEST_LOCAL = `http://localhost:${TEST_PORT}`;
 const TEST_LAN = LAN.replace(/:\d+$/, `:${TEST_PORT}`);
+
+// #4965 — curl from Library itself resolves its own .local name to loopback (::1) first,
+// so the server saw a local caller and served 200; an iPhone on wifi comes from the LAN
+// interface. --resolve pins the LAN address (read live, never a DHCP literal, #3366)
+// while the Host header stays the .local name.
+const { lanAddress } = require('../../../../directing/clearing/src/lan-url');
+function lanResolveOpt(urlStr: string): string {
+  const u = new URL(urlStr);
+  const ip = lanAddress();
+  const port = u.port || (u.protocol === 'https:' ? '443' : '80');
+  return ip && u.hostname.endsWith('.local') ? `--resolve ${u.hostname}:${port}:${ip}` : '';
+}
 const CLEARING_SERVER = path.join(__dirname, '..', '..', '..', '..', 'directing', 'clearing', 'dist', 'server.js');
 let testWorld = '';
 let testToken = '';
@@ -128,14 +140,14 @@ When('Jeff loads {string} without auth', function (url: string) {
 // #3366: the LAN URL lives in one place (the LAN constant above) so the
 // scenario text never carries a DHCP-volatile literal address.
 When('Jeff loads the LAN URL without auth', function () {
-  lastResponse = curl(LAN, '-H "Accept: text/html"');
+  lastResponse = curl(LAN, `-H "Accept: text/html" ${lanResolveOpt(LAN)}`);
 });
 
 // #4412 — the home network is not an identity, and a LAN Host can never carry
 // the door's parent-domain cookie: a person's LAN page load is sent to the
 // public Clearing, same path. Before #4412 it served the room with no sign-in.
 Then('the page redirects to the public Clearing', function () {
-  const loc = execSync(`curl -s -o /dev/null -w '%{redirect_url}' -H "Accept: text/html" "${LAN}" --connect-timeout 5 --max-time 10`,
+  const loc = execSync(`curl -s -o /dev/null -w '%{redirect_url}' -H "Accept: text/html" ${lanResolveOpt(LAN)} "${LAN}" --connect-timeout 5 --max-time 10`,
     { encoding: 'utf-8', timeout: 15000 }).trim();
   assert.strictEqual(lastResponse.status, 302, `LAN page load served ${lastResponse.status}, expected a redirect`);
   assert.ok(loc.startsWith(PUBLIC), `LAN page load redirected to ${loc}, expected ${PUBLIC}`);
@@ -179,7 +191,7 @@ When('Jeff enters the name {string} via LAN', function (name: string) {
   const r = curlPost(
     `${TEST_LAN}/api/message`,
     JSON.stringify({ from: name, text: `[e2e-identity] ${name} joined` }),
-    `-b "chorus_share_session=${jeffSession}"`
+    `-b "chorus_share_session=${jeffSession}" ${lanResolveOpt(TEST_LAN)}`
   );
   nameAccepted = r.status === 200;
   lastResponse = r;
@@ -225,7 +237,7 @@ When('Jeff sends a message {string} via the API from LAN', function (label: stri
   lastResponse = curlPost(
     `${TEST_LAN}/api/message`,
     JSON.stringify({ from: 'jeff', text: probeMarker }),
-    `-b "chorus_share_session=${jeffSession}"` // #4278 — identity is required since #3966
+    `-b "chorus_share_session=${jeffSession}" ${lanResolveOpt(TEST_LAN)}` // #4278 — identity is required since #3966
   );
   assert.strictEqual(lastResponse.status, 200, `POST failed: ${lastResponse.status} ${lastResponse.body}`);
 });

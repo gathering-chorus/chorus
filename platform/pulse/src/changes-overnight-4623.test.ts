@@ -1,4 +1,7 @@
 // @test-type: integration — a local HTTP stub stands in for Loki and the door
+// @domain: messages
+// @card: #4623
+// @owner: silas
 /**
  * #4623 — the overnight fetcher asks Loki only for what's new.
  *

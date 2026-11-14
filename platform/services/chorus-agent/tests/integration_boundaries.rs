@@ -1,3 +1,4 @@
+// @domain: roles
 use chorus_agent::{
     config::Config,
     contract::*,

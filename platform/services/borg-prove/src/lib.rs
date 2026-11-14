@@ -1,3 +1,4 @@
+// @domain: code — its tests cover the AC-line core, like core_4456 and card_ac_lines_4760 (#4965)
 //! borg-prove (#4456). The pure half: a card's AC lines in (#4760), a result per AC out, and
 //! the route a failed step takes. main.rs does the I/O (store, HTTP, dagu).
 

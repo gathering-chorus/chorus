@@ -269,11 +269,36 @@ pub fn delivered_by_pulse(db: &str, prompt: &str) -> bool {
 /// pulse's wake line, never as its words, so a "[nudge from" label typed into
 /// the pane is Jeff's text, not a delivery. A message that never arrived never
 /// produces a turn, so it can never mark the presence reachable.
-pub fn turn_facts(hook_input: &str) -> (String, bool) {
+pub fn turn_facts(hook_input: &str) -> (String, bool) { turn_facts_on(hook_input, None) }
+
+mod runtime_prompt { include!("../../shared/runtime_prompt.rs"); }
+
+/// #4965 — the prompt read through the role's runtime row (`runtime_for`): agy's hook input
+/// carries none, so a delivery to Abby or Borg Queen never read as one and their Presence
+/// stayed "unknown". With no row, the input's own `prompt` field (Claude's hook input).
+pub fn turn_facts_on(hook_input: &str, row: Option<&Value>) -> (String, bool) {
     let v: Value = serde_json::from_str(hook_input).unwrap_or(Value::Null);
-    let conv = conversation_of(&v);
-    let prompt = v.get("prompt").and_then(|s| s.as_str()).unwrap_or("");
-    (conv, is_delivery(prompt))
+    (conversation_of(&v), is_delivery(&prompt_on(hook_input, row)))
+}
+
+/// The turn's prompt: through the row when there is one (the row is the one reader, Silas
+/// 07:39: no fallback to the input, so a row naming a transcript type never reads a stray
+/// prompt field instead), else the input's own `prompt` field (Claude's hook input).
+pub fn prompt_on(hook_input: &str, row: Option<&Value>) -> String {
+    let v: Value = serde_json::from_str(hook_input).unwrap_or(Value::Null);
+    match row {
+        Some(r) => runtime_prompt::prompt(r, &v).unwrap_or_default(),
+        None => v.get("prompt").and_then(|s| s.as_str()).unwrap_or("").to_string(),
+    }
+}
+
+/// #4965 review fix — a before-prompt hook that fires once per model call (agy's
+/// PreInvocation, the row's `fieldTurnStart`): every call after the first is not a turn.
+/// The same rule chorus-hooks' row hook applies (runtime_rows::is_turn_start).
+pub fn later_model_call(hook_input: &str, row: Option<&Value>) -> bool {
+    let Some(field) = row.and_then(|r| r.get("fieldTurnStart")).and_then(Value::as_str) else { return false };
+    let v: Value = serde_json::from_str(hook_input).unwrap_or(Value::Null);
+    field.split('.').try_fold(&v, |cur, k| cur.get(k)).and_then(Value::as_i64).unwrap_or(0) != 0
 }
 
 /// #4895 — the conversation a turn belongs to, by the one rule chorus-hooks' shim also
@@ -302,9 +327,11 @@ pub fn is_turn_end(hook_input: &str) -> bool {
 #[derive(Debug, PartialEq, Eq)]
 pub enum Speaker { Delivery, Harness, Jeff }
 
-pub fn speaker(hook_input: &str) -> Speaker {
-    let v: Value = serde_json::from_str(hook_input).unwrap_or(Value::Null);
-    let p = v.get("prompt").and_then(|s| s.as_str()).unwrap_or("").trim();
+pub fn speaker(hook_input: &str) -> Speaker { speaker_of(&prompt_on(hook_input, None)) }
+
+/// Who a prompt is from, given the prompt itself (read through the row by `prompt_on`).
+pub fn speaker_of(prompt: &str) -> Speaker {
+    let p = prompt.trim();
     if is_delivery(p) { return Speaker::Delivery; }
     if p.is_empty() || p.starts_with('<') || p.starts_with("Stop hook feedback:") || p.contains("[SYSTEM NOTIFICATION") { return Speaker::Harness; }
     Speaker::Jeff

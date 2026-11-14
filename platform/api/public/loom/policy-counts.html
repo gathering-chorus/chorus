@@ -36,6 +36,7 @@
   <p class="sub" id="sub">Measuring…</p>
   <div id="rows"></div>
   <p id="err"></p>
+  <script src="/vendor/chorus-time/boston.js"></script>
   <script>
     const gate = new URLSearchParams(location.search).get('gate') || 'arch';
     const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -44,7 +45,7 @@
     fetch('/api/chorus/policies/counts?gate=' + encodeURIComponent(gate))
       .then((r) => r.ok ? r.json() : r.json().then((b) => Promise.reject(new Error(b.error || r.status))))
       .then((b) => {
-        const at = new Date(b.measuredAt).toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' });
+        const at = chorusBoston.bostonMinute(new Date(b.measuredAt));
         const narrowed = b.policies.filter((p) => p.narrowed).length;
         document.getElementById('sub').textContent =
           `${b.policies.length} ${b.gate.split(',').join(' · ')} policies, worst first · ${narrowed} narrowed · measured ${at} Boston`;

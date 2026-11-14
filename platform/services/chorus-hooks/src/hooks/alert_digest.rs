@@ -12,10 +12,11 @@ use std::time::{Duration, SystemTime};
 /// Three missed 5-minute passes.
 const STALE_AFTER: Duration = Duration::from_secs(15 * 60);
 
-/// The digest directory: ALERT_DIGEST_DIR, else ~/.chorus/alerts (alert-digest's default).
+/// The digest directory: ALERT_DIGEST_DIR, else `alerts` under the team's shared
+/// state dir (#4535: a role on its own account finds the team's digests).
 pub fn digest_dir() -> std::path::PathBuf {
     std::env::var("ALERT_DIGEST_DIR").map(Into::into).unwrap_or_else(|_| {
-        Path::new(&std::env::var("HOME").unwrap_or_default()).join(".chorus/alerts")
+        Path::new(&crate::shared::state_paths::chorus_state_dir()).join("alerts")
     })
 }
 

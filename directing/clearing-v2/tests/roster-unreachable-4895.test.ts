@@ -46,7 +46,9 @@ describe('#4895 AC5: the served roles page tags a role nudges cannot reach', () 
     });
     try {
       const page = await browser.newPage();
-      await page.goto(`http://127.0.0.1:${port}/clearing-v2/roles`, { waitUntil: 'load', timeout: 15000 });
+      // inside jest's 5 s test budget (#4416: no raised timeouts), so a page that never
+      // loads fails here by name; measured 0.9-2.6 s whole test, idle (2026-11-13)
+      await page.goto(`http://127.0.0.1:${port}/clearing-v2/roles`, { waitUntil: 'load', timeout: 3000 });
       const tags = await page.locator('.actor-unreachable').allInnerTexts();
       expect(tags).toEqual(['unreachable — nudges to abby-normal will not land']);
       expect(await page.content()).not.toContain('nudges to kade will not land');
@@ -55,5 +57,6 @@ describe('#4895 AC5: the served roles page tags a role nudges cannot reach', () 
       await new Promise<void>((r) => server.close(() => r()));
       await new Promise<void>((r) => pulse.close(() => r()));
     }
-  }, 30000);
+  // slow-by-design: Google Chrome cold launch + page load measured 0.9-2.6 s idle, over 5 s under the cicd test run (#4965 run 034xBbcP, 2026-11-13); the page itself waits 3 s
+  }, 15000);
 });

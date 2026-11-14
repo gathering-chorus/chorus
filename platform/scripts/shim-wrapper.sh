@@ -18,11 +18,8 @@ if [ -z "$SHIM" ] || [ ! -x "$SHIM" ]; then
   SHIM="$HOME/.chorus/bin/chorus-hook-shim"
 fi
 # #4915 — no target/release fallback: build-signed builds per account now, so that
-# path is no account's install; a missing deploy says so instead of running a stale build
-if [ ! -x "$SHIM" ]; then
-  echo "shim-wrapper: no installed chorus-hook-shim (PATH or ~/.chorus/bin)" >&2
-  exit 127
-fi
+# path is no account's install. #4965 — the -f/-x checks below refuse and log a
+# missing deploy; an early exit here skipped the log line.
 CMD="$(basename "$0")"
 LOGFILE="${HOME}/Library/Logs/Chorus/shim-wrapper.log"
 

@@ -1,3 +1,4 @@
+// @domain: security
 //! #2311 rescope AC#2 — PreToolUse session_init_gate is binary:
 //! .pending exists AND .done missing → deny ALL Write/Edit/Bash.
 //! Zero exemptions for TZ=, wall-clock, session-start.sh, chorus-prompt.sh,

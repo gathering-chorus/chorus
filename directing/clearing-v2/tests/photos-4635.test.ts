@@ -83,7 +83,8 @@ describe('#4635 attach a photo', () => {
       expect(body.path.endsWith('.jpg')).toBe(true);
       expect(fs.existsSync(body.path)).toBe(true);
     } finally { await s.close(); }
-  });
+    // slow-by-design: two macOS sips runs (HEIC encode, then the JPEG convert under test), 0.6 s idle, over 5 s under nightly load (#4965)
+  }, 15000);
 
   test('a message that names a photo shows it in the room; one that does not shows none', () => {
     const p = `${DIR}/1760890000000.jpg`.replace(/.*\/(clearing-v2-uploads)[^/]*\//, '/Users/jeff/.chorus/$1/');

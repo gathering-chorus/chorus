@@ -1,3 +1,4 @@
+// @domain: security
 //! #3721 — RETIRED. This file tested `skills/demo/gates/preflight.sh`, which no
 //! longer exists: Wren's #3046 ("demo v2: werk-demo crate + retire v1
 //! gates/hooks") deleted the v1 gate scripts and moved demo preflight into the
