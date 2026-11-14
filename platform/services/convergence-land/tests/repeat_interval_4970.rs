@@ -37,3 +37,24 @@ fn negative_proof_a_hand_edited_repeat_reads_stale() {
     let d = drift(&want("bedroom-disk-full", Some("8760h")), &[rule("bedroom-disk-full", None)]);
     assert_eq!(d.stale.len(), 1, "a repeat removed by hand reads stale: {:?}", d.stale);
 }
+
+// #4970 AC5 — notify off rides on the rule as a label; a hand edit to it reads stale.
+fn labelled(uid: &str, notify: Option<&str>) -> Value {
+    let mut r = rule(uid, None);
+    if let Some(n) = notify { r["labels"]["notify"] = json!(n); }
+    r
+}
+
+#[test]
+fn notify_off_on_both_sides_is_not_stale() {
+    let d = drift(&[("buzz-shadow-not-matching".into(), labelled("buzz-shadow-not-matching", Some("off")))],
+                  &[labelled("buzz-shadow-not-matching", Some("off"))]);
+    assert!(d.stale.is_empty(), "{:?}", d.stale);
+}
+
+#[test]
+fn negative_proof_notify_turned_back_on_by_hand_reads_stale() {
+    let d = drift(&[("buzz-shadow-not-matching".into(), labelled("buzz-shadow-not-matching", Some("off")))],
+                  &[labelled("buzz-shadow-not-matching", None)]);
+    assert_eq!(d.stale, vec!["buzz-shadow-not-matching (labels/notify)".to_string()]);
+}

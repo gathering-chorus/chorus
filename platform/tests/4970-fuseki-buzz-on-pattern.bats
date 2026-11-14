@@ -8,8 +8,12 @@
 # with -Xmx3g and caps itself, so no size is a fault. The block is read from the
 # shipped script (never copied) and run with stub pass/warn/fail: a healthy 2.4 GB
 # and an over-heap 3.5 GB both pass with the size reported; a Fuseki missing from
-# the registry is still a fail (unmeasured is never fine). Buzz shadow (Wren's) is
-# added here when its change lands.
+# the registry is still a fail (unmeasured is never fine).
+#
+# Buzz shadow is recorded, never told, while PULSE_BUZZ_DELIVER is off (Wren's row,
+# her go 17:47): the land sets notify off on it, the ICD carries that onto the rule
+# as labels.notify, and the webhook records alert.quiet and nudges no one. The
+# webhook's both-ways proof is the jest suite this file runs.
 
 setup() {
   ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
@@ -48,4 +52,22 @@ judge() {
   { echo 'FUSEKI_MEM_CEILING_MB=2000'; awk '/^FUSEKI_LABEL=/,/^fi$/' "$TMPD/main.sh"; } > "$TMPD/block.sh"
   run judge '{"services":[{"label":"com.gathering.fuseki","rss_mb":2444}]}'
   [[ "$output" == warn* ]] || return 1
+}
+
+@test "Buzz shadow: the land sets notify off on Wren's row and re-lands its rule" {
+  L="$ROOT/platform/scripts/land-4970-rows"
+  grep -q 'BUZZ = "buzz-shadow-not-matching"' "$L" || return 1
+  grep -q '("alerts", BUZZ, {"notify": "off"})' "$L" || return 1
+  grep -q 'land_rule(BUZZ)' "$L" || return 1
+}
+@test "Buzz shadow: the ICD carries notify onto the rule's labels, and the shape takes only on or off" {
+  I="$ROOT/building/products/convergence/domains/integrations/icd-instances/icd-instance-grafana.ttl"
+  awk '/<icd\/mapping\/alerts\/notify> a icd:FieldMapping/,/fromProvider/' "$I" | grep -q 'icd:sourceField "labels.notify"' || return 1
+  grep -q 'sh:path chorus:notify ; sh:maxCount 1 ; sh:in ( "on" "off" )' "$ROOT/roles/silas/ontology/alerts-4085.ttl" || return 1
+}
+@test "Buzz shadow: the webhook records notify off and nudges no one; absent or on still tells (jest, both ways)" {
+  cd "$ROOT/platform/api"
+  run npx jest tests/handlers/grafana-alerts.test.ts -t 'notify'
+  [ "$status" -eq 0 ] || return 1
+  [[ "$output" == *"2 passed"* ]] || return 1
 }

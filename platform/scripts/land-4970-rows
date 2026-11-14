@@ -39,6 +39,9 @@ PLAN_DIR = os.path.join(land.ROOT, "designing/domains/monitors")
 SENSOR = os.path.join(PLAN_DIR, "infra-disk-sensor-4970.json")
 MONITOR = os.path.join(PLAN_DIR, "bedroom-disk-full-monitor-4970.json")
 RULE = "bedroom-disk-full"
+# AC5 (Wren's go 2026-11-14 17:47, her row): Buzz shadow is recorded, never told,
+# while PULSE_BUZZ_DELIVER is off. Its rule is re-landed so the label reaches Grafana.
+BUZZ = "buzz-shadow-not-matching"
 
 land.DOOR_CLASS = {"sensors": ("/v1/heralds/sensors", "heralds", "sensors"),
                    "monitors": ("/v1/monitors/monitors", "monitors", "monitors"),
@@ -68,26 +71,27 @@ def plan(_live):
     name = alert.pop("name")
     return [("sensors", monitor_alert.name_of(sensor), fields(sensor)),
             ("monitors", monitor_alert.name_of(monitor), fields(monitor)),
-            ("alerts", name, alert)]
+            ("alerts", name, alert),
+            ("alerts", BUZZ, {"notify": "off"})]
 
 
 land.plan = plan
 
 
-def land_rule():
-    r = subprocess.run([land.RUNNER, "call", "convergence-land-alert", f"alert={RULE}"], capture_output=True, text=True)
+def land_rule(name):
+    r = subprocess.run([land.RUNNER, "call", "convergence-land-alert", f"alert={name}"], capture_output=True, text=True)
     out = (r.stdout + r.stderr).strip()
     print(out.splitlines()[-1] if out else "convergence-land-alert: no output")
-    return r.returncode == 0 and f"landed {RULE}" in out
+    return r.returncode == 0 and f"landed {name}" in out
 
 
 def main(argv):
     rc = land.main(argv)
     if rc != 0 or "--apply" not in argv:
         if "--apply" not in argv:
-            print(f"then: convergence-land-alert alert={RULE} (not run in a dry run)")
+            print(f"then: convergence-land-alert for {RULE} and {BUZZ} (not run in a dry run)")
         return rc
-    return 0 if land_rule() else 1
+    return 0 if all([land_rule(RULE), land_rule(BUZZ)]) else 1
 
 
 if __name__ == "__main__":

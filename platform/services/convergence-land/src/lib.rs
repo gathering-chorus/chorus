@@ -189,11 +189,13 @@ pub struct Drift {
     pub stale: Vec<String>,
 }
 
-const COMPARED: [&str; 9] = [
+const COMPARED: [&str; 10] = [
     "/title", "/for", "/labels/role", "/labels/severity", "/labels/domain",
     "/annotations/summary", "/data/0/model/expr", "/data/0/datasourceUid",
     // #4970 — a monitor-made rule tells once; a hand edit to its wait reads stale (Kade)
     "/notification_settings/repeat_interval",
+    // #4970 AC5 — notify off is recorded, never told; a hand edit to it reads stale
+    "/labels/notify",
 ];
 
 /// #4690 — a Grafana duration ("0s", "5m", "1h30m") in seconds. Every part

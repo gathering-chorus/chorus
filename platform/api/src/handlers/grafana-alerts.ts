@@ -32,10 +32,11 @@ export interface RouteDeps {
 export interface RouteResult {
   routed: Array<{ role: string; text: string }>;
   unrouted: string[];
+  quiet: string[];
 }
 
 /** Labels that name the rule or its routing, not the series that fired. */
-const RULE_LABELS = new Set(['alertname', 'role', 'grafana_folder']);
+const RULE_LABELS = new Set(['alertname', 'role', 'grafana_folder', 'notify']);
 
 /**
  * The nudge text: the rule, the threshold and the values, nothing else.
@@ -62,11 +63,19 @@ export function alertText(a: GrafanaAlert): string {
 }
 
 export function routeGrafanaAlerts(payload: GrafanaPayload, deps: RouteDeps): RouteResult {
-  const result: RouteResult = { routed: [], unrouted: [] };
+  const result: RouteResult = { routed: [], unrouted: [], quiet: [] };
   for (const a of payload.alerts || []) {
     if (a.status !== 'firing') continue; // a resolved alert pages no one
     const name = a.labels?.alertname || 'unnamed alert';
     const role = a.labels?.role || '';
+    // #4970 — a rule whose Alert row says notify off is recorded, never told
+    // (Buzz shadow while PULSE_BUZZ_DELIVER is off: Wren, Jeff 2026-11-14 17:47).
+    // Grafana keeps its state and the spine keeps the firing; no one is nudged.
+    if (a.labels?.notify === 'off') {
+      result.quiet.push(name);
+      deps.spine('alert.quiet', { alertname: name, role: role || '(none)' });
+      continue;
+    }
     if (!(ALERT_ROLES as readonly string[]).includes(role)) {
       result.unrouted.push(name);
       deps.spine('alert.unrouted', { alertname: name, role: role || '(none)' });
