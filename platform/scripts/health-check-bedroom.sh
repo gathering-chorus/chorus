@@ -84,22 +84,10 @@ if [ "$NIFI_PID" = "0" ] || [ -z "$NIFI_PID" ]; then
   WARNINGS+=("NiFi process not running on Bedroom")
 fi
 
-# 4. Disk space on Bedroom external drives
-DISK_INFO=$(ssh -o ConnectTimeout=5 "$BEDROOM" "df -h /Volumes/VideosNew 2>/dev/null | tail -1 | awk '{print \$5}'" 2>/dev/null || echo "unknown")
-DISK_PCT="${DISK_INFO%%%}"
-# fire-on-change only: nudge when the % rises to a NEW level or hits critical
-# (>=95), not every hourly poll at the same level. Kills the repeat-nag for a
-# known, slowly-filling media volume while keeping the climb + critical loud.
-DISK_LAST="$HOME/.chorus/bedroom-disk-last-pct"
-if [ "$DISK_PCT" != "unknown" ] && [ "$DISK_PCT" -gt 90 ] 2>/dev/null; then
-  DISK_PREV=$(cat "$DISK_LAST" 2>/dev/null || echo 0)
-  if [ "$DISK_PCT" -gt "$DISK_PREV" ] || [ "$DISK_PCT" -ge 95 ]; then
-    WARNINGS+=("Bedroom external disk at ${DISK_PCT}%")
-    echo "$DISK_PCT" > "$DISK_LAST"
-  fi
-elif [ "$DISK_PCT" != "unknown" ]; then
-  rm -f "$DISK_LAST"  # recovered below 91 — reset so a future climb alerts fresh
-fi
+# 4. Disk fullness is not judged here (#4970). The infra-disk sensor points at
+#    node-exporter's exact numbers for every volume, the disk-full monitor holds
+#    the line (99%, Jeff 2026-11-14 17:02), and Grafana fires once and clears.
+#    This script's rounded df on one volume sent "95%" hourly for a disk at 94.06%.
 
 # 5. Memory pressure
 MEM_PRESSURE=$(ssh -o ConnectTimeout=5 "$BEDROOM" "memory_pressure 2>/dev/null | grep 'System-wide memory free percentage' | awk '{print \$NF}' | tr -d '%'" 2>/dev/null || echo "unknown")
@@ -111,7 +99,7 @@ fi
 TOTAL_ISSUES=$(( ${#FAILURES[@]} + ${#WARNINGS[@]} ))
 
 if [ $TOTAL_ISSUES -eq 0 ]; then
-  echo "OK: Bedroom healthy (SSH, node_exporter, services, disk)"
+  echo "OK: Bedroom healthy (SSH, node_exporter, services)"
   bash "$CHORUS_LOG" health.bedroom.ok silas 2>/dev/null || true
 else
   for f in "${FAILURES[@]}"; do

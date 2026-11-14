@@ -36,7 +36,8 @@
     icd:hasMapping <icd/mapping/alerts/forDuration> ;
     icd:hasMapping <icd/mapping/alerts/evalInterval> ;
     icd:hasMapping <icd/mapping/alerts/name> ;
-    icd:hasMapping <icd/mapping/alerts/contactPoint> .
+    icd:hasMapping <icd/mapping/alerts/contactPoint> ;
+    icd:hasMapping <icd/mapping/alerts/repeatInterval> .
 
 <icd/field/alerts/label> a icd:CanonicalField ;
     icd:fieldOrder 1 ;
@@ -245,4 +246,25 @@
     icd:transform "chorus-roles" ;
     icd:transformType "constant" ;
     icd:fieldDescription "Where a firing goes: pulse via the #4666 webhook, never a second path" ;
+    icd:fromProvider <icd/provider/grafana/alert-rules> .
+
+# #4970 — an alert made from a monitor tells once (Jeff 2026-11-14: "It arrives
+# once, and it stops when the thing is fixed"). The root policy re-sends a firing
+# rule every 4h; a row that carries repeatInterval sets the rule's own
+# notification_settings.repeat_interval instead. A row without it is unchanged.
+<icd/field/alerts/repeatInterval> a icd:CanonicalField ;
+    icd:fieldOrder 12 ;
+    icd:canonicalName "repeatInterval" ;
+    icd:displayName "repeatInterval" ;
+    icd:datatype "xsd:string" ;
+    icd:fieldTypeDescription "How long Grafana waits before telling again about a rule still firing" .
+
+<icd/mapping/alerts/repeatInterval> a icd:FieldMapping ;
+    icd:mappingOrder 12 ;
+    icd:sourceTable "alert-rule" ;
+    icd:sourceField "notification_settings.repeat_interval" ;
+    icd:mapsTo <icd/field/alerts/repeatInterval> ;
+    icd:mapsToName "repeatInterval" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "How long Grafana waits before telling again about a rule still firing" ;
     icd:fromProvider <icd/provider/grafana/alert-rules> .

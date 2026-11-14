@@ -82,11 +82,15 @@ chorus:readingRun a owl:ObjectProperty ; rdfs:label "run" ; rdfs:domain chorus:S
 
 chorus:SensorShape a sh:NodeShape ;
     sh:targetClass chorus:Sensor ; sh:node chorus:CoreShape ;
+    sh:sparql chorus:SensorPointsSomewhere ;
     chorus:instancesGraph "urn:chorus:domains:heralds" ;
     chorus:generatedBy "athena-model" ;
-    sh:property [ sh:path chorus:sensorPass ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "files" "code" "services" "stores" "infra" "messages" "events" "spine" "sync" ) ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:sensorPass ; sh:maxCount 1 ; sh:in ( "files" "code" "services" "stores" "infra" "messages" "events" "spine" "sync" ) ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:sensorReads ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:sensorWrites ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:sensorSource ; sh:maxCount 1 ; sh:in ( "grafana" ) ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:sensorDatasource ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:sensorQuery ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:takesTarget ; sh:maxCount 1 ; sh:datatype xsd:boolean ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:sensorWindowMinutes ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal ] .
@@ -120,3 +124,30 @@ chorus:SensorReadingShape a sh:NodeShape ;
     sh:property [ sh:path chorus:readingUnit ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "count" "bytes" "hours" ) ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:readingRun ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:SensorRun ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:ownedBy ; sh:class chorus:Principal ] .
+
+# #4970 — a sensor can point at Grafana (Jeff, 2026-11-14 17:34: "the sensor is a
+# pointer to Grafana"; 17:35: "we don't build the actual implementation of the
+# monitor, the alert that lives in Grafana"). A pointer copies no data: it names
+# a Grafana datasource and the query that reads it. A sensor is either a
+# chorus-crawl pass (sensorPass) or a Grafana pointer (sensorSource grafana with
+# a datasource and a query), never neither. The door has no sh:or, so the rule
+# is a SPARQL constraint on the shape (the #4942 pattern).
+chorus:sensorSource a owl:DatatypeProperty ; rdfs:label "source" ; rdfs:domain chorus:Sensor ; rdfs:range xsd:string ;
+    rdfs:comment "Where the sensor reads from when it is not a chorus-crawl pass: grafana, a pointer to a Grafana datasource and query (#4970)." .
+chorus:sensorDatasource a owl:DatatypeProperty ; rdfs:label "datasource" ; rdfs:domain chorus:Sensor ; rdfs:range xsd:string ;
+    rdfs:comment "The Grafana datasource uid a grafana sensor reads (prometheus, loki)." .
+chorus:sensorQuery a owl:DatatypeProperty ; rdfs:label "query" ; rdfs:domain chorus:Sensor ; rdfs:range xsd:string ;
+    rdfs:comment "The PromQL or LogQL a grafana sensor points at. It returns the measured value with no threshold; the monitor holds the line." .
+
+chorus:SensorPointsSomewhere a sh:SPARQLConstraint ;
+    sh:message "a sensor is a chorus-crawl pass (sensorPass) or a Grafana pointer (sensorSource grafana with sensorDatasource and sensorQuery) (#4970)" ;
+    sh:select """
+        SELECT $this ?value WHERE {
+          OPTIONAL { $this <https://jeffbridwell.com/chorus#sensorSource> ?src }
+          OPTIONAL { $this <https://jeffbridwell.com/chorus#sensorPass> ?pass }
+          OPTIONAL { $this <https://jeffbridwell.com/chorus#sensorDatasource> ?ds }
+          OPTIONAL { $this <https://jeffbridwell.com/chorus#sensorQuery> ?q }
+          FILTER( (BOUND(?src) && (!BOUND(?ds) || !BOUND(?q) || STR(?q) = "" || BOUND(?pass)))
+               || (!BOUND(?src) && !BOUND(?pass)) )
+          BIND(IF(BOUND(?src), "grafana sensor without a datasource and query, or with a pass", "neither a pass nor a source") AS ?value)
+        }""" .
