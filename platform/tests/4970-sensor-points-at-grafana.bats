@@ -11,13 +11,31 @@
 setup_file() {
   ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
   export TMPD="$(mktemp -d)"
+  # the fixture lives here, not under platform/tests/fixtures: a non-bats file there
+  # selects platform/tests' cucumber package, which jest cannot measure (#4970 run 1)
+  cat > "$TMPD/fixture.ttl" <<'TTL'
+# #4970 — fixture for SensorPointsSomewhere: sensors that must conform and ones
+# that must be refused. Names are the expected verdicts' keys.
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+chorus:sensor-files a chorus:Sensor ; chorus:sensorPass "files" .
+chorus:sensor-grafana a chorus:Sensor ; chorus:sensorSource "grafana" ;
+    chorus:sensorDatasource "prometheus" ; chorus:sensorQuery "100 * (1 - node_filesystem_avail_bytes / node_filesystem_size_bytes)" .
+# refused: grafana with no query (the AC's case)
+chorus:sensor-noquery a chorus:Sensor ; chorus:sensorSource "grafana" ; chorus:sensorDatasource "prometheus" .
+# refused: grafana with no datasource
+chorus:sensor-nods a chorus:Sensor ; chorus:sensorSource "grafana" ; chorus:sensorQuery "up" .
+# refused: grafana with an empty query
+chorus:sensor-emptyq a chorus:Sensor ; chorus:sensorSource "grafana" ; chorus:sensorDatasource "prometheus" ; chorus:sensorQuery "" .
+# refused: neither a pass nor a source
+chorus:sensor-nothing a chorus:Sensor ; chorus:sensorWindowMinutes 60 .
+TTL
   command -v shacl >/dev/null || { echo "Jena shacl not on PATH" >&2; return 1; }
   export ONT="$ROOT/roles/silas/ontology/sensors-4405.ttl"
   awk '/^chorus:SensorPointsSomewhere a sh:SPARQLConstraint/,/""" \./' "$ONT" > "$TMPD/rule.ttl"
   { printf '@prefix chorus: <https://jeffbridwell.com/chorus#> .\n@prefix sh: <http://www.w3.org/ns/shacl#> .\n'
     printf 'chorus:SensorPointsTest a sh:NodeShape ; sh:targetClass chorus:Sensor ; sh:sparql chorus:SensorPointsSomewhere .\n'
     cat "$TMPD/rule.ttl"; } > "$TMPD/shapes.ttl"
-  shacl validate --shapes "$TMPD/shapes.ttl" --data "$ROOT/platform/tests/fixtures/sensor-points-4970.ttl" > "$TMPD/report.ttl" 2>"$TMPD/err" || true
+  shacl validate --shapes "$TMPD/shapes.ttl" --data "$TMPD/fixture.ttl" > "$TMPD/report.ttl" 2>"$TMPD/err" || true
   sparql --data "$TMPD/report.ttl" --results TSV 'PREFIX sh: <http://www.w3.org/ns/shacl#>
     SELECT DISTINCT ?f WHERE { ?r a sh:ValidationResult ; sh:focusNode ?f }' | tail -n +2 | sed 's|.*#sensor-||; s|>||' | sort > "$TMPD/refused"
 }
