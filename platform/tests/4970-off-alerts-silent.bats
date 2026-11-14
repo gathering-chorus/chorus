@@ -1,0 +1,44 @@
+#!/usr/bin/env bats
+# @test-type: unit — drives the real ops-nudge with a stub shim and a file:// door; no pulse, no store
+# @domain: alerts
+# @card: #4970 · owner: silas
+# Checks platform/scripts/ops-nudge and the AC6 list on #4970.
+#
+# #4970 AC6 — after the land every OFF alert notifies no one. One field does it for
+# both kinds: an Alert row with notify off. Grafana alerts honour it in the webhook
+# (AC5, jest); script alerts honour it here, at ops-nudge, the one way an ops
+# script sends. A notify-off firing is recorded (alert.quiet) and nothing is sent;
+# a row without it, or a door that cannot be read, still sends (fail open).
+
+setup() {
+  ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
+  T="$BATS_TEST_TMPDIR"
+  # stub shim: records what it was asked to do
+  printf '#!/bin/sh\necho "$@" >> "%s/shim.log"\n' "$T" > "$T/shim"; chmod +x "$T/shim"
+  mkdir -p "$T/door"
+  printf '{"data":{"notify":"off"}}' > "$T/door/lancedb-stale"
+  printf '{"data":{"alertSource":"script"}}' > "$T/door/loki-refusing"
+  unset CHORUS_ROLE
+}
+
+send() { env CHORUS_HOOK_SHIM="$T/shim" ALERTS_DOOR="${DOOR:-file://$T/door}" bash "$ROOT/platform/scripts/ops-nudge" silas "$1"; }
+
+@test "an alert whose row says notify off sends nothing and is recorded as alert.quiet" {
+  run send "lancedb-stale: dir=/x age=5201h"
+  [ "$status" -eq 0 ]
+  ! grep -q 'nudge-send' "$T/shim.log" || return 1
+  grep -q 'chorus-log alert.quiet system alertname=lancedb-stale to=silas' "$T/shim.log" || return 1
+}
+@test "NEGATIVE PROOF: an alert whose row has no notify still sends" {
+  run send "loki-refusing: refused=11 of 460"
+  [ "$status" -eq 0 ]
+  grep -q 'nudge-send system silas loki-refusing: refused=11 of 460' "$T/shim.log" || return 1
+}
+@test "NEGATIVE PROOF: a door that cannot be read silences nothing (fails open)" {
+  DOOR="http://127.0.0.1:9/owl/v1/alerts/alerts" run send "lancedb-stale: dir=/x"
+  grep -q 'nudge-send system silas lancedb-stale: dir=/x' "$T/shim.log" || return 1
+}
+@test "a message with no row-name prefix is sent as before" {
+  run send "free text with no prefix"
+  grep -q 'nudge-send system silas free text with no prefix' "$T/shim.log" || return 1
+}
