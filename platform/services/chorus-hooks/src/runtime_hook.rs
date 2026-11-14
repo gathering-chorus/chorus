@@ -161,15 +161,17 @@ fn redact_metadata(value: &mut Value) {
     }
 }
 
-/// `runtime` is the tool vocabulary (normalize_tools keys on it); `source` is the name
-/// stamped on the event. #4965 — a row runtime (antigravity) speaks the `external`
-/// vocabulary but must be stamped as itself, or its turns all read as "external" and
-/// the index's antigravity source goes dead.
+/// `runtime` is the tool vocabulary (normalize_tools keys on it) and the runtime the
+/// session enrolled with: chorus-agent refuses an event whose `runtime` differs from it.
+/// #4965 — a row runtime (antigravity) speaks the `external` vocabulary; its own name
+/// rides apart as `source`, never in place of `runtime` (the review found every agy
+/// observation refused when it did). The index takes the source from evaluate_as.
 fn observation_data(runtime: &str, source: &str, ev: Event, raw: &Value, decision: &Decision) -> Value {
     let runtime = match runtime { "claude-code" => "claude", "openai-compatible" => "external", other => other };
     let source = if source == runtime || source == "claude-code" || source == "openai-compatible" { runtime } else { source };
-    let mut data = json!({"runtime":source,
-        "decision":if decision.denied {"deny"} else {"allow"},"reason":decision.reason});
+    let stamp = |mut d: Value| { if source != runtime { d["source"] = json!(source); } d };
+    let mut data = stamp(json!({"runtime":runtime,
+        "decision":if decision.denied {"deny"} else {"allow"},"reason":decision.reason}));
     if matches!(ev, Event::Before | Event::After) {
         let cwd = raw.get("cwd").and_then(Value::as_str).map(str::to_string)
             .or_else(||std::env::current_dir().ok().map(|p|p.to_string_lossy().into_owned())).unwrap_or_default();
@@ -193,7 +195,7 @@ fn observation_data(runtime: &str, source: &str, ev: Event, raw: &Value, decisio
     // Avoid unbounded private journals. Truncated arguments/output are not
     // treated as complete evidence for gates.
     if data.to_string().len() > 256 * 1024 {
-        return json!({"runtime":source,"decision":if decision.denied {"deny"} else {"allow"},"evidence_unavailable":true,"evidence_reason":"native observation exceeds 256 KiB"});
+        return stamp(json!({"runtime":runtime,"decision":if decision.denied {"deny"} else {"allow"},"evidence_unavailable":true,"evidence_reason":"native observation exceeds 256 KiB"}));
     }
     data
 }
@@ -451,16 +453,27 @@ mod tests {
     }
     #[test]
     fn a_row_runtime_is_stamped_as_itself_and_keeps_its_operations_4965() {
-        // #4965 NEGATIVE PROOF: an antigravity row event (canon already in the external
-        // vocabulary) is stamped runtime=antigravity, with its operations present; the
-        // same event stamped as its vocabulary would read "external" (the dead source).
+        // #4965 review fix: chorus-agent refuses an event whose data.runtime is not the
+        // session's enrolled runtime (chorus-agent server.rs publish_event; its Runtime enum
+        // is claude|codex|opencode|gemini|external). An antigravity row's observation keeps
+        // its enrolled runtime ("external") and names its row source apart; the index reads
+        // the source from the turn payload (evaluate_as), not from these events.
+        let enrolled = ["claude", "codex", "opencode", "gemini", "external"];
         let raw=json!({"cwd":"/workspace","tool_name":"Bash","tool_input":{"command":"ls"}});
         let data=observation_data("external","antigravity",Event::Before,&raw,&Decision::default());
-        assert_eq!(data["runtime"],"antigravity");
+        assert_eq!(data["runtime"],"external", "chorus-agent would refuse: {data}");
+        assert_eq!(data["source"],"antigravity");
         assert_eq!(data["operations"][0]["tool_input"]["command"],"ls", "operations lost: {data}");
         assert!(data.get("evidence_unavailable").is_none(), "evidence lost: {data}");
+        // the over-256-KiB path keeps the same pair
+        let big=json!({"cwd":"/workspace","tool_name":"Bash","tool_input":{"command":"x".repeat(300*1024)}});
+        let cut=observation_data("external","antigravity",Event::Before,&big,&Decision::default());
+        assert_eq!(cut["evidence_unavailable"],true);
+        assert_eq!((cut["runtime"].as_str(), cut["source"].as_str()), (Some("external"), Some("antigravity")), "{cut}");
+        for d in [&data, &cut] { assert!(enrolled.contains(&d["runtime"].as_str().unwrap()), "not an enrolled runtime: {d}"); }
         let old=observation_data("external","external",Event::Before,&raw,&Decision::default());
         assert_eq!(old["runtime"],"external");
+        assert!(old.get("source").is_none(), "a runtime that is its own source needs no source field: {old}");
         // a typed runtime still maps as before
         assert_eq!(observation_data("claude-code","claude-code",Event::Prompt,&json!({}),&Decision::default())["runtime"],"claude");
     }

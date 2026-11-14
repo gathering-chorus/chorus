@@ -1856,6 +1856,10 @@ fn seen(ctx: &Ctx, role: &str) -> i32 {
     // check (exit 2 on a Stop hook means "keep going", and its curl would sit on every
     // turn end) and no second read of a prompt already handled when it arrived
     if rows::is_turn_end(&input) { return stamp_seen(ctx, role, &rows::turn_facts(&input).0, "turn", false); }
+    // #4965 review fix — a runtime whose before-prompt hook fires per model call (agy):
+    // only the turn's first call is the turn; later calls stamp, check and log nothing
+    let row = rows::runtime_for(&rows::runtime_table(), role).map(|(_, r)| r);
+    if rows::later_model_call(&input, row.as_ref()) { return 0; }
     // #4385 — revocation bites on the next turn, not at the next login: the
     // turn is refused (exit 2 stops the prompt), and it says why once
     let marker = PathBuf::from(&ctx.identity_dir).join(role).join("revoked");
@@ -1870,13 +1874,14 @@ fn seen(ctx: &Ctx, role: &str) -> i32 {
             return 2;
         }
     }
-    let row = rows::runtime_for(&rows::runtime_table(), role).map(|(_, r)| r);
     let (conv, delivered) = rows::turn_facts_on(&input, row.as_ref());
+    // the prompt through the row (agy's input carries none): who spoke, and what arrived
+    let prompt = rows::prompt_on(&input, row.as_ref());
     // #4339 — Jeff spoke: this turn always writes, so the session says when
-    let jeff = rows::speaker(&input) == rows::Speaker::Jeff;
+    let jeff = rows::speaker_of(&prompt) == rows::Speaker::Jeff;
     // #4340 — keep what actually arrived, so the projector can tell a message
     // that landed cut from one that landed whole (pulse cannot see that)
-    log_received(ctx, role, &input);
+    log_received(ctx, role, &prompt);
     let flag = if delivered { "delivered" } else if jeff { "jeff" } else { "turn" };
     stamp_seen(ctx, role, &conv, flag, delivered || jeff)
 }
@@ -1965,9 +1970,8 @@ fn store_line(listing: &str, session: Option<&str>) -> Option<String> {
 }
 
 /// Append this turn's prompt to identity/<role>/received.jsonl (last 200 kept).
-fn log_received(ctx: &Ctx, role: &str, hook_input: &str) {
-    let v: Value = serde_json::from_str(hook_input).unwrap_or(Value::Null);
-    let Some(prompt) = v.get("prompt").and_then(|p| p.as_str()) else { return };
+fn log_received(ctx: &Ctx, role: &str, prompt: &str) {
+    if prompt.is_empty() { return; }
     let path = PathBuf::from(&ctx.identity_dir).join(role).join("received.jsonl");
     let mut lines: Vec<String> = fs::read_to_string(&path).unwrap_or_default().lines().map(String::from).collect();
     lines.push(serde_json::json!({"at": iso_utc(now_ms() as u64 / 1000), "text": prompt}).to_string());

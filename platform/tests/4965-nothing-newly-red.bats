@@ -16,36 +16,42 @@ fixture() {  # fixture <dir> <kind|path|owner|verdict ...>
 
 # AC3 as narrowed by Jeff 13:01: the three reds this card's own code caused in proof run
 # 034wwPUt pass, and the three stretched waits are back at their old budgets.
-STRETCH_4965=fec2ec7af   # the commit that stretched them
 # Jeff 13:24: headless-connect-4886 and photos-4635 stay at 15 s, named on the card
-# (the test-quality gate refuses any edit to them); only jeff-input-delivery goes back
-WAIT_FILES_4965='directing/clearing/tests/jeff-input-delivery.test.ts'
+# (the test-quality gate refuses any edit to them); only jeff-input-delivery goes back.
+# Read in the file itself, never from a commit hash a squash land would lose (review, 20:16):
+# its audit() polls 20 times at 25 ms, the budget before the stretch.
+WAIT_FILE_4965='directing/clearing/tests/jeff-input-delivery.test.ts'
+WAIT_BUDGET_4965='20 25'
 
-# waits_stretched <repo> <rev> — each wait file that differs at <rev> from before the stretch
-waits_stretched() {
-  local f
-  printf '%s\n' "$WAIT_FILES_4965" | while read -r f; do
-    git -C "$1" diff --quiet "$STRETCH_4965^" "$2" -- "$f" || echo "$f"
-  done
+# wait_budget <file> — "<polls> <ms>" of the file's audit() poll loop; empty when there is none
+wait_budget() {
+  awk '/const audit = async/{a=1}
+       a && match($0, /i < [0-9]+;/) { n=substr($0, RSTART, RLENGTH); gsub(/[^0-9]/, "", n) }
+       a && match($0, /setTimeout\(r, [0-9]+\)/) { m=substr($0, RSTART, RLENGTH); gsub(/[^0-9]/, "", m); print n, m; exit }' "$1"
 }
 
 # bats_red <bats args> — the bats output when it does not pass; empty when it does
 bats_red() { local out; out="$(bats "$@" 2>&1)" && return 0; echo "$out" | grep -E '^not ok|^#' | head -20; [ -n "$out" ] || echo "bats $* failed"; }
 
-@test "AC3 (narrowed, Jeff 13:01): the card's three code reds pass — 4915-quartet-pattern, and 4145 AC7 under an outer run's TRACE" {
+@test "AC3 (narrowed, Jeff 13:01): the card's three code reds pass — 4915-quartet-pattern, 4915-older-reds, and 4145 AC7 under an outer run's TRACE" {
   out="$(bats_red "$WERK/platform/tests/4915-quartet-pattern.bats")"
+  [ -z "$out" ] || { echo "$out"; return 1; }
+  out="$(bats_red "$WERK/platform/tests/4915-older-reds.bats")"
   [ -z "$out" ] || { echo "$out"; return 1; }
   out="$(TRACE=kade4965all1794583436 bats_red -f 'AC7' "$WERK/platform/tests/4145-runner-owns-the-run.bats")"
   [ -z "$out" ] || { echo "$out"; return 1; }
 }
 
 @test "AC3 (narrowed, Jeff 13:01, 13:24): the jeff-input-delivery wait is back at its old budget" {
-  out="$(waits_stretched "$WERK" HEAD)"
-  [ -z "$out" ] || { echo "still stretched since $STRETCH_4965:"; echo "$out"; return 1; }
+  got="$(wait_budget "$WERK/$WAIT_FILE_4965")"
+  [ "$got" = "$WAIT_BUDGET_4965" ] || { echo "$WAIT_FILE_4965 audit() waits '${got:-no audit loop}', not '$WAIT_BUDGET_4965'"; return 1; }
 }
 
-@test "AC3 NEGATIVE PROOF: the stretch commit itself reads jeff-input stretched; a failing bats is named" {
-  [ "$(waits_stretched "$WERK" "$STRETCH_4965")" = directing/clearing/tests/jeff-input-delivery.test.ts ]
+@test "AC3 NEGATIVE PROOF: a stretched or missing wait is named; a failing bats is named" {
+  sed 's/i < 20;/i < 200;/; s/setTimeout(r, 25)/setTimeout(r, 250)/' "$WERK/$WAIT_FILE_4965" > "$BATS_TEST_TMPDIR/stretched.ts"
+  [ "$(wait_budget "$BATS_TEST_TMPDIR/stretched.ts")" = "200 250" ] || return 1
+  printf 'const x = 1;\n' > "$BATS_TEST_TMPDIR/none.ts"
+  [ -z "$(wait_budget "$BATS_TEST_TMPDIR/none.ts")" ] || return 1
   printf '@test "planted" { false; }\n' > "$BATS_TEST_TMPDIR/red.bats"
   [[ "$(bats_red "$BATS_TEST_TMPDIR/red.bats")" == *"not ok 1 planted"* ]] || return 1
   printf '@test "planted" { true; }\n' > "$BATS_TEST_TMPDIR/green.bats"

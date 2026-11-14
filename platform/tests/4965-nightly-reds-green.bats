@@ -5,6 +5,8 @@
 # AC1 (narrowed by Jeff 2026-11-13 13:01, Wren 13:07): the 18 nightly reds proof run
 # 034wwPUt showed green pass there. The run must have tested this werk (AC7's root) at a
 # commit HEAD descends from, and every file changed since must be on the after-proof list.
+# After the land (Wren 20:20): on any other tree it reads the newest finished run of that
+# tree at a head holding these checks (ac_run); before the first such run it skips, saying so.
 
 load "$BATS_TEST_DIRNAME/../../platform/tests/lib/card-run-4965.bash"
 WERK="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
@@ -15,10 +17,45 @@ fixture() {  # fixture <dir> <kind|path|owner|verdict ...>
 }
 
 @test "AC1 (narrowed, Jeff 13:01): the 18 proven suites pass in proof run 034wwPUt, and the werk moved past it only by the listed files" {
-  run proof_run "$WERK" "$PROOF_4965"
+  run ac_run "$WERK"
+  [ "$status" -eq 3 ] && skip "$output"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   bad="$(proven_not_pass "$output")"
-  [ -z "$bad" ] || { echo "not a pass in $PROOF_4965:"; echo "$bad"; return 1; }
+  [ -z "$bad" ] || { echo "not a pass in $output:"; echo "$bad"; return 1; }
+}
+
+# a tree like canonical after the land: a git repo holding the check file, and a runs dir
+landed() {  # landed <dir> — prints "<tree> <runs> <head>"
+  local t="$1/tree" r="$1/runs"; mkdir -p "$t/platform/tests/lib" "$r"; git -C "$t" init -q
+  echo x > "$t/a"; git -C "$t" add -A; git -C "$t" -c user.email=t@x.invalid -c user.name=t commit -qm before
+  local before; before=$(git -C "$t" rev-parse HEAD)
+  echo lib > "$t/platform/tests/lib/card-run-4965.bash"; git -C "$t" add -A
+  git -C "$t" -c user.email=t@x.invalid -c user.name=t commit -qm land
+  echo "$t $r $before $(git -C "$t" rev-parse HEAD)"
+}
+nightly() {  # nightly <runs> <name> <tree> <head> <one red key or ""> — a finished run of all 18
+  local d="$1/$2" rows=() k; while read -r k; do
+    if [ "$k" = "$5" ]; then rows+=("$k|kade|fail"); else rows+=("$k|kade|pass"); fi
+  done <<< "$PROVEN_4965"
+  fixture "$d" "${rows[@]}"; echo finished > "$d/suites-perf"; echo "$3" > "$d/root"; echo "$4" > "$d/head"
+}
+
+@test "AC1 after the land: the newest run at a head holding the checks is read; one of the 18 red there fails" {
+  read -r t r before head <<< "$(landed "$BATS_TEST_TMPDIR")"
+  PROOF_4965="$BATS_TEST_TMPDIR/no-proof-run"; RUNS_4965="$r"
+  # only a run from before the land: nothing to read yet — skip, never a pass or a false red
+  nightly "$r" n0 "$t" "$before" ""
+  run ac_run "$t"; [ "$status" -eq 3 ] && [[ "$output" == *"first nightly after the land"* ]] || { echo "$status $output"; return 1; }
+  # NEGATIVE PROOF: the first run after the land has one of the 18 red; it is read and named
+  sleep 1; nightly "$r" n1 "$t" "$head" "npm|platform/pulse"
+  run ac_run "$t"; [ "$status" -eq 0 ] && [ "$output" = "$r/n1" ] || { echo "$status $output"; return 1; }
+  [ "$(proven_not_pass "$output")" = "npm|platform/pulse fail" ] || return 1
+  # a run of another tree is never read
+  sleep 1; nightly "$r" other /some/other/tree "$head" ""
+  run ac_run "$t"; [ "$output" = "$r/n1" ] || { echo "$output"; return 1; }
+  # control: the next run, all 18 green, passes
+  sleep 1; nightly "$r" n2 "$t" "$head" ""
+  run ac_run "$t"; [ -z "$(proven_not_pass "$output")" ] || return 1
 }
 
 @test "AC1 NEGATIVE PROOF: a proof run whose head is not an ancestor, or a later change off the list, is refused" {

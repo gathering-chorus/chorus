@@ -15,7 +15,8 @@ fixture() {  # fixture <dir> <kind|path|owner|verdict ...>
 
 @test "AC4: the nightly's unowned suites name an owner in this werk's all-scope run" {
   [ "$(red_unowned "$NIGHTLY_4965" | wc -l | tr -d ' ')" -eq 5 ] || { echo "the nightly no longer lists five red unowned suites: $(red_unowned "$NIGHTLY_4965" | paste -sd, -)"; return 1; }
-  run proof_run "$WERK" "$PROOF_4965"   # the same run AC1 reads (Wren 13:07)
+  run ac_run "$WERK"   # the same run AC1 reads (Wren 13:07); after the land, the nightly's (20:20)
+  [ "$status" -eq 3 ] && skip "$output"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   left="$(still_unowned "$NIGHTLY_4965" "$output")"
   [ -z "$left" ] || { echo "still unowned:"; echo "$left"; return 1; }

@@ -402,4 +402,26 @@ describe('createIndexAllSources', () => {
       fs: EMPTY_FS as any, path: FAKE_PATH as any, repoRoot: '/r', homedir: () => '/h' })();
     expect(r.indexed['external-fold']).toMatch(/^error: runtime table unreadable/);
   });
+
+  // #4965 review fix — the fold ran unguarded after every source had indexed: one SQLite
+  // error (a busy or locked store) threw out of the pass, losing its results and its close.
+  it('NEGATIVE PROOF: a SQLite error in the fold is named on the fold; the pass still reports and closes', async () => {
+    const { ctor } = fakeDbFactory();
+    const closes: jest.Mock[] = [];
+    const busy = jest.fn((p: string) => {
+      const db = ctor(p) as any;
+      const prepare = db.prepare;
+      db.prepare = (sql: string) => {
+        if (sql.startsWith('UPDATE messages SET source')) return { run: () => { throw new Error('SQLITE_BUSY: database is locked'); }, get: () => undefined };
+        return prepare(sql);
+      };
+      closes.push(db.close);
+      return db;
+    });
+    const r = await createIndexAllSources({ dbPath: '/db', DatabaseCtor: busy as any,
+      fs: tableFs(TABLE) as any, path: FAKE_PATH as any, repoRoot: '/r', homedir: () => '/h' })();
+    expect(r.indexed['external-fold']).toBe('error: SQLITE_BUSY: database is locked');
+    expect(r.indexed._coverage).toBeDefined();
+    expect(closes[0]).toHaveBeenCalled();
+  });
 });

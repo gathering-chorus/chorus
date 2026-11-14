@@ -8,9 +8,28 @@
 #   - no changed test file has fewer cases than on main (bats @test, it/test(, #[test])
 #   - no added skip (bats `skip`, .skip(, xit(, #[ignore])
 #   - no floor in coverage-floors.yml lowered
+#   - no limit a test holds (`NAME=<number>`, NAME naming LINES, LIMIT, MAX, CEILING, BUDGET
+#     or THRESHOLD) raised, unless the raise is on RAISED_OK_4965 with the decision that made it
 # A test corrected because it was wrong keeps its case count and its negative proof.
 
 WERK="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
+
+# the raises Jeff decided, one per line: "<file> <NAME> <old> <new> — <decision>"
+RAISED_OK_4965='platform/tests/4490-v1-freeze.test.sh FROZEN_LINES 10323 10988 — Jeff 2026-11-13 07:57, decision 2'
+
+# limits — "NAME value" for each limit held in the text on stdin
+limits() { grep -oE '^[[:space:]]*(readonly |local |export )?[A-Z_]*(LINES|LIMIT|MAX|CEILING|BUDGET|THRESHOLD)[A-Z_]*=[0-9]+' | sed -E 's/^[[:space:]]*(readonly |local |export )?//; s/=/ /'; }
+
+# raised <repo> <base> <file> — "limit raised: ..." for each raise not on RAISED_OK_4965
+raised() {
+  local name old new
+  while read -r name old; do
+    new=$(limits < "$1/$3" | awk -v n="$name" '$1==n{print $2; exit}')
+    [ -n "$new" ] && [ "$new" -gt "$old" ] || continue
+    printf '%s\n' "$RAISED_OK_4965" | grep -qE "^$3 $name $old $new( |$)" && continue
+    echo "limit raised: $3 $name $old -> $new"
+  done < <(git -C "$1" show "$2:$3" 2>/dev/null | limits)
+}
 
 is_test() { case "$1" in */fixtures/*) return 1;; *.bats|*.test.*|*.spec.*|*/tests/*.rs) return 0;; esac; return 1; }
 cases() { grep -cE '^[[:space:]]*@test |^[[:space:]]*(it|test)(\.each\([^)]*\))?\(|#\[test\]|#\[tokio::test' || true; }
@@ -21,10 +40,13 @@ loosened() {
   git -C "$repo" diff --name-status "$base"...HEAD | while IFS=$'\t' read -r st f _; do
     is_test "$f" || continue
     case "$st" in
-      D) echo "deleted: $f";;
+      # a deleted test file loosens nothing only when it held no case (Wren 20:24: the two
+      # Rust test files this card deletes were one empty and one of comments asking for it)
+      D) b=$(git -C "$repo" show "$base:$f" 2>/dev/null | cases); [ "${b:-0}" -eq 0 ] || echo "deleted: $f ($b cases)";;
       M*|R*)
         b=$(git -C "$repo" show "$base:$f" 2>/dev/null | cases); h=$(cases < "$repo/$f")
         [ "${h:-0}" -ge "${b:-0}" ] || echo "fewer cases: $f ($b -> $h)"
+        raised "$repo" "$base" "$f"
         git -C "$repo" diff "$base"...HEAD -- "$f" | grep -E '^\+' | grep -vE '^\+\+\+' \
           | grep -qE '^\+[[:space:]]*skip( |$)|\.skip\(|(^|[^a-z])xit\(|#\[ignore' && echo "skip added: $f";;
     esac
@@ -56,18 +78,36 @@ loosened() {
   printf 'floors:\n  platform/pulse: 80\n' > coverage-floors.yml
   git add -A; git commit -qm loosen
   out="$(loosened "$r" "$base")"
-  [[ "$out" == *"deleted: platform/tests/gone.bats"* ]] || { echo "$out"; return 1; }
+  [[ "$out" == *"deleted: platform/tests/gone.bats (1 cases)"* ]] || { echo "$out"; return 1; }
   [[ "$out" == *"fewer cases: platform/tests/two.bats (2 -> 1)"* ]] || { echo "$out"; return 1; }
   [[ "$out" == *"skip added: platform/tests/skipme.bats"* ]] || { echo "$out"; return 1; }
   [[ "$out" == *"floor lowered: platform/pulse 95 -> 80"* ]] || { echo "$out"; return 1; }
+}
+
+@test "AC2 NEGATIVE PROOF: a raised limit fails unless it is the listed raise, at its listed values" {
+  r="$BATS_TEST_TMPDIR/r3"; mkdir -p "$r/platform/tests"; cd "$r"; git init -q
+  git config user.email t@x.invalid; git config user.name t
+  printf 'FROZEN_LINES=10323  # a ceiling\n' > platform/tests/4490-v1-freeze.test.sh
+  printf 'readonly MAX_SECONDS=30\n@test "t" { true; }\n' > platform/tests/other.bats
+  git add -A; git commit -qm base; base=$(git rev-parse HEAD)
+  printf 'FROZEN_LINES=10988  # raised\n' > platform/tests/4490-v1-freeze.test.sh
+  printf 'readonly MAX_SECONDS=60\n@test "t" { true; }\n' > platform/tests/other.bats
+  git add -A; git commit -qm raise
+  out="$(loosened "$r" "$base")"
+  [[ "$out" == "limit raised: platform/tests/other.bats MAX_SECONDS 30 -> 60" ]] || { echo "only the unlisted raise should be named: $out"; return 1; }
+  # the listed raise at other values is not the decided one
+  printf 'FROZEN_LINES=11000\n' > platform/tests/4490-v1-freeze.test.sh; git commit -qam more
+  [[ "$(loosened "$r" "$base")" == *"limit raised: platform/tests/4490-v1-freeze.test.sh FROZEN_LINES 10323 -> 11000"* ]] || return 1
 }
 
 @test "AC2 control: a corrected test that keeps its cases, and a raised floor, pass" {
   r="$BATS_TEST_TMPDIR/r2"; mkdir -p "$r/platform/tests"; cd "$r"; git init -q
   git config user.email t@x.invalid; git config user.name t
   printf '@test "a" { false; }\n' > platform/tests/one.bats; printf 'floors:\n  p: 80\n' > coverage-floors.yml
+  mkdir -p crate/tests; : > crate/tests/units.rs; printf '//! superseded, no tests\n' > crate/tests/old_test.rs
   git add -A; git commit -qm base; base=$(git rev-parse HEAD)
   printf '@test "a" { true; }\n@test "a negative" { ! false; }\n' > platform/tests/one.bats; printf 'floors:\n  p: 85\n' > coverage-floors.yml
+  git rm -q crate/tests/units.rs crate/tests/old_test.rs   # test files that held no case
   git add -A; git commit -qm fix
   [ -z "$(loosened "$r" "$base")" ]
 }

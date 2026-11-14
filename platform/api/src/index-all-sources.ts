@@ -502,7 +502,9 @@ export function createIndexAllSources(deps: IndexAllSourcesDeps): () => Promise<
       }
     }
     clearSlackWatermarks(db, results);
-    foldExternalRuntimeRows(deps, db, results);
+    // #4965 review fix — guarded like every source: a SQLite error here is named on the
+    // fold, never thrown out of the pass (losing its results and its close)
+    runSource('external-fold', results, () => foldExternalRuntimeRows(deps, db, results));
 
     // #3136 coverage signal — flag any knowledge source that came back empty.
     const expected = ['briefs', 'decisions', 'adrs', 'memory', 'docs'];

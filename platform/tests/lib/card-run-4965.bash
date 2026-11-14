@@ -32,7 +32,16 @@ platform/pulse/src/delivery-worker-cov-4965.test.ts
 platform/pulse/src/note-keys-cov-4965.test.ts
 platform/pulse/src/role-setup-live-4965.test.ts
 platform/pulse/src/store-cov-4965.test.ts
-platform/tests/4963-arch-policy-table.bats'
+platform/tests/4963-arch-policy-table.bats
+directing/clearing-v2/tests/roster-unreachable-4895.test.ts
+platform/api/src/index-all-sources.ts
+platform/api/tests/index-all-sources.test.ts
+platform/services/chorus-hooks/src/runtime_hook.rs
+platform/services/chorus-principal/src/lib.rs
+platform/services/chorus-principal/src/rows.rs
+platform/services/chorus-principal/tests/agy_delivery_4965.rs
+platform/tests/4965-crawler-declared-domains.bats
+platform/tests/4965-no-loosened-asserts.bats'
 
 # the 18 nightly reds the proof run showed green (card AC1)
 PROVEN_4965='bats|platform/tests/4416-no-raised-test-timeouts.bats
@@ -66,6 +75,25 @@ proof_run() {
     printf '%s\n' "$AFTER_PROOF_FILES_4965" | grep -qxF "$f" || { echo "changed since the proof run, not on the list: $f"; return 1; }
   done
   echo "$d"
+}
+
+# ac_run <tree> — the run AC1 and AC4 read (Wren 20:20). In #4965's own werk (the tree
+# the proof run tested): the proof run, through proof_run. Anywhere else (canonical, after
+# the land): the newest finished run that tested this tree at a head already holding this
+# file, so the nightly reads a run of the landed checks, never one from before them.
+# exit 0 + the dir; exit 3 + why when no such run exists yet (the first nightly after the
+# land); exit 1 + why on a refused proof run.
+ac_run() {
+  local tree="$1" d h
+  if [ "$(cat "$PROOF_4965/root" 2>/dev/null)" = "$tree" ]; then proof_run "$tree" "$PROOF_4965"; return; fi
+  for d in $(ls -td "$RUNS_4965"/*/ 2>/dev/null); do
+    d="${d%/}"
+    [ -s "$d/suites-perf" ] && [ "$(cat "$d/root" 2>/dev/null)" = "$tree" ] || continue
+    h="$(cat "$d/head" 2>/dev/null)"
+    [ -n "$h" ] && git -C "$tree" cat-file -e "$h:platform/tests/lib/card-run-4965.bash" 2>/dev/null || continue
+    echo "$d"; return 0
+  done
+  echo "no finished run of $tree yet at a head holding the #4965 checks (the first nightly after the land)"; return 3
 }
 
 # proven_not_pass <run dir> — each of the 18 that is not a pass there; empty = AC1 met
