@@ -57,5 +57,6 @@ describe('#4895 AC5: the served roles page tags a role nudges cannot reach', () 
       await new Promise<void>((r) => server.close(() => r()));
       await new Promise<void>((r) => pulse.close(() => r()));
     }
-  });
+  // slow-by-design: Google Chrome cold launch + page load measured 0.9-2.6 s idle, over 5 s under the cicd test run (#4965 run 034xBbcP, 2026-11-13); the page itself waits 3 s
+  }, 15000);
 });
