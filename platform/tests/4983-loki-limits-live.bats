@@ -76,17 +76,25 @@ fake_land() {
   python3 - "$PORT" "$T/config" <<'PY' &
 import http.server, sys
 port, conf = int(sys.argv[1]), sys.argv[2]
+import os, time
+mode = open(os.path.join(os.path.dirname(conf), "mode")).read().strip() if os.path.exists(os.path.join(os.path.dirname(conf), "mode")) else "ok"
 class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
+        if self.path.startswith("/loki/api/v1/query"):
+            if mode == "refuse":
+                self.send_response(429); self.end_headers(); self.wfile.write(b"too many outstanding requests"); return
+            if mode == "slow":
+                time.sleep(1.5)
+            self.send_response(200); self.end_headers(); self.wfile.write(b'{"status":"success","data":{"result":[]}}'); return
         body = b"ready" if self.path == "/ready" else open(conf, "rb").read()
         self.send_response(200); self.end_headers(); self.wfile.write(body)
     def log_message(self, *a): pass
-http.server.HTTPServer(("127.0.0.1", port), H).serve_forever()
+http.server.ThreadingHTTPServer(("127.0.0.1", port), H).serve_forever()
 PY
   SRV=$!
   for _ in $(seq 1 20); do curl -sf -o /dev/null "http://127.0.0.1:$PORT/ready" && break; sleep 0.2; done
   CHORUS_HOME="$ROOT" LAND_AS_UID="${LAND_AS_UID:-$(id -u)}" OBS_REPO="$T/obs" LAUNCH_AGENTS_DIR="$T/agents" LAUNCHCTL="$T/launchctl" \
-    LOKI_URL="http://127.0.0.1:$PORT" LOKI_READY_WAIT=3 GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t \
+    LOKI_URL="http://127.0.0.1:$PORT" LOKI_READY_WAIT=3 LOKI_SLOWEST_MAX="${LOKI_SLOWEST_MAX:-60}" GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t \
     GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t run python3 "$ROOT/platform/scripts/land-4983-rows" --apply
   kill "$SRV" 2>/dev/null; wait "$SRV" 2>/dev/null || true
 }
@@ -118,4 +126,23 @@ PY
   [ "$(cat "$BATS_TEST_TMPDIR/agents/com.gathering.loki.plist")" = "OLD PLIST" ] || { echo "plist changed"; return 1; }
   [ ! -s "$BATS_TEST_TMPDIR/launchctl.log" ] || { cat "$BATS_TEST_TMPDIR/launchctl.log"; return 1; }
   [ -e "$BATS_TEST_TMPDIR/obs/config/loki/loki-native.yaml" ] || { echo "old file removed"; return 1; }
+}
+
+new_config() { printf 'max_outstanding_requests_per_tenant: 1024\nsplit_queries_by_interval: 2h\ncache_results: true\nparallelise_shardable_queries: false\n' > "$BATS_TEST_TMPDIR/config"; }
+
+# NEGATIVE PROOF: on the new limits but the live replay is refused: the old plist goes back
+@test "a refused live replay restores the old plist and keeps the old files" {
+  new_config; echo refuse > "$BATS_TEST_TMPDIR/mode"
+  fake_land
+  [ "$status" -eq 1 ] && [[ "$output" == *"the live replay is not clean (refused=28"* && "$output" == *"old plist restored, Loki ready"* ]] || { echo "$output"; return 1; }
+  [ "$(cat "$BATS_TEST_TMPDIR/agents/com.gathering.loki.plist")" = "OLD PLIST" ] || { echo "old plist not restored"; return 1; }
+  [ -e "$BATS_TEST_TMPDIR/obs/config/loki/loki-native.yaml" ] || { echo "old file removed"; return 1; }
+}
+
+# NEGATIVE PROOF: every read answers, but slower than allowed: the old plist goes back
+@test "a live replay slower than the allowed wait restores the old plist" {
+  new_config; echo slow > "$BATS_TEST_TMPDIR/mode"
+  LOKI_SLOWEST_MAX=1 fake_land
+  [ "$status" -eq 1 ] && [[ "$output" == *"refused=0 failed=0 answered=28"* && "$output" == *"slowest allowed 1 s"* && "$output" == *"old plist restored"* ]] || { echo "$output"; return 1; }
+  [ "$(cat "$BATS_TEST_TMPDIR/agents/com.gathering.loki.plist")" = "OLD PLIST" ] || { echo "old plist not restored"; return 1; }
 }

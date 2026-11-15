@@ -6,7 +6,8 @@ it runs with the #4983 limits, and only then remove the two old config files.
 Order (Wren, 2026-11-15 18:29), so a failure before the proof leaves Loki up on the old file:
   1. the new file is in the canonical checkout
   2. install the canonical com.gathering.loki plist and reload the agent (launchctl)
-  3. Loki answers /ready, and /config shows every #4983 value
+  3. Loki answers /ready, /config shows every #4983 value, and the 15:32 reads replayed on the live
+     store (loki-replay --live) see no refusal, no failure and no read slower than SLOWEST_MAX s
   On any failure after step 2 the plist that was installed before is put back and reloaded, so
   Loki comes back up on the old file (Wren 18:40).
   4. only then: remove shared-observability/config/loki/{loki-native,loki-config}.yaml and commit
@@ -32,6 +33,10 @@ OLD = ["config/loki/loki-native.yaml", "config/loki/loki-config.yaml"]
 AGENTS = os.environ.get("LAUNCH_AGENTS_DIR", os.path.expanduser("~/Library/LaunchAgents"))
 LAUNCHCTL = os.environ.get("LAUNCHCTL", "launchctl")
 READY_WAIT = int(os.environ.get("LOKI_READY_WAIT", "180"))
+# the slowest the live replay may take: the 15:32 reads waited up to 119 s in the queue; a read
+# still over a minute after #4983 means the limits did not fix the wait, so the land restores
+SLOWEST_MAX = float(os.environ.get("LOKI_SLOWEST_MAX", "60"))
+REPLAY = os.path.join(CHORUS, "platform/scripts/loki-replay")
 # the account this land runs as (a test sets it to prove the wrong-owner refusal)
 RUN_UID = int(os.environ.get("LAND_AS_UID", os.getuid()))
 
@@ -99,7 +104,27 @@ def on_new_limits():
         left = missing(get("/config"))
     except OSError as e:
         return f"/config unreadable: {e}"
-    return "Loki is not on the #4983 limits: " + "; ".join(left) if left else ""
+    if left:
+        return "Loki is not on the #4983 limits: " + "; ".join(left)
+    return live_replay()
+
+
+def live_replay():
+    """'' when the 15:32 reads, replayed once on the live store, all answer in time, else why."""
+    try:
+        r = subprocess.run([sys.executable, REPLAY, "--url", LOKI, "--live", "--timeout", str(int(SLOWEST_MAX) * 2)],
+                           capture_output=True, text=True, timeout=SLOWEST_MAX * 3)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return f"the live replay did not run: {e}"
+    got = dict(kv.split("=", 1) for kv in r.stdout.split() if "=" in kv)
+    try:
+        refused, failed, slowest = int(got["refused"]), int(got["failed"]), float(got["slowest"])
+    except (KeyError, ValueError):
+        return f"the live replay printed no verdict: {(r.stdout + r.stderr).strip()[-200:]}"
+    print("live replay: " + r.stdout.strip())
+    if refused or failed or slowest > SLOWEST_MAX:
+        return f"the live replay is not clean ({r.stdout.strip()}; slowest allowed {SLOWEST_MAX:g} s)"
+    return ""
 
 
 def restore(before, installed):
