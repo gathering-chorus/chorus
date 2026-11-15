@@ -318,6 +318,10 @@ pub fn call_event(role: &str, args: &[String], result: &Result<String, String>) 
     if let Some(t) = args.get(1) {
         ev.push(format!("target={t}"));
     }
+    // #4977 — a dry run reads nothing back; the after-land check must not take it for a landing
+    if args.windows(2).any(|w| w[0] == "--dry-run" && w[1] != "false") || args.last().is_some_and(|a| a == "--dry-run") {
+        ev.push("dry_run=true".into());
+    }
     let cap = |s: &str| -> String { let s = s.trim(); if s.is_empty() { "no reason given".into() } else { s.chars().take(400).collect() } };
     match result {
         Ok(s) => {

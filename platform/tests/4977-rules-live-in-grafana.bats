@@ -22,14 +22,19 @@ setup() {
 # Loki query_range JSON on stdin; prints one line per rule, exits 1 if any is not held with 8760h
 verdict() {
   python3 -c '
-import json, sys
+import json, re, sys
 want = sys.argv[1].split()
+UNIT = {"y": 31536000, "w": 604800, "d": 86400, "h": 3600, "m": 60, "s": 1}
+def secs(d):  # Grafana renders 8760h as 1y (Prometheus duration form)
+    parts = re.findall(r"(\d+)([ywdhms])", d or "")
+    return sum(int(n) * UNIT[u] for n, u in parts) if parts and "".join(n + u for n, u in parts) == d else None
 newest = {}
 for s in json.load(sys.stdin).get("data", {}).get("result", []):
     for ts, line in s.get("values", []):
         try: e = json.loads(line)
         except ValueError: continue
         if e.get("event") != "convergence.call" or e.get("op") != "alert": continue
+        if e.get("dry_run") == "true": continue  # a dry run reads nothing back
         t = e.get("target")
         if t in want and int(ts) > newest.get(t, (0,))[0]:
             newest[t] = (int(ts), e)
@@ -40,7 +45,7 @@ for r in want:
     e = newest[r][1]
     if e.get("outcome") != "ok":
         print("REFUSED %s: %s" % (r, e.get("reason", ""))); bad = 1
-    elif e.get("repeat") != "8760h":
+    elif secs(e.get("repeat")) != 8760 * 3600:
         print("WRONG WAIT %s: Grafana holds %s" % (r, e.get("repeat", "no read-back"))); bad = 1
     else:
         print(f"held {r} 8760h")
@@ -48,16 +53,17 @@ sys.exit(bad)
 ' "$RULES"
 }
 
-event() { # <target> <outcome> [repeat]
-  local e="{\"event\":\"convergence.call\",\"op\":\"alert\",\"target\":\"$1\",\"outcome\":\"$2\"${3:+,\"repeat\":\"$3\"}}"
+event() { # <target> <outcome> [repeat|-] [dry]
+  local r="$3"; [ "$r" = "-" ] && r=""
+  local e="{\"event\":\"convergence.call\",\"op\":\"alert\",\"target\":\"$1\",\"outcome\":\"$2\"${r:+,\"repeat\":\"$r\"}${4:+,\"dry_run\":\"true\"}}"
   printf '%s' "$e" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'
 }
 
 fixture() { # lines of: <ts> <target> <outcome> [repeat]
   local vals="" sep=""
-  while read -r ts t o r; do
+  while read -r ts t o r d; do
     [ -n "$ts" ] || continue
-    vals="$vals$sep[\"$ts\",$(event "$t" "$o" "$r")]"; sep=","
+    vals="$vals$sep[\"$ts\",$(event "$t" "$o" "$r" "$d")]"; sep=","
   done
   printf '{"data":{"result":[{"values":[%s]}]}}' "$vals"
 }
@@ -77,6 +83,19 @@ all_held() { local n=1; for r in $RULES; do echo "$n $r ok 8760h"; n=$((n + 1));
     [ "$status" -eq 1 ] || { echo "$bad: $output"; return 1; }
     [[ "$output" == *"shacl-above-baseline"* ]] || { echo "$output"; return 1; }
   done
+}
+
+# Grafana renders a one-year wait as 1y; held is judged in seconds, not by the string
+@test "a rule Grafana reads back as 1y is held" {
+  run bash -c "$(declare -f verdict event fixture all_held); RULES='$RULES'; { all_held | grep -v bedroom; echo '9 bedroom-disk-full ok 1y'; } | fixture | verdict"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
+
+# NEGATIVE PROOF: a dry run after a refusal is not a landing (the land dry-runs every rule first)
+@test "a dry run newer than a refused landing does not hide the refusal" {
+  run bash -c "$(declare -f verdict event fixture all_held); RULES='$RULES'; { all_held | grep -v bedroom; echo '8 bedroom-disk-full refused'; echo '9 bedroom-disk-full ok - dry'; } | fixture | verdict"
+  [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+  [[ "$output" == *"REFUSED bedroom-disk-full"* ]] || { echo "$output"; return 1; }
 }
 
 # NEGATIVE PROOF: the newest landing decides; an old good one does not hide a newer refusal

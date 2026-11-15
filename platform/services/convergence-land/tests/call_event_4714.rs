@@ -48,6 +48,12 @@ fn a_landed_alert_carries_the_wait_grafana_read_back() {
     let ok = "landed disk as Grafana rule disk in chorus-infra/infra, every 1m; read back repeat_interval 8760h; grafanaRuleUid written";
     let ev = call_event("silas", &args(&["alert", "disk"]), &Ok(ok.into()));
     assert!(has(&ev, "repeat=8760h"), "{ev:?}");
-    let ev = call_event("silas", &args(&["alert", "disk", "--dry-run"]), &Ok("dry run — would land".into()));
-    assert!(!ev.iter().any(|e| e.starts_with("repeat=")), "a dry run read nothing back: {ev:?}");
+    assert!(!has(&ev, "dry_run=true"), "a landing is not a dry run: {ev:?}");
+    for a in [&["alert", "disk", "--dry-run"][..], &["alert", "disk", "--dry-run", "true"][..]] {
+        let ev = call_event("silas", &args(a), &Ok("dry run — would land".into()));
+        assert!(!ev.iter().any(|e| e.starts_with("repeat=")), "a dry run read nothing back: {ev:?}");
+        assert!(has(&ev, "dry_run=true"), "NEGATIVE: a dry run says so, so it is never read as a landing: {ev:?}");
+    }
+    let ev = call_event("silas", &args(&["alert", "disk", "--dry-run", "false"]), &Ok(ok.into()));
+    assert!(!has(&ev, "dry_run=true"), "--dry-run false lands: {ev:?}");
 }
