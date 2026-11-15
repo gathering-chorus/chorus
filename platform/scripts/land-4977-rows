@@ -86,7 +86,13 @@ SET = KADE_PAIRS if "--kade" in sys.argv else PAIRS
 
 
 def plan(_live):
-    return rows(SET)[0]
+    out = rows(SET)[0]
+    if SET is PAIRS:
+        # hand the crawler's Alert row to Kade: the door cannot change ownedBy and Kade cannot
+        # delete a row of mine, so this land deletes it and his --kade run adds it as his
+        # (Kade, 2026-11-14 22:05). Its yml is gone in this land, so nothing fires in between.
+        out.append(("alerts", "crawler-out-of-sync", None))
+    return out
 
 
 land.plan = plan

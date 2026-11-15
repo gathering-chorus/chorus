@@ -66,5 +66,7 @@ m = importlib.util.module_from_spec(s); sys.argv = [sys.argv[1]]; l.exec_module(
 land = [p[0] for p in m.PAIRS]; kade = [p[0] for p in m.KADE_PAIRS]
 assert not any(x.startswith("crawler") for x in land), land
 assert kade == ["crawler-out-of-sync-monitor-4977", "crawler-sync-quiet-monitor-4977"], kade
+src = open(sys.argv[0]).read()
+assert '("alerts", "crawler-out-of-sync", None)' in src, "the land does not hand the row over"
 PY
 }
