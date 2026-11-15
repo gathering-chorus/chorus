@@ -127,6 +127,8 @@ pub const CLASSES: &[ClassDef] = &[
             FieldDef { name: "hasDomain", link: true, datatype: "", required: true, many: true, allowed: &[] },
             FieldDef { name: "metricDatasource", link: false, datatype: "string", required: false, many: false, allowed: &[] },
             FieldDef { name: "metricQuery", link: false, datatype: "string", required: false, many: false, allowed: &[] },
+            FieldDef { name: "notify", link: false, datatype: "string", required: false, many: false, allowed: &["on", "off"] },
+            FieldDef { name: "repeatInterval", link: false, datatype: "string", required: false, many: false, allowed: &[] },
         ],
     },
     ClassDef {
