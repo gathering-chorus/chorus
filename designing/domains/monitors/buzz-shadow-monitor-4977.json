@@ -1,0 +1,19 @@
+{
+ "id": "chorus:buzz-shadow-not-matching",
+ "data": {
+  "label": "Buzz shadow: a delivery did not match, or coverage under 100%",
+  "measures": "Did a Buzz shadow delivery fail to match, or a coverage window fall under 100%, in the last 15 minutes?",
+  "monitorKind": "grafana",
+  "monitorSays": "Buzz shadow: a delivery did not match, or coverage fell under 100% (gates PULSE_BUZZ_DELIVER).",
+  "monitorLine": "0",
+  "monitorWhen": "above",
+  "monitorFor": "5m",
+  "monitorAction": "Read the shadow verdicts on Loki and fix the mismatch before PULSE_BUZZ_DELIVER is turned on"
+ },
+ "links": {
+  "monitorOfSensor": "chorus:buzz-shadow",
+  "ownedBy": "chorus:principal-wren",
+  "hasDomain": "chorus:monitors",
+  "type": "chorus:Monitor"
+ }
+}

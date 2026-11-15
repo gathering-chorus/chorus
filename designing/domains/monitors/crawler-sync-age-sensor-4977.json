@@ -1,0 +1,4 @@
+{ "id": "chorus:crawler-sync-age", "data": { "label": "crawler-sync-age", "sensorSource": "grafana", "sensorDatasource": "prometheus",
+  "sensorReads": "how many hours since the sync sensor last wrote its gauge file (node-exporter textfile mtime on Library). chorus_sensor_reading_age_days cannot say this: it counts days behind the sensor's own newest reading, so a sensor that stops reads 0 forever.",
+  "sensorQuery": "(time() - node_textfile_mtime_seconds{file=~\".*/sensor_sync\\\\.prom\"}) / 3600", "sensorWindowMinutes": "60" },
+  "links": { "ownedBy": "chorus:principal-kade", "type": "chorus:Sensor" } }

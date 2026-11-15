@@ -69,6 +69,10 @@ def build(monitor, sensor):
     if not re.fullmatch(r"-?[0-9]+(\.[0-9]+)?", line):
         raise ValueError(f"refused: monitorLine {line!r} is not a plain number")
     owner = field(monitor, "ownedBy").removeprefix("principal-")
+    # #4977 — the monitor says how long the line must stay crossed (Kade: crawler 60m)
+    wait = field(monitor, "monitorFor") or "5m"
+    if not re.fullmatch(r"[0-9]+[smh]", wait):
+        raise ValueError(f"refused: monitorFor {wait!r} is not a Grafana duration (30s, 5m, 1h)")
     measures = field(monitor, "measures") or field(monitor, "label") or name_of(monitor)
     return {
         "name": name_of(monitor),
@@ -83,7 +87,7 @@ def build(monitor, sensor):
         "evalInterval": "5m",
         # Grafana answers a rule with no `for` as 0s, which convergence-land's drift
         # reads as a hand edit; 5m also keeps a passing blip from telling anyone
-        "forDuration": "5m",
+        "forDuration": wait,
         "repeatInterval": "8760h",
         "ownedBy": f"chorus:principal-{owner}",
         "hasDomain": "chorus:infrastructure",

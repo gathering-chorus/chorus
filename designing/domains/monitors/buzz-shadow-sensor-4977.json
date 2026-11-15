@@ -1,0 +1,15 @@
+{
+ "id": "chorus:buzz-shadow",
+ "data": {
+  "label": "buzz-shadow",
+  "sensorSource": "grafana",
+  "sensorDatasource": "loki",
+  "sensorReads": "pulse's Buzz shadow on Loki: delivery checks that did not match, or coverage windows under 100%, over 15 minutes",
+  "sensorQuery": "sum(count_over_time({job=\"platform-chorus\"} |= \"buzz.\" | json | (event=\"buzz.delivery.shadow\" and verdict!=\"match\") or (event=\"buzz.shadow.coverage\" and stored!=\"0\" and pct!=\"100\") [15m]))",
+  "sensorWindowMinutes": "15"
+ },
+ "links": {
+  "ownedBy": "chorus:principal-wren",
+  "type": "chorus:Sensor"
+ }
+}
