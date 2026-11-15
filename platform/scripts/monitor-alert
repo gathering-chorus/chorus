@@ -21,6 +21,7 @@ clears on recovery.
 A row a rule cannot be made from is refused by name, never half-built.
 """
 import json
+import re
 import sys
 
 COMPARE = {"above": ">", "below": "<"}
@@ -64,10 +65,9 @@ def build(monitor, sensor):
     if when not in COMPARE:
         raise ValueError(f"refused: monitorWhen {when!r} is not above or below")
     line = field(monitor, "monitorLine")
-    try:
-        float(line)
-    except ValueError:
-        raise ValueError(f"refused: monitorLine {line!r} is not a number") from None
+    # a plain decimal only: it is pasted into PromQL (no nan, inf, 1e3 or spaces)
+    if not re.fullmatch(r"-?[0-9]+(\.[0-9]+)?", line):
+        raise ValueError(f"refused: monitorLine {line!r} is not a plain number")
     owner = field(monitor, "ownedBy").removeprefix("principal-")
     measures = field(monitor, "measures") or field(monitor, "label") or name_of(monitor)
     return {
@@ -79,6 +79,9 @@ def build(monitor, sensor):
         "metricDatasource": field(sensor, "sensorDatasource"),
         "metricQuery": f"({field(sensor, 'sensorQuery')}) {COMPARE[when]} {line}",
         "evalInterval": "5m",
+        # Grafana answers a rule with no `for` as 0s, which convergence-land's drift
+        # reads as a hand edit; 5m also keeps a passing blip from telling anyone
+        "forDuration": "5m",
         "repeatInterval": "8760h",
         "ownedBy": f"chorus:principal-{owner}",
         "hasDomain": "chorus:infrastructure",

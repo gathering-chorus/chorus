@@ -61,3 +61,13 @@ jget() { python3 -c "import json,sys;print(json.load(sys.stdin)[sys.argv[1]])" "
   ! grep -q 'bedroom-disk-last-pct' "$S" || return 1
   ! grep -q 'external disk at' "$S" || return 1
 }
+@test "NEGATIVE PROOF: a line that is not a plain number makes no rule (it would be pasted into PromQL)" {
+  for bad in nan inf 1e3 " 99" "99 or 1"; do
+    python3 -c "import json,sys;d=json.load(open('$F/bedroom-disk-full-monitor-4970.json'));d['data']['monitorLine']=sys.argv[1];json.dump(d,open('$TMPD/m.json','w'))" "$bad"
+    run "$MA" build "$TMPD/m.json" "$F/infra-disk-sensor-4970.json"
+    [ "$status" -eq 3 ] || return 1
+  done
+}
+@test "the rule waits 5m before firing, so Grafana's own 'for' never reads as a hand edit" {
+  [ "$(built | jget forDuration)" = "5m" ] || return 1
+}

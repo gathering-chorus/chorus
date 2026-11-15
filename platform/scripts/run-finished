@@ -7,7 +7,8 @@
 # handler), a pass woke no one. Jeff 14:40: "just the finish, not every step";
 # Wren 14:41: a failed step is a finish. Every generated top-level pipeline calls
 # this from dagu's exit handler, so a run wakes exactly once, pass or fail, and a
-# step that passes in the middle sends nothing. The failure handler only routes
+# step that passes in the middle sends nothing. Since #4970 (Jeff 2026-11-14, DROP)
+# a pass's wake is recorded and tells no one (Alert row run-finished-pass). The failure handler only routes
 # (pair red, borg-prove route); it no longer nudges.
 #
 #   run-finished CARD ROLE DAG RUN_ID     (dagu sets DAG_RUN_STATUS, DAG_RUN_STEP_NAME=onExit)

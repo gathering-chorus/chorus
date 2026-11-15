@@ -70,3 +70,10 @@ send() { env CHORUS_HOOK_SHIM="$T/shim" ALERTS_DOOR="${DOOR:-file://$T/door}" OP
   awk '/^  failed\)/,/;;$/' "$R" | grep -q 'run-finished-pass' && return 1
   return 0
 }
+@test "NEGATIVE PROOF: an OPS_ALERT inherited from the caller cannot silence a failure wake" {
+  R="$ROOT/platform/scripts/run-finished"
+  init=$(grep -n '^OPS_ALERT=""$' "$R" | cut -d: -f1)
+  case_at=$(grep -n '^case "\$STATUS" in' "$R" | cut -d: -f1)
+  [ -n "$init" ] && [ -n "$case_at" ] || return 1
+  [ "$init" -lt "$case_at" ] || return 1
+}
