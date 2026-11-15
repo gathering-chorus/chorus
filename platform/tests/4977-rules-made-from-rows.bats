@@ -2,7 +2,8 @@
 # @test-type: unit — reads the land plan and the rule files; no store, no Grafana
 # @domain: monitors
 # @card: #4977 · owner: silas
-# Checks platform/scripts/land-4977-rows, platform/config/alerting/*.yaml,
+# Checks platform/scripts/land-4977-rows, platform/config/alerting/chorus-sensor-rules.yaml,
+# platform/config/alerting/chorus-shacl-rules.yaml,
 # platform/scripts/grafana-file-rules-4977 and proving/domains/alerts/.
 #
 # #4977 AC3 — each of the five rules is made from its rows by the #4970 generator,

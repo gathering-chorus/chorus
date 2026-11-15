@@ -5,6 +5,7 @@
 # @owner: silas
 #
 # #4717 AC4 — platform/config/alerting/chorus-shacl-rules.yaml (Grafana, deployed
+# [#4977: the above-baseline ratchet moved to its monitor row; see 4977-each-fires-once-clears.bats]
 # to shared-observability) fires on exactly the states Jeff asked for: the store's
 # violation count above its baseline (the ratchet), an empty shared blank node in
 # the shapes, and a census or gauge that stopped writing. Each rule's query and
@@ -50,19 +51,15 @@ check() {
 }
 
 @test "the rules file holds the three alerts AC4 names, and every one routes to a role" {
-  for uid in shacl-violations-above-baseline shacl-shared-bnodes-empty shacl-census-stale shacl-bnodes-stale; do
+  for uid in shacl-shared-bnodes-empty shacl-census-stale shacl-bnodes-stale; do
     grep -q "uid: $uid" "$RULES" || { echo "missing $uid"; return 1; }
   done
-  [ "$(grep -c 'role: silas' "$RULES")" -ge 4 ] || return 1
+  [ "$(grep -c 'role: silas' "$RULES")" -ge 3 ] || return 1
+  # #4977: the ratchet rule is made from its monitor row now (4977-each-fires-once-clears.bats
+  # proves it both ways); this file only deletes the provisioned copy
+  python3 -c "import yaml,sys;d=yaml.safe_load(open(sys.argv[1]));assert {'orgId':1,'uid':'shacl-violations-above-baseline'} in d['deleteRules']" "$RULES" || return 1
   # Jeff 10-24 06:03: the summary carries words and values, never a refId
   ! grep -E "summary:.*\b[A-Z]=" "$RULES" || return 1
-}
-
-@test "a violation count above the baseline fires; at the baseline it does not" {
-  check shacl-violations-above-baseline 5m firing \
-    "{series: 'athena_shacl_violations', values: '23047x10'}" "{series: 'athena_shacl_violations_baseline', values: '23000x10'}"
-  check shacl-violations-above-baseline 5m none \
-    "{series: 'athena_shacl_violations', values: '23000x10'}" "{series: 'athena_shacl_violations_baseline', values: '23000x10'}"
 }
 
 @test "an empty shared blank node fires; 0 does not" {
