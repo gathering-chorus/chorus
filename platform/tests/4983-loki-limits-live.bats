@@ -63,3 +63,49 @@ EOF
   run python3 "$ROOT/platform/scripts/land-4983-rows"
   [ "$status" -eq 0 ] && [[ "$output" == plan:* ]] || { echo "$output"; return 1; }
 }
+
+# the land against a fake launchctl (records its calls) and a fake Loki serving $T/config
+fake_land() {
+  T="$BATS_TEST_TMPDIR"
+  mkdir -p "$T/agents" "$T/obs/config/loki"
+  printf 'OLD PLIST\n' > "$T/agents/com.gathering.loki.plist"
+  printf 'live\n' > "$T/obs/config/loki/loki-native.yaml"; printf 'dead\n' > "$T/obs/config/loki/loki-config.yaml"
+  git -C "$T/obs" init -q && git -C "$T/obs" add -A && git -C "$T/obs" -c user.name=t -c user.email=t@t commit -qm init
+  printf '#!/bin/sh\necho "$*" >> "%s/launchctl.log"\n' "$T" > "$T/launchctl"; chmod +x "$T/launchctl"
+  PORT=$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1])')
+  python3 - "$PORT" "$T/config" <<'PY' &
+import http.server, sys
+port, conf = int(sys.argv[1]), sys.argv[2]
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        body = b"ready" if self.path == "/ready" else open(conf, "rb").read()
+        self.send_response(200); self.end_headers(); self.wfile.write(body)
+    def log_message(self, *a): pass
+http.server.HTTPServer(("127.0.0.1", port), H).serve_forever()
+PY
+  SRV=$!
+  for _ in $(seq 1 20); do curl -sf -o /dev/null "http://127.0.0.1:$PORT/ready" && break; sleep 0.2; done
+  CHORUS_HOME="$ROOT" OBS_REPO="$T/obs" LAUNCH_AGENTS_DIR="$T/agents" LAUNCHCTL="$T/launchctl" \
+    LOKI_URL="http://127.0.0.1:$PORT" LOKI_READY_WAIT=3 GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t \
+    GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t run python3 "$ROOT/platform/scripts/land-4983-rows" --apply
+  kill "$SRV" 2>/dev/null; wait "$SRV" 2>/dev/null || true
+}
+
+@test "on the new limits the land keeps the new plist and removes both old files" {
+  printf 'max_outstanding_requests_per_tenant: 1024\nsplit_queries_by_interval: 2h\ncache_results: true\nparallelise_shardable_queries: false\n' > "$BATS_TEST_TMPDIR/config"
+  fake_land
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  cmp -s "$BATS_TEST_TMPDIR/agents/com.gathering.loki.plist" "$ROOT/platform/scripts/launchagents-canonical/com.gathering.loki.plist" || { echo "new plist not installed"; return 1; }
+  [ ! -e "$BATS_TEST_TMPDIR/obs/config/loki/loki-native.yaml" ] && [ ! -e "$BATS_TEST_TMPDIR/obs/config/loki/loki-config.yaml" ] || { echo "old files left"; return 1; }
+  [ -z "$(git -C "$BATS_TEST_TMPDIR/obs" status --porcelain)" ] || { git -C "$BATS_TEST_TMPDIR/obs" status; return 1; }
+}
+
+# NEGATIVE PROOF: Loki comes up on the old limits: the old plist goes back and is reloaded, old files stay
+@test "a Loki not on the new limits gets its old plist back, reloaded, and keeps its old files" {
+  cp "$ROOT/platform/tests/fixtures/4983/config-before.yaml" "$BATS_TEST_TMPDIR/config"
+  fake_land
+  [ "$status" -eq 1 ] && [[ "$output" == *"old plist restored, Loki ready"* ]] || { echo "$output"; return 1; }
+  [ "$(cat "$BATS_TEST_TMPDIR/agents/com.gathering.loki.plist")" = "OLD PLIST" ] || { echo "old plist not restored"; return 1; }
+  [ "$(grep -c '^bootstrap' "$BATS_TEST_TMPDIR/launchctl.log")" -eq 2 ] || { cat "$BATS_TEST_TMPDIR/launchctl.log"; return 1; }
+  [ -e "$BATS_TEST_TMPDIR/obs/config/loki/loki-native.yaml" ] && [ -e "$BATS_TEST_TMPDIR/obs/config/loki/loki-config.yaml" ] || { echo "old files removed"; return 1; }
+}
