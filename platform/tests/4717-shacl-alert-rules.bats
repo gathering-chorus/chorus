@@ -57,7 +57,7 @@ check() {
   [ "$(grep -c 'role: silas' "$RULES")" -ge 3 ] || return 1
   # #4977: the ratchet rule is made from its monitor row now (4977-each-fires-once-clears.bats
   # proves it both ways); this file only deletes the provisioned copy
-  python3 -c "import yaml,sys;d=yaml.safe_load(open(sys.argv[1]));assert {'orgId':1,'uid':'shacl-violations-above-baseline'} in d['deleteRules']" "$RULES" || return 1
+  ruby -ryaml -e 'd = YAML.load_file(ARGV[0]); exit((d["deleteRules"] || []).include?({ "orgId" => 1, "uid" => "shacl-violations-above-baseline" }) ? 0 : 1)' "$RULES" || return 1
   # Jeff 10-24 06:03: the summary carries words and values, never a refId
   ! grep -E "summary:.*\b[A-Z]=" "$RULES" || return 1
 }

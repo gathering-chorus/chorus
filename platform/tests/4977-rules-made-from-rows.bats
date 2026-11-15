@@ -13,6 +13,14 @@
 # left chorus-health in #4970.
 
 setup() { ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"; L="$ROOT/platform/scripts/land-4977-rows"; }
+# file $1 deletes uid $2 and no group still defines it (ruby's YAML: the 4717 suite's reader;
+# the pipeline's python has no PyYAML)
+held() {
+  ruby -ryaml -e 'd = YAML.load_file(ARGV[0]); u = ARGV[1]
+    del = (d["deleteRules"] || []).any? { |r| r["uid"] == u }
+    defd = (d["groups"] || []).flat_map { |g| g["rules"] || [] }.any? { |r| r["uid"] == u }
+    exit(del && !defd ? 0 : 1)' "$1" "$2"
+}
 
 @test "the land makes all five rules from their rows through monitor-alert" {
   for m in crawler-out-of-sync crawler-sync-quiet sensor-run-not-green shacl-above-baseline buzz-shadow fuseki-memory; do
@@ -28,22 +36,13 @@ setup() { ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"; L="$ROOT/platform/scri
   for pair in "chorus-sensor-rules.yaml sensor-run-not-green" "chorus-shacl-rules.yaml shacl-violations-above-baseline"; do
     set -- $pair
     F="$ROOT/platform/config/alerting/$1"
-    python3 -c "
-import yaml,sys
-d=yaml.safe_load(open(sys.argv[1])); uid=sys.argv[2]
-assert any(r.get('uid')==uid for r in d.get('deleteRules',[])), 'no deleteRules for '+uid
-assert not any(r.get('uid')==uid for g in d.get('groups',[]) for r in g.get('rules',[])), uid+' still defined'
-" "$F" "$2" || return 1
+    held "$F" "$2" || { echo "$1 does not delete $2, or still defines it"; return 1; }
   done
 }
 @test "NEGATIVE PROOF: the check above catches a file that still defines its rule" {
   T="$BATS_TEST_TMPDIR/bad.yaml"
   printf 'apiVersion: 1\ngroups:\n  - name: g\n    rules:\n      - uid: sensor-run-not-green\ndeleteRules:\n  - orgId: 1\n    uid: sensor-run-not-green\n' > "$T"
-  ! python3 -c "
-import yaml,sys
-d=yaml.safe_load(open(sys.argv[1]))
-assert not any(r.get('uid')=='sensor-run-not-green' for g in d.get('groups',[]) for r in g.get('rules',[]))
-" "$T" 2>/dev/null || return 1
+  ! held "$T" sensor-run-not-green || return 1
 }
 @test "the held two land their rules only after the post-land op, and stay quiet until then" {
   grep -q '("sensor-run-not-green-monitor-4977", "sensor-runs-sensor-4977", "off", False)' "$L" || return 1
