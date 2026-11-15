@@ -1,0 +1,19 @@
+{
+ "id": "chorus:sensor-run-red",
+ "data": {
+  "label": "Sensor run not green",
+  "measures": "Did any sensor end red or unmeasured in the last 75 minutes?",
+  "monitorKind": "grafana",
+  "monitorSays": "Sensor {{ $labels.sensor }} (owner {{ $labels.owner }}) ended red or unmeasured in the last 75 minutes.",
+  "monitorLine": "0",
+  "monitorWhen": "above",
+  "monitorFor": "0m",
+  "monitorAction": "Read the sensor's last run (/cws or the sensor-run row) and fix what it could not read or write"
+ },
+ "links": {
+  "monitorOfSensor": "chorus:sensor-runs",
+  "ownedBy": "chorus:principal-kade",
+  "hasDomain": "chorus:monitors",
+  "type": "chorus:Monitor"
+ }
+}

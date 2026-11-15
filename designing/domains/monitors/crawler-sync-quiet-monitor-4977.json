@@ -1,0 +1,19 @@
+{
+ "id": "chorus:crawler-sync-quiet",
+ "data": {
+  "label": "Crawler sync sensor has gone quiet",
+  "measures": "Has the sync sensor written nothing for more than 26 hours, or no reading at all?",
+  "monitorKind": "grafana",
+  "monitorSays": "The sync sensor has written nothing for more than 26 hours, or has no reading at all, so out-of-sync cannot be seen.",
+  "monitorLine": "26",
+  "monitorWhen": "above",
+  "monitorFor": "0m",
+  "monitorAction": "Find why the sync sensor did not run (crawl-nightly) and run it"
+ },
+ "links": {
+  "monitorOfSensor": "chorus:crawler-sync-age",
+  "ownedBy": "chorus:principal-kade",
+  "hasDomain": "chorus:monitors",
+  "type": "chorus:Monitor"
+ }
+}

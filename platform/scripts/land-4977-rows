@@ -1,0 +1,144 @@
+#!/usr/bin/env python3
+"""#4977: the quiet alerts come back as sensor, monitor and alert rows. DRY RUN unless --apply.
+# @domain: monitors
+
+Jeff 2026-11-14 18:12 (one following card) and 20:33 ("want to get it done"). Rows only,
+through the #4970 generator (monitor-alert): for each monitor in PAIRS, its sensor row, its
+monitor row, and the Alert row made from the two. The rows come from
+designing/domains/monitors/*.json, which ship in this land, so the store and the repo cannot
+differ. The door, the runner, the compare, the 403 wait and the exit codes are land-4960-rows'
+own; the sensor/monitor field reading is land-4970-rows' own (one implementation each).
+
+After the rows, the ICD is loaded into the store (chorus-icd-load.sh, so each rule gets its
+repeat wait) and convergence-land lands every made rule. Two old rules live in files in
+shared-observability provisioning (sensor-run-not-green, shacl-violations-above-baseline);
+their row-made successors take new uids (sensor-run-red, shacl-above-baseline), and the old
+ones stay quiet until the post-land op on Jeff's yes removes them
+(platform/scripts/grafana-file-rules-4977 prints the steps).
+Exit 0 = plan printed (or applied); 1 = a write or a rule land was refused; 2 = the door or
+the plan could not be read.
+"""
+import importlib.machinery
+import importlib.util
+import json
+import os
+import subprocess
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def _load(name, file):
+    loader = importlib.machinery.SourceFileLoader(name, os.path.join(HERE, file))
+    spec = importlib.util.spec_from_loader(name, loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    return mod
+
+
+l4970 = _load("land4970", "land-4970-rows")
+land, monitor_alert = l4970.land, l4970.monitor_alert
+MON = os.path.join(land.ROOT, "designing/domains/monitors")
+
+# (monitor file, sensor file, notify, land the rule now)
+PAIRS = [
+    ("bedroom-disk-full-monitor-4970", "infra-disk-sensor-4970", "on", True),
+    ("fuseki-memory-monitor-4977", "fuseki-memory-sensor-4977", "on", True),
+    # Buzz stays recorded, not told, while PULSE_BUZZ_DELIVER is off (Wren, 2026-11-14 17:47)
+    ("buzz-shadow-monitor-4977", "buzz-shadow-sensor-4977", "off", True),
+    # new uids (sensor-run-red, shacl-above-baseline): the file rules' deleteRules stay in
+    # Grafana's provisioning for good and name the old uids, so a row-made rule under an old
+    # uid would be deleted on every Grafana restart (code review, round 1). The old file rules
+    # stay quiet (their rows say notify off) until the post-land op removes them.
+    ("sensor-run-not-green-monitor-4977", "sensor-runs-sensor-4977", "on", True),
+    ("shacl-above-baseline-monitor-4977", "shacl-above-baseline-sensor-4977", "on", True),
+]
+# Kade writes the crawler's rows from his own account so they are his and route to him
+# (the door stamps the writer as ownedBy; Kade, 2026-11-14 22:03): after the land,
+#   land-4977-rows --kade --apply
+KADE_PAIRS = [
+    ("crawler-out-of-sync-monitor-4977", "crawler-sync-sensor-4977", "on", True),
+    ("crawler-sync-quiet-monitor-4977", "crawler-sync-age-sensor-4977", "on", True),
+]
+# the retired yml's row keeps a provenance a reader can open: the monitor row it is made from
+PROVENANCE = {"crawler-out-of-sync": "chorus/designing/domains/monitors/crawler-out-of-sync-monitor-4977.json"}
+
+
+def rows(pairs=None):
+    out, rules = [], []
+    for m, s, notify, now in (pairs or PAIRS):
+        monitor = json.load(open(os.path.join(MON, m + ".json")))
+        sensor = json.load(open(os.path.join(MON, s + ".json")))
+        alert = monitor_alert.build(monitor, sensor)
+        alert.pop("ownedBy", None)
+        alert["hasDomain"] = l4970.edge(alert["hasDomain"])
+        name = alert.pop("name")
+        alert["notify"] = notify
+        if name in PROVENANCE:
+            alert["alertFile"] = PROVENANCE[name]
+        out += [("sensors", monitor_alert.name_of(sensor), l4970.fields(sensor)),
+                ("monitors", monitor_alert.name_of(monitor), l4970.fields(monitor)),
+                ("alerts", name, alert)]
+        if now:
+            rules.append(name)
+    return out, rules
+
+
+SET = KADE_PAIRS if "--kade" in sys.argv else PAIRS
+
+
+def plan(_live):
+    out = rows(SET)[0]
+    if SET is PAIRS:
+        # hand the crawler's Alert row to Kade: the door cannot change ownedBy and Kade cannot
+        # delete a row of mine, so this land deletes it and his --kade run adds it as his
+        # (Kade, 2026-11-14 22:05). Its yml is gone in this land, so nothing fires in between.
+        out.append(("alerts", "crawler-out-of-sync", None))
+    return out
+
+
+land.plan = plan
+
+
+# convergence-land builds rules from the ICD maps in the STORE, not the repo ttl. #4970 added
+# the repeatInterval map to the ttl and nothing loaded it, so every row-made rule landed with
+# no repeat_interval and re-told every 4h (found 2026-11-15 00:37). The land loads the ICD
+# first (the one loader, idempotent), and refuses a rule whose built form has no repeat wait.
+ICD_LOAD = os.environ.get("ICD_LOAD", os.path.join(land.ROOT, "platform/scripts/chorus-icd-load.sh"))
+
+
+def built_repeats(name):
+    """The rule convergence-land would land for this row carries a repeat_interval."""
+    # through the runner, as land_rule lands it: a role account has no convergence-land of its own (Kade)
+    try:
+        r = subprocess.run([land.RUNNER, "call", "convergence-land-alert", f"alert={name}", "dry_run=true"],
+                           capture_output=True, text=True)
+    except OSError:
+        return False
+    return r.returncode == 0 and '"repeat_interval"' in r.stdout
+
+
+def main(argv):
+    rc = land.main(argv)
+    rules = rows(SET)[1]
+    if "--apply" not in argv:
+        print(f"then: chorus-icd-load.sh, then convergence-land-alert for {', '.join(rules)} (not run in a dry run)")
+        return rc
+    if rc != 0:
+        return rc
+    try:
+        loaded = subprocess.run([ICD_LOAD], env={**os.environ, "CHORUS_ROOT": land.ROOT}).returncode == 0
+    except OSError:
+        loaded = False
+    if not loaded:
+        print("land-4977-rows: the ICD load was refused; no rule landed", file=sys.stderr)
+        return 1
+    bare = [n for n in rules if not built_repeats(n)]
+    if bare:
+        print(f"land-4977-rows: built with no repeat_interval, not landed: {', '.join(bare)}", file=sys.stderr)
+        return 1
+    return 0 if all([l4970.land_rule(n) for n in rules]) else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# @domain: monitors
+# grafana-file-rules-4977 — the one post-land step of #4977, on Jeff's yes (Kade, 2026-11-14 21:0x).
+#
+# Grafana reads alert provisioning live from shared-observability (grafana-wrapper.sh sets
+# GF_PATHS_PROVISIONING), and no land step writes there. Two old rules live in files there,
+# sensor-run-not-green and shacl-violations-above-baseline; the land already made their
+# successors from rows under new uids (sensor-run-red, shacl-above-baseline), and the old
+# ones are quiet (their Alert rows say notify off). So, in order:
+#   1. copy this land's two rule files (deleteRules for the two OLD uids) into shared-observability
+#   2. Jeff restarts Grafana so it applies them (launchctl kickstart, his launchd domain)
+#   3. the two old Alert rows, whose rules are gone, are deleted
+# Prints the steps; changes nothing. Each step names who runs it.
+set -euo pipefail
+
+ROOT="${CHORUS_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
+OBS="${OBS_DIR:-$(dirname "$ROOT")/shared-observability}/config/grafana/provisioning/alerting"
+SRC="$ROOT/platform/config/alerting"
+
+for f in chorus-sensor-rules.yaml chorus-shacl-rules.yaml; do
+  [ -f "$SRC/$f" ] || { echo "grafana-file-rules-4977: $SRC/$f missing — this land's rule files are not on main" >&2; exit 2; }
+  grep -q 'deleteRules:' "$SRC/$f" || { echo "grafana-file-rules-4977: $SRC/$f has no deleteRules" >&2; exit 2; }
+done
+
+cat <<STEPS
+#4977 post-land, on Jeff's yes (in this order):
+
+1. (Silas) copy the two rule files into Grafana's provisioning:
+   cp $SRC/chorus-sensor-rules.yaml $SRC/chorus-shacl-rules.yaml $OBS/
+
+2. (Jeff) restart Grafana so it deletes the two file rules:
+   ! launchctl kickstart -k gui/\$(id -u)/com.gathering.grafana
+
+3. (Silas) delete the two old Alert rows, whose rules are gone:
+   mcp athena-delete domain=alerts class=alerts id=sensor-run-not-green
+   mcp athena-delete domain=alerts class=alerts id=shacl-violations-above-baseline
+STEPS

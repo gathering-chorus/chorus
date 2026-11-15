@@ -47,8 +47,8 @@ judge() {
   run judge '{"services":[{"label":"com.gathering.fuseki-backup","rss_mb":0}]}'
   [[ "$output" == fail\ UNMEASURED* ]] || return 1
 }
-@test "NEGATIVE PROOF: main's block warned at 2444 MB, so this suite can tell the two apart" {
-  git -C "$ROOT" show origin/main:platform/scripts/chorus-health > "$TMPD/main.sh" 2>/dev/null || skip "origin/main not readable"
+@test "NEGATIVE PROOF: the pre-#4970 block (b598f3907) warned at 2444 MB, so this suite can tell the two apart" {
+  git -C "$ROOT" show b598f3907:platform/scripts/chorus-health > "$TMPD/main.sh" 2>/dev/null || return 1
   { echo 'FUSEKI_MEM_CEILING_MB=2000'; awk '/^FUSEKI_LABEL=/,/^fi$/' "$TMPD/main.sh"; } > "$TMPD/block.sh"
   run judge '{"services":[{"label":"com.gathering.fuseki","rss_mb":2444}]}'
   [[ "$output" == warn* ]] || return 1

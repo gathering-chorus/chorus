@@ -1,0 +1,19 @@
+{
+ "id": "chorus:crawler-out-of-sync",
+ "data": {
+  "label": "Crawler out of sync with git",
+  "measures": "Are crawled rows missing or stale against git for over an hour?",
+  "monitorKind": "grafana",
+  "monitorSays": "The graph is out of step with git for over an hour: {{ $labels.metric }} rows (read /sync for which classes).",
+  "monitorLine": "0",
+  "monitorWhen": "above",
+  "monitorFor": "60m",
+  "monitorAction": "Run the crawl and read /sync"
+ },
+ "links": {
+  "monitorOfSensor": "chorus:crawler-sync",
+  "ownedBy": "chorus:principal-kade",
+  "hasDomain": "chorus:monitors",
+  "type": "chorus:Monitor"
+ }
+}
