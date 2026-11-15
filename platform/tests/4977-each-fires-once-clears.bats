@@ -97,3 +97,9 @@ L_ABSENT='{"exp_labels": {"sensor": "sync"}}'
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [[ "$output" == *"ok 5 "* ]] || return 1
 }
+# --- the one-year wait reaches Grafana: the land loads the ICD map first (found 2026-11-15 00:37) ---
+@test "each rule's repeat wait reaches Grafana: ICD loaded before any rule, a rule built bare is refused (4977-repeat-wait-reaches-grafana.bats)" {
+  run bats "$ROOT/platform/tests/4977-repeat-wait-reaches-grafana.bats"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [[ "$output" == *"ok 4 "* ]] || return 1
+}
