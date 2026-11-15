@@ -18,12 +18,12 @@
    "count_11_15": 3
   },
   {
-   "class": "AgentRuntime",
-   "path": "runtimeSource",
-   "component": "MinCount",
-   "owner": "none",
-   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
-   "count_11_15": 3
+   "class": "AgentRole",
+   "path": "roleKind",
+   "component": "Pattern",
+   "owner": "kade",
+   "reason": "leftover quartet test-probe roles (zz- names); retiring them through the ledger made staging's door lose kade's and jeff's role rows (athena run 034yBXxe), so they stay until that is understood",
+   "count_11_15": 0
   },
   {
    "class": "Delivery",
@@ -298,6 +298,14 @@
    "count_11_15": 1
   },
   {
+   "class": "HumanRole",
+   "path": "roleKind",
+   "component": "Pattern",
+   "owner": "kade",
+   "reason": "leftover quartet test-probe roles (zz- names); retiring them through the ledger made staging's door lose kade's and jeff's role rows (athena run 034yBXxe), so they stay until that is understood",
+   "count_11_15": 0
+  },
+  {
    "class": "KeyRegistryEntry",
    "path": "permittedScope",
    "component": "MinCount",
@@ -434,6 +442,14 @@
    "count_11_15": 1
   },
   {
+   "class": "Role",
+   "path": "roleKind",
+   "component": "Pattern",
+   "owner": "kade",
+   "reason": "leftover quartet test-probe roles (zz- names); retiring them through the ledger made staging's door lose kade's and jeff's role rows (athena run 034yBXxe), so they stay until that is understood",
+   "count_11_15": 0
+  },
+  {
    "class": "ScheduledJob",
    "path": "binaryPath",
    "component": "MaxCount",
@@ -566,7 +582,7 @@
    "path": "hasDomain",
    "component": "Class",
    "owner": "none",
-   "reason": "13 rows on retired alerts-monitors: dotted names the door refuses; source maps them, the deploy does not load it (#4517)",
+   "reason": "13 rows on retired alerts-monitors: dotted names the door refuses (422); the source maps them but unit-domain-4084.ttl is not in the domain-set manifest (#4432 took row sets out), so no deploy loads it (#4517)",
    "count_11_15": 13
   },
   {
@@ -584,46 +600,6 @@
    "owner": "none",
    "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
    "count_11_15": 1
-  },
-  {
-   "class": "Version",
-   "path": "label",
-   "component": "MinCount",
-   "owner": "none",
-   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
-   "count_11_15": 1
-  },
-  {
-   "class": "Version",
-   "path": "ownedBy",
-   "component": "MinCount",
-   "owner": "none",
-   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
-   "count_11_15": 1
-  },
-  {
-   "class": "Role",
-   "path": "roleKind",
-   "component": "Pattern",
-   "owner": "kade",
-   "reason": "leftover quartet test-probe roles (zz- names); retiring them through the ledger made staging's door lose kade's and jeff's role rows (athena run 034yBXxe), so they stay until that is understood",
-   "count_11_15": 0
-  },
-  {
-   "class": "HumanRole",
-   "path": "roleKind",
-   "component": "Pattern",
-   "owner": "kade",
-   "reason": "leftover quartet test-probe roles (zz- names); retiring them through the ledger made staging's door lose kade's and jeff's role rows (athena run 034yBXxe), so they stay until that is understood",
-   "count_11_15": 0
-  },
-  {
-   "class": "AgentRole",
-   "path": "roleKind",
-   "component": "Pattern",
-   "owner": "kade",
-   "reason": "leftover quartet test-probe roles (zz- names); retiring them through the ledger made staging's door lose kade's and jeff's role rows (athena run 034yBXxe), so they stay until that is understood",
-   "count_11_15": 0
   }
  ]
 }
