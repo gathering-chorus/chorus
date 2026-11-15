@@ -2,7 +2,7 @@
 # @test-type: unit — fixtures for the verdict; the live case reads prod Prometheus after the land
 # @domain: persistence
 # @card: #4920 · owner: silas
-# Checks designing/schemas/shacl-remainder-4920.json and platform/scripts/land-4920-rows.
+# Checks designing/domains/monitors/shacl-remainder-4920.json and platform/scripts/land-4920-rows.
 #
 # #4920 AC2 (Jeff 2026-11-15 14:06): zero repairable violations; what remains is named by class,
 # field, constraint and owner. Every census line (athena_shacl_violations_by_field > 0) must be
@@ -10,24 +10,25 @@
 
 setup() {
   ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
-  NAMED="$ROOT/designing/schemas/shacl-remainder-4920.json"
+  NAMED="$ROOT/designing/domains/monitors/shacl-remainder-4920.json"
 }
 
-# Prometheus /api/v1/query JSON on stdin; prints each unnamed line, exits 1 if any
+# the one classification: land-4920-rows' unnamed(), run on census textfile lines on stdin
 verdict() {
+  # python3 -c, not a heredoc: a heredoc would take stdin and the census lines would never be read
   python3 -c '
-import json, sys
-named = {(n["class"], n["path"], n["component"]) for n in json.load(open(sys.argv[1]))["named"]}
-bad = 0
-for r in json.load(sys.stdin)["data"]["result"]:
-    m = r["metric"]; k = (m.get("class",""), m.get("path",""), m.get("component","").replace("ConstraintComponent",""))
-    if float(r["value"][1]) > 0 and k not in named:
-        print("UNNAMED %s.%s %s %s" % (k[0], k[1] or "-", k[2], r["value"][1])); bad = 1
-sys.exit(bad)
-' "$NAMED"
+import importlib.machinery, importlib.util, json, sys
+l = importlib.machinery.SourceFileLoader("l4920", sys.argv[1])
+m = importlib.util.module_from_spec(importlib.util.spec_from_loader("l4920", l)); l.exec_module(m)
+text = sys.stdin.read()
+assert text.strip(), "no census lines on stdin"
+left = m.unnamed(text, json.load(open(sys.argv[2]))["named"])
+for x in left: print("UNNAMED " + x)
+sys.exit(1 if left else 0)
+' "$ROOT/platform/scripts/land-4920-rows" "$NAMED"
 }
 
-line() { printf '{"metric":{"class":"%s","path":"%s","component":"%sConstraintComponent"},"value":[0,"%s"]}' "$1" "$2" "$3" "$4"; }
+line() { printf 'athena_shacl_violations_by_field{class="%s",path="%s",component="%sConstraintComponent"} %s\n' "$1" "$2" "$3" "$4"; }
 
 @test "every named line has an owner and a reason" {
   python3 -c '
@@ -40,15 +41,15 @@ for n in d:
 }
 
 @test "census lines that are all named read clean" {
-  run bash -c "$(declare -f verdict line); NAMED='$NAMED'; printf '{\"data\":{\"result\":[%s,%s]}}' \"\$(line Delivery '' SPARQL 267)\" \"\$(line Value expressedBy Class 15)\" | verdict"
+  run bash -c "$(declare -f verdict line); ROOT='$ROOT'; NAMED='$NAMED'; { line Delivery '' SPARQL 267; line Value expressedBy Class 15; } | verdict"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
 
 # NEGATIVE PROOF: a line this card fixed (or any new damage) is not named, so it fails
 @test "an unnamed line fails, naming it; a zero line is ignored" {
-  run bash -c "$(declare -f verdict line); NAMED='$NAMED'; printf '{\"data\":{\"result\":[%s]}}' \"\$(line Session '' SPARQL 123)\" | verdict"
+  run bash -c "$(declare -f verdict line); ROOT='$ROOT'; NAMED='$NAMED'; line Session '' SPARQL 123 | verdict"
   [ "$status" -eq 1 ] && [[ "$output" == *"UNNAMED Session.- SPARQL 123"* ]] || { echo "$output"; return 1; }
-  run bash -c "$(declare -f verdict line); NAMED='$NAMED'; printf '{\"data\":{\"result\":[%s]}}' \"\$(line Session '' SPARQL 0)\" | verdict"
+  run bash -c "$(declare -f verdict line); ROOT='$ROOT'; NAMED='$NAMED'; line Session '' SPARQL 0 | verdict"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
 

@@ -2,7 +2,7 @@
 """#4920: after the land, run the SHACL census once, so the gauge the alert and the AC checks read
 reflects the land's model deploy and ledger entries at the prove, not at the next nightly.
 # @domain: persistence
-Then every census line must be in the named remainder (designing/schemas/shacl-remainder-4920.json, AC2).\nDRY RUN unless --apply. Exit 0 = the census ran and all is named (or the plan printed); 1 = it failed or a line is unnamed; 2 = it could not run.
+Then every census line must be in the named remainder (designing/domains/monitors/shacl-remainder-4920.json, AC2).\nDRY RUN unless --apply. Exit 0 = the census ran and all is named (or the plan printed); 1 = it failed or a line is unnamed; 2 = it could not run.
 """
 import os
 import subprocess
@@ -10,7 +10,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CENSUS = os.environ.get("SHACL_CENSUS", os.path.join(HERE, "shacl-census"))
-NAMED = os.path.join(os.path.dirname(os.path.dirname(HERE)), "designing/schemas/shacl-remainder-4920.json")
+NAMED = os.path.join(os.path.dirname(os.path.dirname(HERE)), "designing/domains/monitors/shacl-remainder-4920.json")
 PROM = os.path.join(os.environ.get("TEXTFILE_DIR", os.path.expanduser("~/CascadeProjects/shared-observability/data/textfile_collector")), "athena_shacl.prom")
 
 
