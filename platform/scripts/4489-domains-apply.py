@@ -105,6 +105,10 @@ def hits(route, field):
 def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else "--dry-run"
     left = 0
+    # #4920 — one refused row no longer stops the rest; every refusal is named and the run exits 1
+    # (11-15: the door refuses the dotted unit-mapping names, "invalid entity name", and the first
+    # one stopped all 42 links, the 25 writable event types included)
+    refused = []
     for route, field in ROUTES:
         for r, vals, old in hits(route, field):
             left += len(old)
@@ -118,7 +122,7 @@ def main():
             if mode == "--apply":
                 st, body = http("PATCH", f"/v1/{route}/{urllib.parse.quote(r['name'])}", {field: value})
                 if st >= 300:
-                    raise SystemExit(f"4489: PATCH {route}/{r['name']} refused {st} {body}")
+                    refused.append(f"PATCH {route}/{r['name']} refused {st} {body}")
     route, field = APPOINTMENTS
     for r, _vals, _old in hits(route, field):
         left += 1
@@ -126,8 +130,12 @@ def main():
         if mode == "--apply":
             st, body = http("DELETE", f"/v1/{route}/{urllib.parse.quote(r['name'])}")
             if st >= 300:
-                raise SystemExit(f"4489: DELETE {route}/{r['name']} refused {st} {body}")
+                refused.append(f"DELETE {route}/{r['name']} refused {st} {body}")
     print(f"links to the five retired domains: {left}")
+    for x in refused:
+        print(f"4489: {x}", file=sys.stderr)
+    if refused:
+        sys.exit(1)
     if mode == "--count":
         sys.exit(1 if left else 0)
 
