@@ -18,14 +18,6 @@
    "count_11_15": 3
   },
   {
-   "class": "AgentRole",
-   "path": "roleKind",
-   "component": "Pattern",
-   "owner": "none",
-   "reason": "named, not repaired on #4920",
-   "count_11_15": 1
-  },
-  {
    "class": "AgentRuntime",
    "path": "runtimeSource",
    "component": "MinCount",
@@ -38,7 +30,7 @@
    "path": "channelKind",
    "component": "Pattern",
    "owner": "silas",
-   "reason": "named, not repaired on #4920",
+   "reason": "channel-agent's kind 'agent' is outside the shape's terminal|nudge|clearing: the shape predates agent delivery",
    "count_11_15": 1
   },
   {
@@ -54,7 +46,7 @@
    "path": "",
    "component": "Node",
    "owner": "jeff",
-   "reason": "named, not repaired on #4920",
+   "reason": "4 design documents fail the core shape (alerts, monitors, security, logs)",
    "count_11_15": 4
   },
   {
@@ -62,47 +54,47 @@
    "path": "label",
    "component": "MaxCount",
    "owner": "jeff",
-   "reason": "named, not repaired on #4920",
+   "reason": "2 design documents carry two labels",
    "count_11_15": 2
   },
   {
    "class": "Domain",
    "path": "",
    "component": "Node",
-   "owner": "wren",
-   "reason": "named, not repaired on #4920",
+   "owner": "jeff",
+   "reason": "spine typed both Domain and Product: modeling call",
    "count_11_15": 4
   },
   {
    "class": "Domain",
    "path": "apiSurface",
    "component": "Closed",
-   "owner": "wren",
-   "reason": "named, not repaired on #4920",
+   "owner": "jeff",
+   "reason": "spine typed both Domain and Product: Domain's closed shape rejects its Product fields (modeling call)",
    "count_11_15": 1
   },
   {
    "class": "Domain",
    "path": "asIs",
    "component": "Closed",
-   "owner": "wren",
-   "reason": "named, not repaired on #4920",
+   "owner": "jeff",
+   "reason": "spine typed both Domain and Product: Domain's closed shape rejects its Product fields (modeling call)",
    "count_11_15": 1
   },
   {
    "class": "Domain",
    "path": "atStep",
    "component": "Closed",
-   "owner": "wren",
-   "reason": "named, not repaired on #4920",
+   "owner": "jeff",
+   "reason": "spine typed both Domain and Product: Domain's closed shape rejects its Product fields (modeling call)",
    "count_11_15": 1
   },
   {
    "class": "Domain",
    "path": "audience",
    "component": "Closed",
-   "owner": "wren",
-   "reason": "named, not repaired on #4920",
+   "owner": "jeff",
+   "reason": "spine typed both Domain and Product: Domain's closed shape rejects its Product fields (modeling call)",
    "count_11_15": 1
   },
   {
@@ -125,16 +117,16 @@
    "class": "Domain",
    "path": "definesVocabulary",
    "component": "Closed",
-   "owner": "wren",
-   "reason": "named, not repaired on #4920",
+   "owner": "jeff",
+   "reason": "spine typed both Domain and Product (closed shape)",
    "count_11_15": 3
   },
   {
    "class": "Domain",
    "path": "docState",
    "component": "Closed",
-   "owner": "wren",
-   "reason": "named, not repaired on #4920",
+   "owner": "jeff",
+   "reason": "spine typed both Domain and Product: Domain's closed shape rejects its Product fields (modeling call)",
    "count_11_15": 1
   },
   {
@@ -165,8 +157,8 @@
    "class": "Domain",
    "path": "hasDomain",
    "component": "Closed",
-   "owner": "wren",
-   "reason": "named, not repaired on #4920",
+   "owner": "jeff",
+   "reason": "spine typed both Domain and Product: Domain's closed shape rejects its Product fields (modeling call)",
    "count_11_15": 1
   },
   {
@@ -174,55 +166,55 @@
    "path": "hosts",
    "component": "Class",
    "owner": "wren",
-   "reason": "named, not repaired on #4920",
+   "reason": "infrastructure hosts the machines library and bedroom, which are not Services: modeling call",
    "count_11_15": 2
   },
   {
    "class": "Domain",
    "path": "instancesGraph",
    "component": "Closed",
-   "owner": "wren",
-   "reason": "named, not repaired on #4920",
+   "owner": "jeff",
+   "reason": "spine typed both Domain and Product: Domain's closed shape rejects its Product fields (modeling call)",
    "count_11_15": 1
   },
   {
    "class": "Domain",
    "path": "model",
    "component": "Closed",
-   "owner": "wren",
-   "reason": "named, not repaired on #4920",
+   "owner": "jeff",
+   "reason": "spine typed both Domain and Product: Domain's closed shape rejects its Product fields (modeling call)",
    "count_11_15": 1
   },
   {
    "class": "Domain",
    "path": "notInScope",
    "component": "Closed",
-   "owner": "wren",
-   "reason": "named, not repaired on #4920",
+   "owner": "jeff",
+   "reason": "spine typed both Domain and Product: Domain's closed shape rejects its Product fields (modeling call)",
    "count_11_15": 1
   },
   {
    "class": "Domain",
    "path": "pagesAndFlow",
    "component": "Closed",
-   "owner": "wren",
-   "reason": "named, not repaired on #4920",
+   "owner": "jeff",
+   "reason": "spine typed both Domain and Product: Domain's closed shape rejects its Product fields (modeling call)",
    "count_11_15": 1
   },
   {
    "class": "Domain",
    "path": "promise",
    "component": "Closed",
-   "owner": "wren",
-   "reason": "named, not repaired on #4920",
+   "owner": "jeff",
+   "reason": "spine typed both Domain and Product: Domain's closed shape rejects its Product fields (modeling call)",
    "count_11_15": 1
   },
   {
    "class": "Domain",
    "path": "purpose",
    "component": "Closed",
-   "owner": "wren",
-   "reason": "named, not repaired on #4920",
+   "owner": "jeff",
+   "reason": "spine typed both Domain and Product: Domain's closed shape rejects its Product fields (modeling call)",
    "count_11_15": 1
   },
   {
@@ -237,16 +229,16 @@
    "class": "Domain",
    "path": "references",
    "component": "Closed",
-   "owner": "wren",
-   "reason": "named, not repaired on #4920",
+   "owner": "jeff",
+   "reason": "spine typed both Domain and Product: Domain's closed shape rejects its Product fields (modeling call)",
    "count_11_15": 1
   },
   {
    "class": "Domain",
    "path": "runsOn",
    "component": "Closed",
-   "owner": "wren",
-   "reason": "named, not repaired on #4920",
+   "owner": "jeff",
+   "reason": "spine typed both Domain and Product: Domain's closed shape rejects its Product fields (modeling call)",
    "count_11_15": 1
   },
   {
@@ -261,32 +253,32 @@
    "class": "Domain",
    "path": "structure",
    "component": "Closed",
-   "owner": "wren",
-   "reason": "named, not repaired on #4920",
+   "owner": "jeff",
+   "reason": "spine typed both Domain and Product: Domain's closed shape rejects its Product fields (modeling call)",
    "count_11_15": 1
   },
   {
    "class": "Domain",
    "path": "toBe",
    "component": "Closed",
-   "owner": "wren",
-   "reason": "named, not repaired on #4920",
+   "owner": "jeff",
+   "reason": "spine typed both Domain and Product: Domain's closed shape rejects its Product fields (modeling call)",
    "count_11_15": 1
   },
   {
    "class": "Domain",
    "path": "valueProposition",
    "component": "Closed",
-   "owner": "wren",
-   "reason": "named, not repaired on #4920",
+   "owner": "jeff",
+   "reason": "spine typed both Domain and Product: Domain's closed shape rejects its Product fields (modeling call)",
    "count_11_15": 1
   },
   {
    "class": "Domain",
    "path": "vision",
    "component": "Closed",
-   "owner": "wren",
-   "reason": "named, not repaired on #4920",
+   "owner": "jeff",
+   "reason": "spine typed both Domain and Product: Domain's closed shape rejects its Product fields (modeling call)",
    "count_11_15": 1
   },
   {
@@ -314,36 +306,12 @@
    "count_11_15": 1
   },
   {
-   "class": "HumanRole",
-   "path": "roleKind",
-   "component": "Pattern",
-   "owner": "none",
-   "reason": "named, not repaired on #4920",
-   "count_11_15": 1
-  },
-  {
-   "class": "KeyRegistryEntry",
-   "path": "keyId",
-   "component": "Pattern",
-   "owner": "none",
-   "reason": "named, not repaired on #4920",
-   "count_11_15": 2
-  },
-  {
    "class": "KeyRegistryEntry",
    "path": "permittedScope",
    "component": "MinCount",
    "owner": "none",
    "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
    "count_11_15": 5
-  },
-  {
-   "class": "KeyRegistryEntry",
-   "path": "permittedScope",
-   "component": "Pattern",
-   "owner": "none",
-   "reason": "named, not repaired on #4920",
-   "count_11_15": 1
   },
   {
    "class": "Knowledge",
@@ -418,22 +386,6 @@
    "count_11_15": 1
   },
   {
-   "class": "Nudge",
-   "path": "sentBy",
-   "component": "Class",
-   "owner": "kade",
-   "reason": "named, not repaired on #4920",
-   "count_11_15": 1
-  },
-  {
-   "class": "Nudge",
-   "path": "sentTo",
-   "component": "Class",
-   "owner": "kade",
-   "reason": "named, not repaired on #4920",
-   "count_11_15": 1
-  },
-  {
    "class": "Permission",
    "path": "accessTo",
    "component": "Datatype",
@@ -477,8 +429,8 @@
    "class": "Principal",
    "path": "",
    "component": "SPARQL",
-   "owner": "none",
-   "reason": "named, not repaired on #4920",
+   "owner": "silas",
+   "reason": "5 service principals: pulse, crawler, nightly hold a role; flow-probe, deployer can sign in. Security model call",
    "count_11_15": 5
   },
   {
@@ -488,14 +440,6 @@
    "owner": "none",
    "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
    "count_11_15": 1
-  },
-  {
-   "class": "Role",
-   "path": "roleKind",
-   "component": "Pattern",
-   "owner": "none",
-   "reason": "named, not repaired on #4920",
-   "count_11_15": 3
   },
   {
    "class": "RoleState",
@@ -526,31 +470,31 @@
    "path": "stateSource",
    "component": "In",
    "owner": "pulse",
-   "reason": "named, not repaired on #4920",
+   "reason": "role-state-wren says 'declared', retired for 'observed'",
    "count_11_15": 1
   },
   {
    "class": "ScheduledJob",
    "path": "binaryPath",
    "component": "MaxCount",
-   "owner": "silas",
-   "reason": "named, not repaired on #4920",
+   "owner": "kade",
+   "reason": "infra-stores-crawl job row written twice by the crawler (two values)",
    "count_11_15": 1
   },
   {
    "class": "ScheduledJob",
    "path": "lastObserved",
    "component": "MaxCount",
-   "owner": "silas",
-   "reason": "named, not repaired on #4920",
+   "owner": "kade",
+   "reason": "infra-stores-crawl job row written twice by the crawler (two values)",
    "count_11_15": 1
   },
   {
    "class": "Service",
    "path": "^hosts",
    "component": "MaxCount",
-   "owner": "kade",
-   "reason": "named, not repaired on #4920",
+   "owner": "wren",
+   "reason": "service-observability hosted by two domains: modeling call",
    "count_11_15": 1
   },
   {
@@ -582,7 +526,7 @@
    "path": "hasDesignDoc",
    "component": "Class",
    "owner": "kade",
-   "reason": "named, not repaired on #4920",
+   "reason": "service-memory's design doc was never written: content",
    "count_11_15": 1
   },
   {
@@ -645,8 +589,8 @@
    "class": "Session",
    "path": "channel",
    "component": "Pattern",
-   "owner": "jeff",
-   "reason": "named, not repaired on #4920",
+   "owner": "silas",
+   "reason": "one old silas session row with an empty channel",
    "count_11_15": 1
   },
   {
