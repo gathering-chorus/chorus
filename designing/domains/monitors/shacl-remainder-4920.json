@@ -306,14 +306,6 @@
    "count_11_15": 0
   },
   {
-   "class": "KeyRegistryEntry",
-   "path": "permittedScope",
-   "component": "MinCount",
-   "owner": "silas",
-   "reason": "held: cred-bridge-nostr and cred-marknakib-nostr; a scope would affirm an old bridge key and an outside person's key may post to Buzz, so keep or cut is Jeff's (Wren asked 2026-11-15 15:35). jeff, wren and kade moved to door rows with scope urn:chorus:buzz on this card",
-   "count_11_15": 2
-  },
-  {
    "class": "Knowledge",
    "path": "comment",
    "component": "MinCount",
