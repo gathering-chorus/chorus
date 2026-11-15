@@ -1,3 +1,4 @@
+# @domain: persistence — the census tests this fixture serves (#4717, #4920)
 # scratch-census.bash — a scratch Fuseki on a free port as the "store" for shacl-census tests
 # (#4717, #4920). Never touches :3030. Loaded by 4717-shacl-metrics.bats and 4920-baseline-alert.bats.
 # wipe-guard: exempt — every write goes to the scratch Fuseki this file boots on a free port, never :3030
