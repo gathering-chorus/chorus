@@ -66,8 +66,8 @@ m = importlib.util.module_from_spec(s); sys.argv = [sys.argv[1]]; l.exec_module(
 land = [p[0] for p in m.PAIRS]; kade = [p[0] for p in m.KADE_PAIRS]
 assert not any(x.startswith("crawler") for x in land), land
 assert kade == ["crawler-out-of-sync-monitor-4977", "crawler-sync-quiet-monitor-4977"], kade
-src = open(sys.argv[0]).read()
-assert '("alerts", "crawler-out-of-sync", None)' in src, "the land does not hand the row over"
+planned = [(c, n) for c, n, w in m.plan({}) if c == "alerts" and n.startswith("crawler")]
+assert not planned, f"the land touches Kade's crawler Alert rows: {planned}"
 PY
 }
 # the mint adds each kind's prefix and refuses a name that already carries it (ADR-040 Rule 0):
@@ -95,4 +95,17 @@ PY
   run bare_names "$T/platform/scripts/land-4977-rows"
   [ "$status" -eq 1 ] || return 1
   [[ "$output" == *"sensors/sensor-runs"* ]] || { echo "$output"; return 1; }
+}
+# sensor-run routes to silas, not each sensor's owner (Kade 2026-11-14 22:03); the row said kade (Kade, 11-15 02:58)
+route_of() {
+  "$ROOT/platform/scripts/monitor-alert" build "$1" "$ROOT/designing/domains/monitors/sensor-runs-sensor-4977.json" \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["alertRoute"])'
+}
+@test "the sensor-run alert routes to silas" {
+  [ "$(route_of "$ROOT/designing/domains/monitors/sensor-run-not-green-monitor-4977.json")" = "silas" ] || return 1
+}
+@test "NEGATIVE PROOF: a sensor-run monitor owned by kade routes to kade, and the check above would fail" {
+  T="$BATS_TEST_TMPDIR/m.json"
+  sed 's/"ownedBy": "chorus:principal-silas"/"ownedBy": "chorus:principal-kade"/' "$ROOT/designing/domains/monitors/sensor-run-not-green-monitor-4977.json" > "$T"
+  [ "$(route_of "$T")" = "kade" ] || return 1
 }

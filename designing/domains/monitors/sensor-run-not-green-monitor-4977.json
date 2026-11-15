@@ -12,7 +12,7 @@
  },
  "links": {
   "monitorOfSensor": "chorus:runs-not-green",
-  "ownedBy": "chorus:principal-kade",
+  "ownedBy": "chorus:principal-silas",
   "hasDomain": "chorus:monitors",
   "type": "chorus:Monitor"
  }
