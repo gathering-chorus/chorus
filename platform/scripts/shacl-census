@@ -15,6 +15,7 @@ Writes for node-exporter's textfile collector (:9102, already scraped):
   athena_shacl_violating_rows             rows with one or more
   athena_shacl_violations_baseline        the ratchet: the lowest count seen
   athena_shacl_violations_by{component}   by SHACL constraint
+  athena_shacl_violations_by_field{class,path,component}  by the class and field that fail (#4980)
   athena_shacl_census_graphs{state}       graphs read / failed
 The baseline only goes down (Jeff 10-24 06:08); the rule alerts when the count
 rises above it, which at 0 is ">0". A graph that cannot be read fails the
@@ -101,8 +102,9 @@ def load(base, body):
         raise RuntimeError(f"scratch load failed: {r.stderr.decode(errors='replace')[:200]}")
 
 
-def tally(report):
-    """(results, rows, by component) from a validation report in N-Triples."""
+def tally(report, types=None):
+    """(results, rows, by component, by field) from a validation report in N-Triples.
+    `types`: focus node -> its class, so one field name on many classes stays apart."""
     by, results = {}, set()
     pat = re.compile(r'^(\S+) <([^>]+)> (.+) \.$')
     for line in report.decode(errors="replace").splitlines():
@@ -116,15 +118,44 @@ def tally(report):
             by.setdefault(s, {})[p[len(SH):]] = o
     if not any("conforms" in v for v in by.values()):
         raise RuntimeError("the scratch answered no validation report")
-    comp, rows = Counter(), set()
+    comp, rows, field = Counter(), set(), Counter()
     for r in results:
         f = by.get(r, {})
-        comp[f.get("sourceConstraintComponent", "?").rstrip(">").rsplit("#", 1)[-1]] += 1
+        c = f.get("sourceConstraintComponent", "?").rstrip(">").rsplit("#", 1)[-1]
+        comp[c] += 1
         rows.add(f.get("focusNode"))
-    return len(results), len(rows), comp
+        # #4980 — by field: the path and constraint name what grew (property shapes are blank
+        # nodes, so the shape itself has no name that survives a run); "" = a node-level check
+        cls = (types or {}).get(f.get("focusNode", ""), "?")
+        field[(local(cls), path_name(f.get("resultPath", ""), by), c)] += 1
+    return len(results), len(rows), comp, field
 
 
-def write_prom(count, rows, comp, baseline, graphs):
+def path_name(path, by):
+    """A result's path as a stable name: a property's local name, ^name for an inverse path,
+    a/b for a sequence; a blank-node path is resolved through the report, never printed raw
+    (9,494 results in the 11-15 store had a blank-node path, one gauge line each)."""
+    if not path.startswith("_:"):
+        return local(path)
+    node = by.get(path, {})
+    if "inversePath" in node:
+        return "^" + local(node["inversePath"])
+    return "complex"
+
+
+def local(iri):
+    return iri.strip("<>").rsplit("#", 1)[-1].rsplit("/", 1)[-1]
+
+
+def classes(base):
+    """focus node -> its first class, from the scratch store the census validated."""
+    out = curl(["-H", "Accept: text/tab-separated-values", "--data-urlencode",
+                "query=SELECT ?s (MIN(STR(?t)) AS ?c) WHERE { GRAPH <urn:census> { ?s a ?t } } GROUP BY ?s",
+                f"{base}/query"], timeout=600).decode(errors="replace").splitlines()[1:]
+    return {s: f"<{c.strip(chr(34))}>" for s, c in (l.split("\t", 1) for l in out if "\t" in l)}
+
+
+def write_prom(count, rows, comp, baseline, graphs, field=None):
     os.makedirs(TEXTFILE, exist_ok=True)
     lines = [
         "# HELP athena_shacl_violations SHACL validation results over every urn:chorus:domains graph, by Jena (#4717).",
@@ -136,6 +167,10 @@ def write_prom(count, rows, comp, baseline, graphs):
         "# HELP athena_shacl_violations_by SHACL validation results by constraint component (#4717).",
         "# TYPE athena_shacl_violations_by gauge",
     ] + [f'athena_shacl_violations_by{{component="{c}"}} {n}' for c, n in sorted(comp.items())] + [
+        "# HELP athena_shacl_violations_by_field SHACL results by the class, field and constraint they fail; names what grew (#4980).",
+        "# TYPE athena_shacl_violations_by_field gauge",
+    ] + [f'athena_shacl_violations_by_field{{class="{k}",path="{p}",component="{c}"}} {n}'
+         for (k, p, c), n in sorted((field or {}).items())] + [
         "# HELP athena_shacl_census_graphs Graphs the census read (#4717).",
         "# TYPE athena_shacl_census_graphs gauge", f'athena_shacl_census_graphs {graphs}',
     ]
@@ -183,7 +218,7 @@ def main():
             f.write(shapes)
         report = curl(["-X", "POST", "-H", "Content-Type: text/turtle", "-H", "Accept: application/n-triples",
                        "--data-binary", f"@{work}/shapes.ttl", f"{base}/shacl?graph=urn:census"], timeout=1800)
-        count, rows, comp = tally(report)
+        count, rows, comp, field = tally(report, classes(base))
     finally:
         if proc:
             proc.terminate()
@@ -193,7 +228,7 @@ def main():
                 proc.kill()
         shutil.rmtree(work, ignore_errors=True)
     baseline = ratchet(count)
-    write_prom(count, rows, comp, baseline, len(graphs))
+    write_prom(count, rows, comp, baseline, len(graphs), field)
     print(f"shacl-census: {count} violation(s) on {rows} row(s) across {len(graphs)} graph(s); baseline {baseline}")
     return 0
 
