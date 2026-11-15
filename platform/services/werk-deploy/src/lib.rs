@@ -1549,11 +1549,14 @@ pub fn model_before_rows(has_rows: bool) -> bool {
     has_rows
 }
 
-/// #4889 — the card's own store-write script, when this land ships it. Only a script the
-/// diff adds or changes counts: an old card's script on main never runs again. Pure.
-pub fn land_rows_script(canon: &Path, card: u64, diff: &str) -> Option<PathBuf> {
-    let rel = format!("platform/scripts/land-{card}-rows");
-    diff.lines().any(|l| l.trim() == rel).then(|| canon.join(&rel)).filter(|p| p.is_file())
+/// #4889 — the card's own store-write script, on every land of that card. #4977: it once ran
+/// only when the land's diff touched it, so a fix-forward that changed only a helper
+/// (chorus-icd-load.sh, 2026-11-15 06:05) landed "nothing to deploy" and its rows, ICD load
+/// and rules never ran, while a role account cannot run them by hand (no store login). A rows
+/// script is idempotent by contract (plan, SAME), and keyed on the card: another card's script
+/// never runs. Pure.
+pub fn land_rows_script(canon: &Path, card: u64) -> Option<PathBuf> {
+    Some(canon.join(format!("platform/scripts/land-{card}-rows"))).filter(|p| p.is_file())
 }
 
 /// Run a land-rows script with --apply; Err with its last lines when it refuses or fails.
@@ -2377,7 +2380,7 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
         &|p: &str| fs::read_to_string(p).ok());
 
     if crates.is_empty() && ts.is_empty() && model_files.is_empty() && restarts.is_empty()
-        && land_rows_script(&canon, card, &diff).is_none() {
+        && land_rows_script(&canon, card).is_none() {
         // Docs/config-only card — no service and no model to deploy for prod. Clean no-op
         // so the acp chain proceeds (mirrors werk-build's no-build-units case).
         jsonl(home, role, card, trace, "deploy.completed",
@@ -2509,7 +2512,7 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
     // #4960 — here, AFTER the installs and restarts above: the door the rows write through
     // runs this land's code (#4960's own fix to athena-model's IRI fields was not live when
     // its rows ran before the installs).
-    if let Some(script) = land_rows_script(&canon, card, &diff) {
+    if let Some(script) = land_rows_script(&canon, card) {
         // #4960 (folds #4961) — the model first: rows are written against shapes and grants
         // the land itself ships (#4960's rows 422/403'd at 14:26 against the old model).
         // athena-land deploys this land's commit now; the success handler's later call

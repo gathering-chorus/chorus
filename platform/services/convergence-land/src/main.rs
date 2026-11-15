@@ -97,6 +97,12 @@ fn land_alert(name: &str, dry_run: bool) -> Result<String, String> {
         (c, b) = http("POST", &format!("{g}/api/v1/provisioning/alert-rules"), Some(&r), h, &np)?;
     }
     if !ok(c) { return Err(format!("Grafana refused rule {uid} ({c}): {b}")); }
+    // #4977 — read the rule back from Grafana itself, never the build, and refuse a wrong wait
+    let (c, b) = http("GET", &format!("{g}/api/v1/provisioning/alert-rules/{uid}"), None, h, &[])?;
+    if !ok(c) { return Err(format!("landed {uid} but Grafana will not read it back ({c})")); }
+    let live: Value = serde_json::from_str(&b).map_err(|e| format!("landed {uid} but its read-back is not JSON: {e}"))?;
+    // the PUT already happened: a refused read-back leaves that rule live in Grafana (Kade 07:08)
+    let wait = readback(&r, &live).map_err(|e| format!("refused: rule {uid}: {e}; that rule is live in Grafana as read back, not as built"))?;
     let grp = format!("{g}/api/v1/provisioning/folder/{folder}/rule-groups/{domain}");
     if let Ok((200, gb)) = http("GET", &grp, None, h, &[]) {
         if let Ok(mut gv) = serde_json::from_str::<Value>(&gb) {
@@ -107,7 +113,7 @@ fn land_alert(name: &str, dry_run: bool) -> Result<String, String> {
         }
     }
     write_back(name, &uid)?;
-    Ok(format!("landed {name} as Grafana rule {uid} in {folder}/{domain}, every {interval}; grafanaRuleUid written"))
+    Ok(format!("landed {name} as Grafana rule {uid} in {folder}/{domain}, every {interval}; read back repeat_interval {wait}; grafanaRuleUid written"))
 }
 
 fn interval_secs(d: &str) -> u64 {
