@@ -41,8 +41,6 @@ MON = os.path.join(land.ROOT, "designing/domains/monitors")
 # (monitor file, sensor file, notify, land the rule now)
 PAIRS = [
     ("bedroom-disk-full-monitor-4970", "infra-disk-sensor-4970", "on", True),
-    ("crawler-out-of-sync-monitor-4977", "crawler-sync-sensor-4977", "on", True),
-    ("crawler-sync-quiet-monitor-4977", "crawler-sync-age-sensor-4977", "on", True),
     ("fuseki-memory-monitor-4977", "fuseki-memory-sensor-4977", "on", True),
     # Buzz stays recorded, not told, while PULSE_BUZZ_DELIVER is off (Wren, 2026-11-14 17:47)
     ("buzz-shadow-monitor-4977", "buzz-shadow-sensor-4977", "off", True),
@@ -53,13 +51,20 @@ PAIRS = [
     ("sensor-run-not-green-monitor-4977", "sensor-runs-sensor-4977", "on", True),
     ("shacl-above-baseline-monitor-4977", "shacl-above-baseline-sensor-4977", "on", True),
 ]
+# Kade writes the crawler's rows from his own account so they are his and route to him
+# (the door stamps the writer as ownedBy; Kade, 2026-11-14 22:03): after the land,
+#   land-4977-rows --kade --apply
+KADE_PAIRS = [
+    ("crawler-out-of-sync-monitor-4977", "crawler-sync-sensor-4977", "on", True),
+    ("crawler-sync-quiet-monitor-4977", "crawler-sync-age-sensor-4977", "on", True),
+]
 # the retired yml's row keeps a provenance a reader can open: the monitor row it is made from
 PROVENANCE = {"crawler-out-of-sync": "chorus/designing/domains/monitors/crawler-out-of-sync-monitor-4977.json"}
 
 
-def rows():
+def rows(pairs=None):
     out, rules = [], []
-    for m, s, notify, now in PAIRS:
+    for m, s, notify, now in (pairs or PAIRS):
         monitor = json.load(open(os.path.join(MON, m + ".json")))
         sensor = json.load(open(os.path.join(MON, s + ".json")))
         alert = monitor_alert.build(monitor, sensor)
@@ -77,8 +82,11 @@ def rows():
     return out, rules
 
 
+SET = KADE_PAIRS if "--kade" in sys.argv else PAIRS
+
+
 def plan(_live):
-    return rows()[0]
+    return rows(SET)[0]
 
 
 land.plan = plan
@@ -86,7 +94,7 @@ land.plan = plan
 
 def main(argv):
     rc = land.main(argv)
-    rules = rows()[1]
+    rules = rows(SET)[1]
     if "--apply" not in argv:
         print(f"then: convergence-land-alert for {', '.join(rules)} (not run in a dry run)")
         return rc

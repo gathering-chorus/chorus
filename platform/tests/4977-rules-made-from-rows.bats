@@ -58,3 +58,13 @@ held() {
   [[ "$output" == *"id=sensor-run-not-green"* ]] || return 1
   [[ "$output" == *"id=shacl-violations-above-baseline"* ]] || return 1
 }
+@test "the crawler's rows are Kade's: the land skips them, and the same script writes them from his account" {
+  python3 - "$L" <<'PY' || return 1
+import importlib.machinery, importlib.util, sys
+l = importlib.machinery.SourceFileLoader("l4977", sys.argv[1]); s = importlib.util.spec_from_loader("l4977", l)
+m = importlib.util.module_from_spec(s); sys.argv = [sys.argv[1]]; l.exec_module(m)
+land = [p[0] for p in m.PAIRS]; kade = [p[0] for p in m.KADE_PAIRS]
+assert not any(x.startswith("crawler") for x in land), land
+assert kade == ["crawler-out-of-sync-monitor-4977", "crawler-sync-quiet-monitor-4977"], kade
+PY
+}
