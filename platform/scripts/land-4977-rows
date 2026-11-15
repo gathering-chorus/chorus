@@ -126,10 +126,14 @@ def main(argv):
         return rc
     if rc != 0:
         return rc
-    try:
-        loaded = subprocess.run([ICD_LOAD], env={**os.environ, "CHORUS_ROOT": land.ROOT}).returncode == 0
-    except OSError:
-        loaded = False
+    # the ICD is loaded once, by the main land (silas seeds it); kade cannot write the ICD graph
+    # (11-15 02:57: fuseki-update refused), so --kade relies on the repeat check below alone
+    loaded = True
+    if SET is PAIRS:
+        try:
+            loaded = subprocess.run([ICD_LOAD], env={**os.environ, "CHORUS_ROOT": land.ROOT}).returncode == 0
+        except OSError:
+            loaded = False
     if not loaded:
         print("land-4977-rows: the ICD load was refused; no rule landed", file=sys.stderr)
         return 1
