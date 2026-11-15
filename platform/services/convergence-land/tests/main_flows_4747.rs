@@ -191,7 +191,7 @@ fn a_rule_grafana_holds_without_the_built_wait_is_refused() {
         let (base, log) = stub_live(false, live);
         let (code, out, err) = run(&base, &["alert", "host-pressure"]);
         assert_eq!(code, 1, "{out}");
-        assert!(err.contains(&format!("refused: rule host-pressure: {why}")), "{err}");
+        assert!(err.contains(&format!("refused: rule host-pressure: {why}; that rule is live in Grafana as read back")), "{err}");
         assert!(log.lock().unwrap().iter().any(|r| r == "GET /api/v1/provisioning/alert-rules/host-pressure"), "read back from Grafana");
         assert!(!log.lock().unwrap().iter().any(|r| r.starts_with("PATCH /v1/alerts")), "no uid written back for a refused rule");
     }

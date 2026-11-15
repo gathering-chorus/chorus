@@ -101,7 +101,8 @@ fn land_alert(name: &str, dry_run: bool) -> Result<String, String> {
     let (c, b) = http("GET", &format!("{g}/api/v1/provisioning/alert-rules/{uid}"), None, h, &[])?;
     if !ok(c) { return Err(format!("landed {uid} but Grafana will not read it back ({c})")); }
     let live: Value = serde_json::from_str(&b).map_err(|e| format!("landed {uid} but its read-back is not JSON: {e}"))?;
-    let wait = readback(&r, &live).map_err(|e| format!("refused: rule {uid}: {e}"))?;
+    // the PUT already happened: a refused read-back leaves that rule live in Grafana (Kade 07:08)
+    let wait = readback(&r, &live).map_err(|e| format!("refused: rule {uid}: {e}; that rule is live in Grafana as read back, not as built"))?;
     let grp = format!("{g}/api/v1/provisioning/folder/{folder}/rule-groups/{domain}");
     if let Ok((200, gb)) = http("GET", &grp, None, h, &[]) {
         if let Ok(mut gv) = serde_json::from_str::<Value>(&gb) {

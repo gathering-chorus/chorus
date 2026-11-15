@@ -4,14 +4,16 @@
 # @card: #4977 · owner: silas
 # Checks platform/services/convergence-land/src/lib.rs (call_event repeat=) through its Loki events.
 #
-# #4977 AC6 — after the land, Grafana holds each of the five row-made rules with its one-year
+# #4977 AC6 — after the land, Grafana holds each of the seven row-made rules (five from the land, the crawler's two from Kade's run) with its one-year
 # repeat wait. #4977 went Proven at 06:07 on 2026-11-15 with none of its rules in Grafana,
 # because no check read Grafana (Wren 07:01). convergence-land now reads every landed rule
 # back from Grafana's API and refuses a wrong wait; its call event carries repeat=<what
 # Grafana holds>. This check reads those events: the newest landing of each rule must be ok
 # with repeat=8760h. A rule never landed, refused, or holding another wait fails.
 
-RULES="bedroom-disk-full fuseki-memory-high buzz-shadow-not-matching sensor-run-red shacl-above-baseline"
+# the crawler's two land from Kade's account after the land (land-4977-rows --kade --apply, Kade
+# 07:08): without them here, Proven could recur with them never landed
+RULES="bedroom-disk-full fuseki-memory-high buzz-shadow-not-matching sensor-run-red shacl-above-baseline crawler-out-of-sync crawler-sync-quiet"
 
 setup() {
   ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
@@ -62,10 +64,10 @@ fixture() { # lines of: <ts> <target> <outcome> [repeat]
 
 all_held() { local n=1; for r in $RULES; do echo "$n $r ok 8760h"; n=$((n + 1)); done; }
 
-@test "five rules each landed with Grafana holding 8760h read as held" {
+@test "seven rules each landed with Grafana holding 8760h read as held" {
   run bash -c "$(declare -f verdict event fixture all_held); RULES='$RULES'; all_held | fixture | verdict"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$(grep -c '^held ' <<<"$output")" -eq 5 ] || { echo "$output"; return 1; }
+  [ "$(grep -c '^held ' <<<"$output")" -eq 7 ] || { echo "$output"; return 1; }
 }
 
 # NEGATIVE PROOF: each way a rule can be missing from Grafana fails, naming the rule
@@ -85,8 +87,8 @@ all_held() { local n=1; for r in $RULES; do echo "$n $r ok 8760h"; n=$((n + 1));
 }
 
 # After the land (borg-prove, the nightly): the live events. A card's werk has not landed yet,
-# so there the five cannot be held; it says so instead of reading prod.
-@test "after the land: Grafana holds the five with 8760h (read back by the land, from Loki)" {
+# so there the seven cannot be held; it says so instead of reading prod.
+@test "after the land: Grafana holds the seven with 8760h (read back by the land, from Loki)" {
   case "$ROOT" in */chorus-werk/*) skip "after-land check: a card's werk has not landed (#4977 AC6)";; esac
   local q='{job="platform-chorus"} |= "convergence.call" |= "\"op\":\"alert\""'
   json="$(curl -sf -m 20 -G "${LOKI_URL:-http://localhost:3102}/loki/api/v1/query_range" \
