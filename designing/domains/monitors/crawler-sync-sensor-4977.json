@@ -1,4 +1,15 @@
-{ "id": "chorus:crawler-sync", "data": { "label": "crawler-sync", "sensorSource": "grafana", "sensorDatasource": "prometheus",
+{
+ "id": "chorus:crawler-sync",
+ "data": {
+  "label": "crawler-sync",
+  "sensorSource": "grafana",
+  "sensorDatasource": "prometheus",
   "sensorReads": "the sync sensor's readings on Library (localhost:9102): crawled rows missing from or stale against git, per crawled class",
-  "sensorQuery": "sum by (metric) (chorus_sensor_reading{sensor=\"sync\",metric=~\"missing|stale\"})", "sensorWindowMinutes": "1440" },
-  "links": { "ownedBy": "chorus:principal-kade", "type": "chorus:Sensor" } }
+  "sensorQuery": "sum by (metric, subject) (chorus_sensor_reading{sensor=\"sync\",metric=~\"missing|stale\"})",
+  "sensorWindowMinutes": "1440"
+ },
+ "links": {
+  "ownedBy": "chorus:principal-kade",
+  "type": "chorus:Sensor"
+ }
+}

@@ -1,4 +1,19 @@
-{ "id": "chorus:crawler-out-of-sync", "data": { "label": "Crawler out of sync with git", "measures": "Are crawled rows missing or stale against git for over an hour?",
-  "monitorKind": "grafana", "monitorSays": "The graph is out of step with git: {{ $labels.metric }} rows for over an hour.", "monitorLine": "0", "monitorWhen": "above", "monitorFor": "60m",
-  "monitorAction": "Run the crawl and read /sync" },
-  "links": { "monitorOfSensor": "chorus:crawler-sync", "ownedBy": "chorus:principal-kade", "hasDomain": "chorus:monitors", "type": "chorus:Monitor" } }
+{
+ "id": "chorus:crawler-out-of-sync",
+ "data": {
+  "label": "Crawler out of sync with git",
+  "measures": "Are crawled rows missing or stale against git for over an hour?",
+  "monitorKind": "grafana",
+  "monitorSays": "The graph is out of step with git for over an hour: {{ $labels.subject }} has {{ $labels.metric }} rows.",
+  "monitorLine": "0",
+  "monitorWhen": "above",
+  "monitorFor": "60m",
+  "monitorAction": "Run the crawl and read /sync"
+ },
+ "links": {
+  "monitorOfSensor": "chorus:crawler-sync",
+  "ownedBy": "chorus:principal-kade",
+  "hasDomain": "chorus:monitors",
+  "type": "chorus:Monitor"
+ }
+}
