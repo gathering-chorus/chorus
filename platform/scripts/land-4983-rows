@@ -1,0 +1,111 @@
+#!/usr/bin/env python3
+"""#4983: after the land, point the running Loki at chorus's platform/config/loki/loki.yaml, prove
+it runs with the #4983 limits, and only then remove the two old config files.
+# @domain: logs
+
+Order (Wren, 2026-11-15 18:29), so a failure before the proof leaves Loki up on the old file:
+  1. the new file is in the canonical checkout
+  2. install the canonical com.gathering.loki plist and reload the agent (launchctl)
+  3. Loki answers /ready, and /config shows every #4983 value
+  4. only then: remove shared-observability/config/loki/{loki-native,loki-config}.yaml and commit
+     just those two paths in that repo (it holds others' uncommitted edits; they are untouched)
+DRY RUN unless --apply. Exit 0 = done (or the plan printed); 1 = Loki is not on the new limits
+(the old files stay); 2 = a step could not run.
+"""
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+import urllib.request
+
+CHORUS = os.environ.get("CHORUS_HOME", "/Users/jeffbridwell/CascadeProjects/chorus")
+NEW_CONFIG = os.path.join(CHORUS, "platform/config/loki/loki.yaml")
+CANON_PLIST = os.path.join(CHORUS, "platform/scripts/launchagents-canonical/com.gathering.loki.plist")
+LABEL = "com.gathering.loki"
+LOKI = os.environ.get("LOKI_URL", "http://localhost:3102")
+OBS = os.environ.get("OBS_REPO", "/Users/jeffbridwell/CascadeProjects/shared-observability")
+OLD = ["config/loki/loki-native.yaml", "config/loki/loki-config.yaml"]
+
+# the #4983 limits, as /config prints them
+WANT = {
+    "max_outstanding_requests_per_tenant": "1024",
+    "split_queries_by_interval": "2h",
+    "cache_results": "true",
+    "parallelise_shardable_queries": "false",
+}
+
+
+def missing(config_text):
+    """The #4983 values /config does not show; [] when Loki runs with all of them."""
+    out = []
+    for key, val in WANT.items():
+        found = re.findall(r"^\s*%s:\s*(\S+)\s*$" % re.escape(key), config_text, re.M)
+        if val not in found:
+            out.append(f"{key}: want {val}, /config has {', '.join(found) or 'nothing'}")
+    return out
+
+
+def get(path, timeout=5):
+    with urllib.request.urlopen(LOKI + path, timeout=timeout) as r:
+        return r.read().decode()
+
+
+def main(argv):
+    if "--apply" not in argv:
+        print("plan: install the canonical com.gathering.loki plist (config " + NEW_CONFIG + "), reload it, "
+              "check /config for " + ", ".join(f"{k}={v}" for k, v in WANT.items()) +
+              ", then remove " + " and ".join(OLD) + " from " + OBS + " (not run in a dry run)")
+        return 0
+    if not os.path.isfile(NEW_CONFIG):
+        print(f"land-4983-rows: {NEW_CONFIG} is not in the canonical checkout; nothing changed", file=sys.stderr)
+        return 2
+    agents = os.path.expanduser("~/Library/LaunchAgents")
+    uid = str(os.getuid())
+    try:
+        shutil.copyfile(CANON_PLIST, os.path.join(agents, LABEL + ".plist"))
+        subprocess.run(["launchctl", "bootout", f"gui/{uid}/{LABEL}"], capture_output=True, timeout=60)
+        r = subprocess.run(["launchctl", "bootstrap", f"gui/{uid}", os.path.join(agents, LABEL + ".plist")],
+                           capture_output=True, text=True, timeout=60)
+        if r.returncode != 0:
+            print(f"land-4983-rows: launchctl bootstrap failed: {r.stderr.strip()}", file=sys.stderr)
+            return 2
+    except (OSError, subprocess.TimeoutExpired) as e:
+        print(f"land-4983-rows: could not reload {LABEL}: {e}", file=sys.stderr)
+        return 2
+    deadline = time.time() + 180
+    while True:
+        try:
+            if get("/ready").strip() == "ready":
+                break
+        except OSError:
+            pass
+        if time.time() > deadline:
+            print("land-4983-rows: Loki not ready 180 s after the reload; the old files stay", file=sys.stderr)
+            return 1
+        time.sleep(3)
+    try:
+        left = missing(get("/config"))
+    except OSError as e:
+        print(f"land-4983-rows: /config unreadable: {e}; the old files stay", file=sys.stderr)
+        return 1
+    if left:
+        print("land-4983-rows: Loki is not on the #4983 limits; the old files stay:\n  " + "\n  ".join(left), file=sys.stderr)
+        return 1
+    print("Loki runs " + NEW_CONFIG + " with " + ", ".join(f"{k}={v}" for k, v in WANT.items()))
+    gone = [p for p in OLD if os.path.exists(os.path.join(OBS, p))]
+    if gone:
+        r = subprocess.run(["git", "-C", OBS, "rm", "-q", "--"] + gone, capture_output=True, text=True)
+        c = subprocess.run(["git", "-C", OBS, "commit", "-q", "-m",
+                            "silas: #4983 Loki's config moved to chorus platform/config/loki/loki.yaml", "--"] + gone,
+                           capture_output=True, text=True)
+        if r.returncode or c.returncode:
+            print(f"land-4983-rows: removing the old files failed: {(r.stderr + c.stderr).strip()}", file=sys.stderr)
+            return 2
+    print("removed from " + OBS + ": " + (", ".join(gone) or "nothing (already gone)"))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
