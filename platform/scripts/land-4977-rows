@@ -1,0 +1,98 @@
+#!/usr/bin/env python3
+"""#4977: the quiet alerts come back as sensor, monitor and alert rows. DRY RUN unless --apply.
+# @domain: monitors
+
+Jeff 2026-11-14 18:12 (one following card) and 20:33 ("want to get it done"). Rows only,
+through the #4970 generator (monitor-alert): for each monitor in PAIRS, its sensor row, its
+monitor row, and the Alert row made from the two. The rows come from
+designing/domains/monitors/*.json, which ship in this land, so the store and the repo cannot
+differ. The door, the runner, the compare, the 403 wait and the exit codes are land-4960-rows'
+own; the sensor/monitor field reading is land-4970-rows' own (one implementation each).
+
+After the rows, convergence-land lands each rule whose uid no file-provisioned rule holds.
+sensor-run-not-green and shacl-violations-above-baseline are held by files in
+shared-observability provisioning (Kade, 2026-11-14 21:0x): their rows are written here, and
+their rules land in the post-land op on Jeff's yes, after the file rules are removed
+(platform/scripts/grafana-file-rules-4977, which prints the steps).
+Exit 0 = plan printed (or applied); 1 = a write or a rule land was refused; 2 = the door or
+the plan could not be read.
+"""
+import importlib.machinery
+import importlib.util
+import json
+import os
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def _load(name, file):
+    loader = importlib.machinery.SourceFileLoader(name, os.path.join(HERE, file))
+    spec = importlib.util.spec_from_loader(name, loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    return mod
+
+
+l4970 = _load("land4970", "land-4970-rows")
+land, monitor_alert = l4970.land, l4970.monitor_alert
+MON = os.path.join(land.ROOT, "designing/domains/monitors")
+
+# (monitor file, sensor file, notify, land the rule now)
+PAIRS = [
+    ("bedroom-disk-full-monitor-4970", "infra-disk-sensor-4970", "on", True),
+    ("crawler-out-of-sync-monitor-4977", "crawler-sync-sensor-4977", "on", True),
+    ("crawler-sync-quiet-monitor-4977", "crawler-sync-age-sensor-4977", "on", True),
+    ("fuseki-memory-monitor-4977", "fuseki-memory-sensor-4977", "on", True),
+    # Buzz stays recorded, not told, while PULSE_BUZZ_DELIVER is off (Wren, 2026-11-14 17:47)
+    ("buzz-shadow-monitor-4977", "buzz-shadow-sensor-4977", "off", True),
+    # held by file rules until the post-land op; they stay quiet until their row-made
+    # rules land, so the old file rule never tells anyone in between
+    ("sensor-run-not-green-monitor-4977", "sensor-runs-sensor-4977", "off", False),
+    ("shacl-above-baseline-monitor-4977", "shacl-above-baseline-sensor-4977", "off", False),
+]
+# the retired yml's row keeps a provenance a reader can open: the monitor row it is made from
+PROVENANCE = {"crawler-out-of-sync": "chorus/designing/domains/monitors/crawler-out-of-sync-monitor-4977.json"}
+
+
+def rows():
+    out, rules = [], []
+    for m, s, notify, now in PAIRS:
+        monitor = json.load(open(os.path.join(MON, m + ".json")))
+        sensor = json.load(open(os.path.join(MON, s + ".json")))
+        alert = monitor_alert.build(monitor, sensor)
+        alert.pop("ownedBy", None)
+        alert["hasDomain"] = l4970.edge(alert["hasDomain"])
+        name = alert.pop("name")
+        alert["notify"] = notify
+        if name in PROVENANCE:
+            alert["alertFile"] = PROVENANCE[name]
+        out += [("sensors", monitor_alert.name_of(sensor), l4970.fields(sensor)),
+                ("monitors", monitor_alert.name_of(monitor), l4970.fields(monitor)),
+                ("alerts", name, alert)]
+        if now:
+            rules.append(name)
+    return out, rules
+
+
+def plan(_live):
+    return rows()[0]
+
+
+land.plan = plan
+
+
+def main(argv):
+    rc = land.main(argv)
+    rules = rows()[1]
+    if "--apply" not in argv:
+        print(f"then: convergence-land-alert for {', '.join(rules)} (not run in a dry run); "
+              "sensor-run-not-green and shacl-violations-above-baseline wait for the post-land op")
+        return rc
+    if rc != 0:
+        return rc
+    return 0 if all([l4970.land_rule(n) for n in rules]) else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

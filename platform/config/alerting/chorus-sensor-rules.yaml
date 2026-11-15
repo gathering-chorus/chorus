@@ -1,0 +1,9 @@
+# #4977 — the file that held sensor-run-not-green (#4091 AC8, "TEMPORARY: AC1 moves this
+# rule to the alerts API"). The rule is made from its monitor row now and landed by
+# convergence-land; this file only deletes the provisioned copy. Copied to
+# shared-observability/config/grafana/provisioning/alerting/ by the post-land op
+# (platform/scripts/grafana-file-rules-4977).
+apiVersion: 1
+deleteRules:
+  - orgId: 1
+    uid: sensor-run-not-green

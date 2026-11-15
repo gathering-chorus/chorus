@@ -13,37 +13,6 @@ groups:
     rules:
       # Ratchet (Jeff 10-24 06:08): the baseline is the lowest count the census
       # has seen and only goes down; the alert fires when the count rises above it.
-      - uid: shacl-violations-above-baseline
-        title: SHACL violations above baseline
-        condition: D
-        data:
-          - refId: A
-            relativeTimeRange: { from: 600, to: 0 }
-            datasourceUid: prometheus
-            model: { expr: 'max(athena_shacl_violations)', instant: true, refId: A }
-          - refId: B
-            relativeTimeRange: { from: 600, to: 0 }
-            datasourceUid: prometheus
-            model: { expr: 'max(athena_shacl_violations_baseline)', instant: true, refId: B }
-          - refId: C
-            datasourceUid: __expr__
-            model: { type: math, expression: '$A - $B', refId: C }
-          - refId: D
-            datasourceUid: __expr__
-            model:
-              type: threshold
-              expression: C
-              conditions:
-                - evaluator: { type: gt, params: [0] }
-              refId: D
-        noDataState: OK
-        execErrState: Alerting
-        for: 0m
-        annotations:
-          summary: 'store SHACL violations {{ $values.A.Value }}, baseline {{ $values.B.Value }} (alerts when the count is above the baseline)'
-        labels: { role: silas, domain: persistence, severity: warning, team: chorus }
-
-      # The 10-18 class: a land empties blank nodes that shapes share.
       - uid: shacl-shared-bnodes-empty
         title: Empty shared blank nodes in the shapes
         condition: B
@@ -114,3 +83,10 @@ groups:
         annotations:
           summary: 'SHACL blank-node gauge last wrote {{ $values.A.Value }} h ago (alerts over 2 h, or when it never wrote)'
         labels: { role: silas, domain: persistence, severity: warning, team: chorus }
+
+# #4977 — shacl-violations-above-baseline is made from its monitor row now (sensor
+# shacl-over-baseline, monitor line 0) and landed by convergence-land; the file rule
+# is removed so nothing judges it twice.
+deleteRules:
+  - orgId: 1
+    uid: shacl-violations-above-baseline
