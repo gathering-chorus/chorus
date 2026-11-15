@@ -91,3 +91,9 @@ L_ABSENT='{"exp_labels": {"sensor": "sync"}}'
   ptest shacl-above-baseline-monitor "[$(S 'athena_shacl_violations' '9892x10 9900x10 9892x10'), $(S 'athena_shacl_violations_baseline' '9892x30')]" \
     "[$(A 9m shacl-violations-above-baseline ''), $(A 17m shacl-violations-above-baseline "$L_NONE"), $(A 25m shacl-violations-above-baseline '')]"
 }
+# --- the two Loki-read monitors: promtool cannot run LogQL, so they run on a throwaway Loki ---
+@test "sensor-run-not-green and Buzz shadow, both ways, on Loki's own engine (4977-loki-rules-fire-once-clear.bats)" {
+  run bats "$ROOT/platform/tests/4977-loki-rules-fire-once-clear.bats"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [[ "$output" == *"ok 5 "* ]] || return 1
+}
