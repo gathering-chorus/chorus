@@ -648,6 +648,30 @@
    "owner": "none",
    "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
    "count_11_15": 1
+  },
+  {
+   "class": "Role",
+   "path": "roleKind",
+   "component": "Pattern",
+   "owner": "kade",
+   "reason": "leftover quartet test-probe roles (zz- names); retiring them through the ledger made staging's door lose kade's and jeff's role rows (athena run 034yBXxe), so they stay until that is understood",
+   "count_11_15": 0
+  },
+  {
+   "class": "HumanRole",
+   "path": "roleKind",
+   "component": "Pattern",
+   "owner": "kade",
+   "reason": "leftover quartet test-probe roles (zz- names); retiring them through the ledger made staging's door lose kade's and jeff's role rows (athena run 034yBXxe), so they stay until that is understood",
+   "count_11_15": 0
+  },
+  {
+   "class": "AgentRole",
+   "path": "roleKind",
+   "component": "Pattern",
+   "owner": "kade",
+   "reason": "leftover quartet test-probe roles (zz- names); retiring them through the ledger made staging's door lose kade's and jeff's role rows (athena run 034yBXxe), so they stay until that is understood",
+   "count_11_15": 0
   }
  ]
 }
