@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # @test-type: integration — boots a scratch Fuseki as the "store" (the live jar, in memory, a free port); never touches :3030.
 # @domain: persistence
-# @card: #4717
+# @card: #4717 · #4980
 # @owner: silas
 # wipe-guard: exempt — every write goes to the scratch Fuseki this file boots on a free port, never :3030
 #
@@ -89,9 +89,14 @@ alerts() {  # n alerts with `bad` of them broken twice (no owner, muted "maybe")
   f="$TEXTFILE_DIR/athena_shacl.prom"
   [ "$(gauge athena_shacl_violations "$f")" = 4 ] && [ "$(gauge athena_shacl_violating_rows "$f")" = 2 ] || { cat "$f"; return 1; }
   [ "$(gauge athena_shacl_violations_baseline "$f")" = 4 ]
+  # #4980 — by field: the two broken rows each fail owner (minCount) and muted (datatype)
+  [ "$(gauge 'athena_shacl_violations_by_field\{path="owner",component="MinCountConstraintComponent"\}' "$f")" = 2 ] || { cat "$f"; return 1; }
+  [ "$(gauge 'athena_shacl_violations_by_field\{path="muted",component="DatatypeConstraintComponent"\}' "$f")" = 2 ] || { cat "$f"; return 1; }
   alerts 5 3   # a rise: the count goes up, the baseline stays
   run "$ROOT/platform/scripts/shacl-census"
   [ "$(gauge athena_shacl_violations "$f")" = 6 ] && [ "$(gauge athena_shacl_violations_baseline "$f")" = 4 ] || { cat "$f"; return 1; }
+  # NEGATIVE PROOF (#4980): the rise shows on the field that grew, not on a total alone
+  [ "$(gauge 'athena_shacl_violations_by_field\{path="owner",component="MinCountConstraintComponent"\}' "$f")" = 3 ] || { cat "$f"; return 1; }
   alerts 5 1   # a fix: the baseline follows it down
   run "$ROOT/platform/scripts/shacl-census"
   [ "$(gauge athena_shacl_violations "$f")" = 2 ] && [ "$(gauge athena_shacl_violations_baseline "$f")" = 2 ] || { cat "$f"; return 1; }
