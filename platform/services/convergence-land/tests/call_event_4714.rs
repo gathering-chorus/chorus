@@ -1,6 +1,6 @@
 // @test-type: unit — hermetic: the call-event rule over given results; no Grafana, no store.
 // @domain: alerts
-// @card: #4714
+// @card: #4714 · #4977
 // @owner: kade
 //! #4714 — src/lib.rs `call_event`, emitted by src/main.rs on every call. convergence-land printed only text, so the
 //! sync runs of 10-22 and 10-23 that could not measure left no reason anywhere.
@@ -40,4 +40,14 @@ fn negative_proof_not_ok_never_has_an_empty_reason() {
         assert!(reason.len() > "reason=".len(), "{ev:?}");
         assert_eq!(ev[1], "system", "no role reads as system");
     }
+}
+
+// #4977 — a landed alert carries the wait Grafana holds; a dry run or a silence carries none
+#[test]
+fn a_landed_alert_carries_the_wait_grafana_read_back() {
+    let ok = "landed disk as Grafana rule disk in chorus-infra/infra, every 1m; read back repeat_interval 8760h; grafanaRuleUid written";
+    let ev = call_event("silas", &args(&["alert", "disk"]), &Ok(ok.into()));
+    assert!(has(&ev, "repeat=8760h"), "{ev:?}");
+    let ev = call_event("silas", &args(&["alert", "disk", "--dry-run"]), &Ok("dry run — would land".into()));
+    assert!(!ev.iter().any(|e| e.starts_with("repeat=")), "a dry run read nothing back: {ev:?}");
 }

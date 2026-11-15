@@ -1,6 +1,6 @@
 // @test-type: unit — hermetic: the real binary against a loopback stub of the door, the ICD query and Grafana; no live service.
 // @domain: alerts
-// @card: #4747
+// @card: #4747 · #4977
 //! #4747 — convergence-land's process half (src/main.rs): what it asks the door,
 //! the ICD and Grafana for, in what order, and what it refuses. What Jeff sees:
 //! an alert lands as a Grafana rule with its uid written back; a dry run writes
@@ -13,35 +13,44 @@ use std::sync::{Arc, Mutex};
 
 type Log = Arc<Mutex<Vec<String>>>;
 
-fn maps() -> Value {
+fn maps(repeat_map: bool) -> Value {
     let b = |f: &str, t: &str, k: &str, x: &str| json!({"field": {"value": f}, "target": {"value": t}, "kind": {"value": k}, "transform": {"value": x}});
-    json!({"results": {"bindings": [
+    let mut v = json!({"results": {"bindings": [
         b("label", "title", "copy", ""), b("hasDomain", "folder", "map", ""), b("ownedBy", "labels.role", "map", ""),
         b("metricQuery", "data[A].model.expr", "copy", ""), b("metricDatasource", "data[A].datasourceUid", "copy", ""),
         b("forDuration", "for", "copy", ""), b("evalInterval", "group.interval", "copy", ""), b("name", "uid", "copy", ""),
         b("contactPoint", "notification.receiver", "constant", "chorus-roles"),
-    ]}})
+        b("repeatInterval", "notification_settings.repeat_interval", "copy", ""),
+    ]}});
+    if !repeat_map { v["results"]["bindings"].as_array_mut().unwrap().pop(); }
+    v
 }
 
 fn row(uid: bool) -> Value {
     let mut d = json!({"name": "host-pressure", "label": "Host memory pressure", "metricQuery": "chorus_host_pressure >= 4",
-                       "metricDatasource": "prometheus", "forDuration": "5m", "evalInterval": "1m"});
+                       "metricDatasource": "prometheus", "forDuration": "5m", "evalInterval": "1m", "repeatInterval": "8760h"});
     if uid { d["grafanaRuleUid"] = json!("host-pressure"); }
     json!({"id": "chorus:host-pressure", "data": d, "links": {"ownedBy": "chorus:principal-silas", "hasDomain": "chorus:infrastructure"}})
 }
 
 /// One canned answer per request line; every request is logged as "METHOD path".
-fn answer(method: &str, path: &str, rule_exists: bool) -> (u16, String) {
+fn answer(method: &str, path: &str, rule_exists: bool, live: Option<&str>, repeat_map: bool) -> (u16, String) {
     match (method, path) {
         ("GET", p) if p.starts_with("/v1/alerts/alerts?") => (200, json!({"data": [row(false)]}).to_string()),
         ("GET", "/v1/alerts/alerts/host-pressure") => (200, row(true).to_string()),
         ("GET", "/v1/alerts/alerts/nobody") => (404, "{}".into()),
         ("PATCH", "/v1/alerts/alerts/host-pressure") => (200, "{}".into()),
-        ("POST", "/query") => (200, maps().to_string()),
+        ("POST", "/query") => (200, maps(repeat_map).to_string()),
         ("GET", p) if p.starts_with("/api/folders") => (200, "[]".into()),
         ("POST", "/api/folders") => (200, "{}".into()),
         ("PUT", "/api/v1/provisioning/alert-rules/host-pressure") if !rule_exists => (404, "{}".into()),
         ("PUT", p) if p.starts_with("/api/v1/provisioning/") => (200, "{}".into()),
+        // #4977 — the rule as Grafana holds it after the land
+        ("GET", "/api/v1/provisioning/alert-rules/host-pressure") => {
+            let mut r = json!({"uid": "host-pressure"});
+            if let Some(w) = live { r["notification_settings"] = json!({"receiver": "chorus-roles", "repeat_interval": w}); }
+            (200, r.to_string())
+        }
         ("POST", "/api/v1/provisioning/alert-rules") => (201, "{}".into()),
         ("GET", p) if p.contains("/rule-groups/") => (200, json!({"interval": 30, "rules": []}).to_string()),
         ("GET", "/api/v1/provisioning/alert-rules") => (200, "[]".into()),
@@ -50,7 +59,11 @@ fn answer(method: &str, path: &str, rule_exists: bool) -> (u16, String) {
     }
 }
 
-fn stub(rule_exists: bool) -> (String, Log) {
+fn stub(rule_exists: bool) -> (String, Log) { stub_with(rule_exists, Some("8760h"), true) }
+
+fn stub_live(rule_exists: bool, live: Option<&'static str>) -> (String, Log) { stub_with(rule_exists, live, true) }
+
+fn stub_with(rule_exists: bool, live: Option<&'static str>, repeat_map: bool) -> (String, Log) {
     let l = TcpListener::bind("127.0.0.1:0").unwrap();
     let base = format!("http://127.0.0.1:{}", l.local_addr().unwrap().port());
     let log: Log = Arc::new(Mutex::new(Vec::new()));
@@ -71,7 +84,7 @@ fn stub(rule_exists: bool) -> (String, Log) {
             let mut parts = first.split_whitespace();
             let (m, p) = (parts.next().unwrap_or("").to_string(), parts.next().unwrap_or("").to_string());
             seen.lock().unwrap().push(format!("{m} {p}"));
-            let (code, b) = answer(&m, &p, rule_exists);
+            let (code, b) = answer(&m, &p, rule_exists, live, repeat_map);
             let mut s = s;
             let _ = write!(s, "HTTP/1.1 {code} X\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{b}", b.len());
         }
@@ -107,6 +120,7 @@ fn an_alert_lands_as_a_rule_creates_its_folder_and_writes_its_uid_back() {
     let (code, out, err) = run(&base, &["alert", "host-pressure"]);
     assert_eq!(code, 0, "{err}");
     assert!(out.contains("landed host-pressure as Grafana rule host-pressure in chorus-infrastructure/infrastructure"), "{out}");
+    assert!(out.contains("read back repeat_interval 8760h"), "the wait is read from Grafana: {out}");
     let seen = log.lock().unwrap().join("\n");
     for want in ["POST /api/folders", "PUT /api/v1/provisioning/alert-rules/host-pressure", "POST /api/v1/provisioning/alert-rules", "PATCH /v1/alerts/alerts/host-pressure"] {
         assert!(seen.contains(want), "missing {want} in\n{seen}");
@@ -167,4 +181,32 @@ fn an_unknown_command_prints_usage() {
     let (code, _, err) = run("http://127.0.0.1:1", &["bogus"]);
     assert_eq!(code, 1);
     assert!(err.contains("usage: convergence-land alert"), "{err}");
+}
+
+/// #4977 NEGATIVE PROOF: Grafana holds the rule with no repeat wait, or a different one —
+/// the land refuses, read from Grafana's own answer, not from the build.
+#[test]
+fn a_rule_grafana_holds_without_the_built_wait_is_refused() {
+    for (live, why) in [(None, "Grafana holds no repeat_interval (built 8760h)"), (Some("4h"), "Grafana holds repeat_interval 4h, built 8760h")] {
+        let (base, log) = stub_live(false, live);
+        let (code, out, err) = run(&base, &["alert", "host-pressure"]);
+        assert_eq!(code, 1, "{out}");
+        assert!(err.contains(&format!("refused: rule host-pressure: {why}")), "{err}");
+        assert!(log.lock().unwrap().iter().any(|r| r == "GET /api/v1/provisioning/alert-rules/host-pressure"), "read back from Grafana");
+        assert!(!log.lock().unwrap().iter().any(|r| r.starts_with("PATCH /v1/alerts")), "no uid written back for a refused rule");
+    }
+}
+
+/// #4977: a row with no repeat wait lands with none, and Grafana holding a wait the row did
+/// not set is refused (a hand edit, or a stale rule from an earlier land).
+#[test]
+fn a_row_with_no_wait_must_read_back_with_none() {
+    let (base, _) = stub_with(false, None, false);
+    let (code, out, err) = run(&base, &["alert", "host-pressure"]);
+    assert_eq!(code, 0, "{err}");
+    assert!(out.contains("read back repeat_interval none"), "{out}");
+    let (base, _) = stub_with(false, Some("8760h"), false);
+    let (code, _, err) = run(&base, &["alert", "host-pressure"]);
+    assert_eq!(code, 1);
+    assert!(err.contains("Grafana holds repeat_interval 8760h, built none"), "{err}");
 }

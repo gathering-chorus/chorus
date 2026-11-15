@@ -217,6 +217,23 @@ pub fn for_secs(d: &str) -> Option<u64> {
     num.is_empty().then_some(total)
 }
 
+/// #4977 — the repeat wait Grafana holds after a land, read back from its API, against the
+/// rule built from the rows. #4977 went Proven at 06:07 with no rule carrying its wait,
+/// because nothing read Grafana. Grafana must hold exactly the built wait: none when the row
+/// sets none (an ICD-mapped row without repeatInterval is unchanged, #4970), the same
+/// duration when it sets one. Ok names what Grafana holds.
+pub fn readback(built: &Value, live: &Value) -> Result<String, String> {
+    const P: &str = "/notification_settings/repeat_interval";
+    let get = |v: &Value| v.pointer(P).and_then(Value::as_str).map(str::to_string);
+    match (get(built), get(live)) {
+        (None, None) => Ok("none (the row sets no wait)".into()),
+        (None, Some(l)) => Err(format!("Grafana holds repeat_interval {l}, built none")),
+        (Some(b), None) => Err(format!("Grafana holds no repeat_interval (built {b})")),
+        (Some(b), Some(l)) if for_secs(&b).is_some() && for_secs(&b) == for_secs(&l) => Ok(l),
+        (Some(b), Some(l)) => Err(format!("Grafana holds repeat_interval {l}, built {b}")),
+    }
+}
+
 /// One compared field the same on both sides. `/for` and the repeat wait by
 /// their value in seconds (#4690: rows hold "0m", Grafana answers "0s"); the
 /// rest as JSON.
@@ -312,6 +329,10 @@ pub fn call_event(role: &str, args: &[String], result: &Result<String, String>) 
                 ev.push("outcome=ok".into());
                 if let Some(c) = head.strip_prefix("measured ") {
                     ev.push(format!("counts={}", c.trim()));
+                }
+                // #4977 — the wait Grafana holds, read back by the land, for the after-land check
+                if let Some(w) = head.split("read back repeat_interval ").nth(1) {
+                    ev.push(format!("repeat={}", w.split(';').next().unwrap_or("").split(' ').next().unwrap_or("")));
                 }
             }
         }
