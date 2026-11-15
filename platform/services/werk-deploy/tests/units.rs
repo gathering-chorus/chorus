@@ -1071,7 +1071,7 @@ fn a_land_with_rows_deploys_the_cards_model_first() {
 fn negative_proof_the_model_runs_before_the_rows_in_the_deploy_itself() {
     // the decision is only worth anything if the deploy calls athena-land before run_land_rows
     let src = std::fs::read_to_string(std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("src/lib.rs")).unwrap();
-    let body = &src[src.find("if let Some(script) = land_rows_script(&canon, card, &diff)").expect("the land-rows block")..];
+    let body = &src[src.find("if let Some(script) = land_rows_script(&canon, card)").expect("the land-rows block")..];
     let model = body.find("platform/scripts/athena-land").expect("athena-land is called in the land-rows block");
     let rows = body.find("run_land_rows(&script)").expect("the rows run");
     assert!(model < rows, "the model must deploy before the rows are written");
