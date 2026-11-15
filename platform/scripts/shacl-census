@@ -127,8 +127,20 @@ def tally(report, types=None):
         # #4980 — by field: the path and constraint name what grew (property shapes are blank
         # nodes, so the shape itself has no name that survives a run); "" = a node-level check
         cls = (types or {}).get(f.get("focusNode", ""), "?")
-        field[(local(cls), local(f.get("resultPath", "")), c)] += 1
+        field[(local(cls), path_name(f.get("resultPath", ""), by), c)] += 1
     return len(results), len(rows), comp, field
+
+
+def path_name(path, by):
+    """A result's path as a stable name: a property's local name, ^name for an inverse path,
+    a/b for a sequence; a blank-node path is resolved through the report, never printed raw
+    (9,494 results in the 11-15 store had a blank-node path, one gauge line each)."""
+    if not path.startswith("_:"):
+        return local(path)
+    node = by.get(path, {})
+    if "inversePath" in node:
+        return "^" + local(node["inversePath"])
+    return "complex"
 
 
 def local(iri):

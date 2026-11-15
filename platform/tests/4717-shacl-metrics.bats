@@ -142,3 +142,19 @@ alerts() {  # n alerts with `bad` of them broken twice (no owner, muted "maybe")
   [ "$(plutil -extract StartCalendarInterval.Hour raw "$LA/com.chorus.shacl-census.plist")" = 4 ] || return 1
   [ "$(plutil -extract StartInterval raw "$LA/com.chorus.shacl-bnodes.plist")" = 3600 ] || return 1
 }
+
+# #4980 — a result whose path is a blank node (an inverse path) is named ^property, never one
+# gauge line per blank node (11-15: 9,494 results had blank-node paths, one line each)
+@test "an inverse path is named ^property and a blank-node path never reaches a label" {
+  run python3 - "$ROOT/platform/scripts/shacl-census" <<'PY'
+import importlib.machinery, importlib.util, sys
+l = importlib.machinery.SourceFileLoader("census", sys.argv[1])
+m = importlib.util.module_from_spec(importlib.util.spec_from_loader("census", l)); l.exec_module(m)
+by = {"_:b1": {"inversePath": "<https://jeffbridwell.com/chorus#hasDomain>"}, "_:b2": {"first": "x"}}
+assert m.path_name("_:b1", by) == "^hasDomain", m.path_name("_:b1", by)
+assert m.path_name("_:b2", by) == "complex"
+assert m.path_name("<https://jeffbridwell.com/chorus#owner>", by) == "owner"
+print("ok")
+PY
+  [ "$status" -eq 0 ] && [ "$output" = ok ] || { echo "$output"; return 1; }
+}
