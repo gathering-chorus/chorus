@@ -8,7 +8,7 @@
 # violation above it — a seeded bad row reads red. The rule judged here is the one Grafana holds now
 # (shacl-above-baseline), applied to the gauges the census writes.
 
-load lib/scratch-census
+load lib/scratch-census   # platform/tests/lib/scratch-census.bash: the scratch Fuseki this suite runs the census against
 
 RULE_URL="${GRAFANA_URL:-http://localhost:3100}/api/prometheus/grafana/api/v1/rules?rule_uid=shacl-above-baseline"
 QUERY='(max(athena_shacl_violations) - max(athena_shacl_violations_baseline)) > 0'

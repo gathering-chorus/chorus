@@ -11,7 +11,7 @@
 # count is a ratchet that only goes down; a census that cannot read the store
 # writes nothing, so its file goes stale and alerts, never a clean-looking 0.
 
-load lib/scratch-census
+load lib/scratch-census   # platform/tests/lib/scratch-census.bash: the scratch Fuseki this suite runs the census against
 
 @test "the blank-node gauge reads 0 on healthy shapes" {
   run "$ROOT/platform/scripts/shacl-bnodes"
