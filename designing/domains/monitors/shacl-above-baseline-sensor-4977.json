@@ -1,0 +1,4 @@
+{ "id": "chorus:shacl-over-baseline", "data": { "label": "shacl-over-baseline", "sensorSource": "grafana", "sensorDatasource": "prometheus",
+  "sensorReads": "the SHACL census gauges on Library (localhost:9102): store violations minus the ratchet baseline (the lowest count ever seen)",
+  "sensorQuery": "max(athena_shacl_violations) - max(athena_shacl_violations_baseline)", "sensorWindowMinutes": "60" },
+  "links": { "ownedBy": "chorus:principal-silas", "type": "chorus:Sensor" } }

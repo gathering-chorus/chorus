@@ -1,0 +1,4 @@
+{ "id": "chorus:fuseki-memory", "data": { "label": "fuseki-memory", "sensorSource": "grafana", "sensorDatasource": "prometheus",
+  "sensorReads": "node-exporter's process gauge on Library (localhost:9102): resident memory of the java process, in MB. Fuseki is the only JVM on Library today (Kade, 2026-11-14).",
+  "sensorQuery": "host_process_resident_memory_bytes{name=\"java\",machine=\"library\"} / 1048576", "sensorWindowMinutes": "5" },
+  "links": { "ownedBy": "chorus:principal-silas", "type": "chorus:Sensor" } }
