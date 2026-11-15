@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # @test-type: integration — boots a scratch Fuseki as the "store" (the live jar, in memory, a free port); never touches :3030.
 # @domain: persistence
-# @card: #4717 · #4980
+# @card: #4717 · #4980 · #4920
 # @owner: silas
 # wipe-guard: exempt — every write goes to the scratch Fuseki this file boots on a free port, never :3030
 #
@@ -157,4 +157,22 @@ assert m.path_name("<https://jeffbridwell.com/chorus#owner>", by) == "owner"
 print("ok")
 PY
   [ "$status" -eq 0 ] && [ "$output" = ok ] || { echo "$output"; return 1; }
+}
+
+# #4920 — a row that names a class (sh:class owl:Class) conforms when the class is typed in the
+# ontology graph; the census loads class types, not just subClassOf (118 false domains, 11-15)
+@test "a row naming a class typed in the ontology is not counted; one naming no class is" {
+  upd "INSERT DATA { GRAPH <urn:chorus:ontology> {
+    <${C}DomainShape> a <${SH}NodeShape> ; <${SH}targetClass> <${C}Domain> ;
+      <${SH}property> [ <${SH}path> <${C}definesVocabulary> ; <${SH}class> <http://www.w3.org/2002/07/owl#Class> ] .
+    <${C}Version> a <http://www.w3.org/2002/07/owl#Class> } }"
+  upd "INSERT DATA { GRAPH <urn:chorus:domains:domains> { <${C}d1> a <${C}Domain> ; <${C}definesVocabulary> <${C}Version> } }"
+  alerts 1 0
+  run "$ROOT/platform/scripts/shacl-census"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(gauge athena_shacl_violations "$TEXTFILE_DIR/athena_shacl.prom")" = 0 ] || { cat "$TEXTFILE_DIR/athena_shacl.prom"; return 1; }
+  # NEGATIVE PROOF: a domain naming something that is no class still counts
+  upd "INSERT DATA { GRAPH <urn:chorus:domains:domains> { <${C}d2> a <${C}Domain> ; <${C}definesVocabulary> <${C}wearsHat> } }"
+  run "$ROOT/platform/scripts/shacl-census"
+  [ "$(gauge athena_shacl_violations "$TEXTFILE_DIR/athena_shacl.prom")" = 1 ] || { cat "$TEXTFILE_DIR/athena_shacl.prom"; return 1; }
 }
