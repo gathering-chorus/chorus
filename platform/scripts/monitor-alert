@@ -1,0 +1,106 @@
+#!/usr/bin/env python3
+# @domain: monitors
+"""
+monitor-alert — make an Alert row from a Monitor row and its Sensor row. (#4970)
+
+Jeff, 2026-11-14 17:34: "a clear sensor that has a clear monitor that then
+generates a clear alert"; 17:35: "Data from our graph drives how we invoke the
+creation or changing of a monitor or an alert. But we don't build the actual
+implementation of the monitor, the alert that lives in Grafana."
+
+So this file judges nothing and evaluates nothing. It turns two rows into a
+third: the sensor says WHERE the value is (a Grafana datasource and query), the
+monitor says WHICH SIDE OF WHICH LINE is wrong and who does what. The Alert row
+it makes carries metricQuery = (sensor query) > line, because convergence-land's
+rule threshold is fixed at "> 0" (Kade, 17:37). convergence-land then lands that
+row as a Grafana rule; Grafana holds the state, fires once on the change and
+clears on recovery.
+
+  monitor-alert build <monitor.json> <sensor.json>   print the Alert row (door JSON in, door fields out)
+
+A row a rule cannot be made from is refused by name, never half-built.
+"""
+import json
+import re
+import sys
+
+COMPARE = {"above": ">", "below": "<"}
+
+
+def field(row, name):
+    """One field of a door row: data first, then links, read bare (chorus:x -> x)."""
+    data = row.get("data", row)
+    v = data.get(name)
+    if v is None:
+        v = row.get("links", {}).get(name)
+        if isinstance(v, str):
+            v = v.rsplit(":", 1)[-1].rsplit("#", 1)[-1]
+    if isinstance(v, list):
+        v = v[0] if v else None
+    return None if v in (None, "") else str(v)
+
+
+def name_of(row):
+    n = field(row, "name")
+    if n:
+        return n
+    rid = row.get("id", "")
+    return rid.rsplit(":", 1)[-1] if rid else None
+
+
+def build(monitor, sensor):
+    if not name_of(monitor):
+        raise ValueError("refused: the monitor has no name")
+    missing = [f for f in ("monitorOfSensor", "monitorLine", "monitorAction", "ownedBy") if not field(monitor, f)]
+    if missing:
+        raise ValueError(f"refused: the monitor has no {', '.join(missing)}")
+    if field(sensor, "sensorSource") != "grafana":
+        raise ValueError("refused: the monitor's sensor is not a Grafana pointer (sensorSource grafana)")
+    for f in ("sensorDatasource", "sensorQuery"):
+        if not field(sensor, f):
+            raise ValueError(f"refused: the sensor has no {f}")
+    if field(monitor, "monitorOfSensor") != name_of(sensor):
+        raise ValueError(f"refused: the monitor reads {field(monitor, 'monitorOfSensor')}, not {name_of(sensor)}")
+    when = field(monitor, "monitorWhen") or "above"
+    if when not in COMPARE:
+        raise ValueError(f"refused: monitorWhen {when!r} is not above or below")
+    line = field(monitor, "monitorLine")
+    # a plain decimal only: it is pasted into PromQL (no nan, inf, 1e3 or spaces)
+    if not re.fullmatch(r"-?[0-9]+(\.[0-9]+)?", line):
+        raise ValueError(f"refused: monitorLine {line!r} is not a plain number")
+    owner = field(monitor, "ownedBy").removeprefix("principal-")
+    measures = field(monitor, "measures") or field(monitor, "label") or name_of(monitor)
+    return {
+        "name": name_of(monitor),
+        "label": field(monitor, "label") or name_of(monitor),
+        "comment": f"{measures} Line: {when} {line}. Owner: {owner}. Action: {field(monitor, 'monitorAction')}",
+        "alertSource": "grafana",
+        "alertRoute": owner,
+        "metricDatasource": field(sensor, "sensorDatasource"),
+        "metricQuery": f"({field(sensor, 'sensorQuery')}) {COMPARE[when]} {line}",
+        "evalInterval": "5m",
+        # Grafana answers a rule with no `for` as 0s, which convergence-land's drift
+        # reads as a hand edit; 5m also keeps a passing blip from telling anyone
+        "forDuration": "5m",
+        "repeatInterval": "8760h",
+        "ownedBy": f"chorus:principal-{owner}",
+        "hasDomain": "chorus:infrastructure",
+    }
+
+
+def main(argv):
+    if len(argv) == 4 and argv[1] == "build":
+        try:
+            with open(argv[2]) as m, open(argv[3]) as s:
+                print(json.dumps(build(json.load(m), json.load(s)), indent=2, sort_keys=True))
+        except ValueError as e:
+            print(f"monitor-alert: {e}", file=sys.stderr)
+            return 3
+        return 0
+    print(__doc__.strip().splitlines()[0], file=sys.stderr)
+    print("usage: monitor-alert build <monitor.json> <sensor.json>", file=sys.stderr)
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

@@ -7,7 +7,8 @@
 # handler), a pass woke no one. Jeff 14:40: "just the finish, not every step";
 # Wren 14:41: a failed step is a finish. Every generated top-level pipeline calls
 # this from dagu's exit handler, so a run wakes exactly once, pass or fail, and a
-# step that passes in the middle sends nothing. The failure handler only routes
+# step that passes in the middle sends nothing. Since #4970 (Jeff 2026-11-14, DROP)
+# a pass's wake is recorded and tells no one (Alert row run-finished-pass). The failure handler only routes
 # (pair red, borg-prove route); it no longer nudges.
 #
 #   run-finished CARD ROLE DAG RUN_ID     (dagu sets DAG_RUN_STATUS, DAG_RUN_STEP_NAME=onExit)
@@ -40,8 +41,13 @@ why() {
   python3 "$S/chorus-werk-status" --why "$DAG" "$RUN" 2>/dev/null || echo "$DAG $STATUS"
 }
 
+# #4970 (Jeff 2026-11-14 18:12, DROP): a pass is not an alert. Its wake goes out
+# under the Alert row run-finished-pass, which says notify off: ops-nudge records it
+# (alert.quiet) and tells no one. A failure carries no row name and always wakes.
+OPS_ALERT=""
 case "$STATUS" in
   succeeded)
+    OPS_ALERT="run-finished-pass"
     case "$DAG" in
       cicd) echo "run-finished: #$CARD cicd passed — its finish wake is the demo brief"; exit 0 ;;
       cicd-go) echo "run-finished: #$CARD go given — the land it enqueued wakes when it finishes"; exit 0 ;;
@@ -73,7 +79,7 @@ rc=0
 for r in $(printf '%s\n' $who | awk '!seen[$0]++'); do
   # CHORUS_NUDGE_WAKE marks this as the run's finish wake: pulse never dedupes it by its
   # words (#4889: run 4's failure matched run 3's and reached its owner 29 min late)
-  if ! err="$(env -u CHORUS_ROLE CHORUS_NUDGE_WAKE=run-finished bash "$S/ops-nudge" "$r" "$MSG" 2>&1 >/dev/null)"; then
+  if ! err="$(env -u CHORUS_ROLE CHORUS_NUDGE_WAKE=run-finished OPS_ALERT="$OPS_ALERT" bash "$S/ops-nudge" "$r" "$MSG" 2>&1 >/dev/null)"; then
     echo "$err" >&2
     echo "run-finished: the wake to $r did not go out" >&2; rc=1
     # on the spine too, with the refusal's first line, so a wake that never arrived is

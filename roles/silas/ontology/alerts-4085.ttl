@@ -152,10 +152,30 @@ chorus:MonitorShape a sh:NodeShape ;
     sh:targetClass chorus:Monitor ; sh:node chorus:CoreShape ;
     chorus:instancesGraph "urn:chorus:domains:monitors" ;
     sh:property [ sh:path rdfs:label        ; sh:minCount 1 ; sh:datatype xsd:string ] ;
-    sh:property [ sh:path chorus:monitorKind ; sh:minCount 1 ; sh:in ( "probe" "check" ) ] ;
-    sh:property [ sh:path chorus:monitorFile ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:monitorKind ; sh:maxCount 1 ; sh:in ( "probe" "check" "grafana" ) ] ;
+    sh:property [ sh:path chorus:monitorFile ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:measures    ; sh:minCount 1 ; sh:datatype xsd:string ] ;
-    sh:property [ sh:path chorus:hasDomain   ; sh:minCount 1 ; sh:class chorus:Domain ] .
+    sh:property [ sh:path chorus:hasDomain   ; sh:minCount 1 ; sh:class chorus:Domain ] ;
+    sh:property [ sh:path chorus:monitorOfSensor ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Sensor ] ;
+    sh:property [ sh:path chorus:monitorLine ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:decimal ] ;
+    sh:property [ sh:path chorus:monitorWhen ; sh:maxCount 1 ; sh:in ( "above" "below" ) ] ;
+    sh:property [ sh:path chorus:monitorAction ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal ] .
+
+# #4970 — the monitor is the judge (Jeff, 2026-11-14 17:34: "a clear sensor that
+# has a clear monitor that then generates a clear alert"). It names the sensor it
+# reads, the line (exact, never rounded), one owner and the one thing the owner
+# does. Its Alert row and the Grafana rule are made from it, never by hand.
+# Measured 2026-11-14: 0 Monitor rows in prod, so the old probe/check fields
+# become optional with no row to break.
+chorus:monitorOfSensor a owl:ObjectProperty ; rdfs:label "sensor" ; rdfs:domain chorus:Monitor ; rdfs:range chorus:Sensor ;
+    rdfs:comment "The sensor whose reading this monitor judges." .
+chorus:monitorLine a owl:DatatypeProperty ; rdfs:label "line" ; rdfs:domain chorus:Monitor ; rdfs:range xsd:decimal ;
+    rdfs:comment "The value that is wrong, in the sensor's own unit, exact (99 for a disk percent)." .
+chorus:monitorWhen a owl:DatatypeProperty ; rdfs:label "when" ; rdfs:domain chorus:Monitor ; rdfs:range xsd:string ;
+    rdfs:comment "above (the default) or below: which side of the line is wrong." .
+chorus:monitorAction a owl:DatatypeProperty ; rdfs:label "action" ; rdfs:domain chorus:Monitor ; rdfs:range xsd:string ;
+    rdfs:comment "The one thing the owner does when the line is crossed." .
 
 
 # #4338 — layer, hosting and dependency edges live on the domain's own row (they were in
@@ -209,3 +229,22 @@ chorus:AlertCaseShape a sh:NodeShape ;
     sh:property [ sh:path chorus:caseCause ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:caseClosedAt ; sh:maxCount 1 ; sh:datatype xsd:dateTime ] ;
     sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal ] .
+
+# #4970 — an Alert row made from a monitor says how long Grafana waits before
+# telling again about a rule still firing (icd-instance-grafana.ttl maps it to the
+# rule's notification_settings.repeat_interval). The generator sets a year: the
+# alert arrives once and stops when the thing is fixed.
+chorus:repeatInterval a owl:DatatypeProperty ; rdfs:label "repeat interval" ; rdfs:domain chorus:Alert ; rdfs:range xsd:string ;
+    rdfs:comment "How long Grafana waits before telling again about a rule still firing (8760h: once)." .
+chorus:AlertShape sh:property chorus:AlertShape-repeatInterval .
+chorus:AlertShape-repeatInterval a sh:PropertyShape ; sh:path chorus:repeatInterval ; sh:maxCount 1 ; sh:datatype xsd:string ;
+    sh:pattern "^[0-9]+[smh]$" ; sh:message "repeatInterval is a Grafana duration: 4h, 8760h" .
+
+# #4970 — notify off: the alert still fires (Grafana keeps its state; a script
+# still runs) and ops-nudge records it on the spine (alert.quiet), and no one is
+# told. One field for both kinds: ops-nudge reads it by the script alert's
+# message prefix or the Grafana rule uid the webhook hands it. Absent means on.
+chorus:notify a owl:DatatypeProperty ; rdfs:label "notify" ; rdfs:domain chorus:Alert ; rdfs:range xsd:string ;
+    rdfs:comment "off: recorded, never told. Absent or on: the owner is told." .
+chorus:AlertShape sh:property chorus:AlertShape-notify .
+chorus:AlertShape-notify a sh:PropertyShape ; sh:path chorus:notify ; sh:maxCount 1 ; sh:in ( "on" "off" ) .

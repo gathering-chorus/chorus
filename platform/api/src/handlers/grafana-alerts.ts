@@ -18,6 +18,7 @@ export interface GrafanaAlert {
   annotations?: Record<string, string>;
   values?: Record<string, number | string> | null;
   valueString?: string;
+  generatorURL?: string;
 }
 
 export interface GrafanaPayload {
@@ -25,7 +26,8 @@ export interface GrafanaPayload {
 }
 
 export interface RouteDeps {
-  nudge: (to: string, text: string) => void;
+  /** `rule` is the Grafana rule uid: ops-nudge reads that Alert row's notify (#4970). */
+  nudge: (to: string, text: string, rule: string) => void;
   spine: (event: string, fields: Record<string, string>) => void;
 }
 
@@ -61,6 +63,16 @@ export function alertText(a: GrafanaAlert): string {
   return parts.length ? `grafana: ${name} — ${parts.join(', ')}` : `grafana: ${name}`;
 }
 
+/**
+ * #4970 — the Grafana rule's uid, from the alert's generatorURL
+ * (.../alerting/grafana/<uid>/view). ops-nudge reads the Alert row of that name:
+ * notify off there records the firing and tells no one, for Grafana rules and
+ * script alerts alike. Empty when Grafana sent no URL: then nothing is gated.
+ */
+export function ruleUid(a: GrafanaAlert): string {
+  return (a.generatorURL || '').match(/\/alerting\/grafana\/([A-Za-z0-9_-]{1,40})\/view/)?.[1] || '';
+}
+
 export function routeGrafanaAlerts(payload: GrafanaPayload, deps: RouteDeps): RouteResult {
   const result: RouteResult = { routed: [], unrouted: [] };
   for (const a of payload.alerts || []) {
@@ -73,7 +85,7 @@ export function routeGrafanaAlerts(payload: GrafanaPayload, deps: RouteDeps): Ro
       continue;
     }
     const text = alertText(a);
-    deps.nudge(role, text);
+    deps.nudge(role, text, ruleUid(a));
     deps.spine('alert.routed', { alertname: name, role });
     result.routed.push({ role, text });
   }

@@ -1,0 +1,112 @@
+#!/usr/bin/env python3
+"""#4970: the first alert made by the one pattern. DRY RUN unless --apply.
+# @domain: monitors
+
+Three store rows and one Grafana rule, Jeff's yes 2026-11-14 17:41 ("only those"):
+  sensor  infra-disk          points at node-exporter's exact disk percent (Library + Bedroom)
+  monitor bedroom-disk-full   judges it: above 99, owner silas, one action
+  alert   bedroom-disk-full   made from the two by monitor-alert, never typed by hand
+then convergence-land lands the Alert row as a Grafana rule. The sensor and monitor come
+from designing/domains/monitors/*-4970.json, which ship in this land, so the store and the
+repo cannot differ. The door, the runner, the compare, the 403 wait and the exit codes are
+land-4960-rows' own (one implementation): this script only names a different plan, then
+lands the rule.
+Exit 0 = plan printed (or applied); 1 = a write or the rule land was refused; 2 = the door
+or the plan could not be read.
+"""
+import importlib.machinery
+import importlib.util
+import json
+import os
+import subprocess
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def _load(name, file):
+    loader = importlib.machinery.SourceFileLoader(name, os.path.join(HERE, file))
+    spec = importlib.util.spec_from_loader(name, loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    return mod
+
+
+land = _load("land4960", "land-4960-rows")
+monitor_alert = _load("monitor_alert", "monitor-alert")
+
+PLAN_DIR = os.path.join(land.ROOT, "designing/domains/monitors")
+SENSOR = os.path.join(PLAN_DIR, "infra-disk-sensor-4970.json")
+MONITOR = os.path.join(PLAN_DIR, "bedroom-disk-full-monitor-4970.json")
+RULE = "bedroom-disk-full"
+# AC5/AC6 (Jeff 2026-11-14 18:12: two DROP, eight REBUILD; Wren's go 17:47 for her
+# Buzz row): these alerts are recorded and tell no one. ops-nudge reads notify off
+# by the script alert's prefix or the Grafana rule uid. The REBUILD ones come back
+# as sensor/monitor/alert rows in one following card.
+QUIET = ["buzz-shadow-not-matching", "crawler-out-of-sync", "lancedb-stale", "messages-not-kept"]
+# Grafana rules provisioned from files, and the pipeline's pass wake, have no row
+# yet: each gets one, named by its rule uid or the name run-finished hands ops-nudge.
+NEW_QUIET = [
+    ("sensor-run-not-green", {"label": "Sensor run not green", "alertSource": "grafana", "grafanaRuleUid": "sensor-run-not-green",
+                              "alertRoute": "warning", "hasDomain": "alerts", "notify": "off"}),
+    ("shacl-violations-above-baseline", {"label": "SHACL violations above baseline", "alertSource": "grafana",
+                                         "grafanaRuleUid": "shacl-violations-above-baseline", "alertRoute": "warning",
+                                         "hasDomain": "alerts", "notify": "off"}),
+    ("run-finished-pass", {"label": "A pipeline run passed (DROP: never an alert)", "alertSource": "script",
+                           "alertFile": "chorus/platform/scripts/run-finished", "hasDomain": "alerts", "notify": "off"}),
+]
+
+land.DOOR_CLASS = {"sensors": ("/v1/heralds/sensors", "heralds", "sensors"),
+                   "monitors": ("/v1/monitors/monitors", "monitors", "monitors"),
+                   "alerts": ("/v1/alerts/alerts", "alerts", "alerts")}
+
+
+def edge(v):
+    """chorus:infra-disk -> infra-disk: the door takes an edge by the target's bare name."""
+    return str(v).rsplit(":", 1)[-1]
+
+
+def fields(row):
+    """A door row's writable fields, edges bare (chorus:infra-disk -> infra-disk). The door
+    sets ownedBy to the writer, so it is not sent."""
+    out = dict(row.get("data", {}))
+    for k, v in row.get("links", {}).items():
+        if k not in ("type", "ownedBy", "creator"):
+            out[k] = edge(v)
+    return out
+
+
+def plan(_live):
+    sensor, monitor = json.load(open(SENSOR)), json.load(open(MONITOR))
+    alert = monitor_alert.build(monitor, sensor)
+    alert.pop("ownedBy", None)
+    alert["hasDomain"] = edge(alert["hasDomain"])
+    name = alert.pop("name")
+    return [("sensors", monitor_alert.name_of(sensor), fields(sensor)),
+            ("monitors", monitor_alert.name_of(monitor), fields(monitor)),
+            ("alerts", name, alert)] \
+        + [("alerts", n, {"notify": "off"}) for n in QUIET] \
+        + [("alerts", n, w) for n, w in NEW_QUIET]
+
+
+land.plan = plan
+
+
+def land_rule(name):
+    r = subprocess.run([land.RUNNER, "call", "convergence-land-alert", f"alert={name}"], capture_output=True, text=True)
+    out = (r.stdout + r.stderr).strip()
+    print(out.splitlines()[-1] if out else "convergence-land-alert: no output")
+    return r.returncode == 0 and f"landed {name}" in out
+
+
+def main(argv):
+    rc = land.main(argv)
+    if rc != 0 or "--apply" not in argv:
+        if "--apply" not in argv:
+            print(f"then: convergence-land-alert alert={RULE} (not run in a dry run)")
+        return rc
+    return 0 if land_rule(RULE) else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

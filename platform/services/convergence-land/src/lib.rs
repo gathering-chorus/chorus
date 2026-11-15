@@ -189,9 +189,11 @@ pub struct Drift {
     pub stale: Vec<String>,
 }
 
-const COMPARED: [&str; 8] = [
+const COMPARED: [&str; 9] = [
     "/title", "/for", "/labels/role", "/labels/severity", "/labels/domain",
     "/annotations/summary", "/data/0/model/expr", "/data/0/datasourceUid",
+    // #4970 — a monitor-made rule tells once; a hand edit to its wait reads stale (Kade)
+    "/notification_settings/repeat_interval",
 ];
 
 /// #4690 — a Grafana duration ("0s", "5m", "1h30m") in seconds. Every part
@@ -208,17 +210,19 @@ pub fn for_secs(d: &str) -> Option<u64> {
             continue;
         }
         let n: u64 = num.parse().ok()?;
-        total += n * match ch { 's' => 1, 'm' => 60, 'h' => 3600, 'd' => 86400, _ => return None };
+        // #4970: w and y too, so a row's 8760h and a Grafana-rendered 1y are one wait
+        total += n * match ch { 's' => 1, 'm' => 60, 'h' => 3600, 'd' => 86400, 'w' => 604_800, 'y' => 31_536_000, _ => return None };
         num.clear();
     }
     num.is_empty().then_some(total)
 }
 
-/// One compared field the same on both sides. `/for` by its value in seconds
-/// (#4690: rows hold "0m", Grafana answers "0s"); the rest as JSON.
+/// One compared field the same on both sides. `/for` and the repeat wait by
+/// their value in seconds (#4690: rows hold "0m", Grafana answers "0s"); the
+/// rest as JSON.
 fn same(p: &str, built: &Value, have: &Value) -> bool {
     let (b, h) = (built.pointer(p).filter(|v| !v.is_null()), have.pointer(p).filter(|v| !v.is_null()));
-    if p == "/for" {
+    if p == "/for" || p == "/notification_settings/repeat_interval" {
         // absent on both sides is the same (Silas); unreadable text never is
         if b.is_none() && h.is_none() {
             return true;

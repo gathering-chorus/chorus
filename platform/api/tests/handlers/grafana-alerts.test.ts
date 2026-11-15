@@ -6,14 +6,16 @@
  * label becomes one nudge to that role with the trigger and values only; an
  * unlabeled one goes nowhere, visibly.
  */
-import { alertText, routeGrafanaAlerts } from '../../src/handlers/grafana-alerts';
+import { alertText, routeGrafanaAlerts, ruleUid } from '../../src/handlers/grafana-alerts';
 
 function sinks() {
   const nudges: Array<[string, string]> = [];
+  const rulesSeen: string[] = [];
   const events: Array<[string, Record<string, string>]> = [];
   return {
     nudges, events,
-    deps: { nudge: (to: string, text: string) => { nudges.push([to, text]); }, spine: (e: string, f: Record<string, string>) => { events.push([e, f]); } },
+    rules: rulesSeen,
+    deps: { nudge: (to: string, text: string, rule: string) => { nudges.push([to, text]); rulesSeen.push(rule); }, spine: (e: string, f: Record<string, string>) => { events.push([e, f]); } },
   };
 }
 
@@ -77,5 +79,19 @@ describe('#4666 grafana alerts → role nudges', () => {
     const s = sinks();
     expect(routeGrafanaAlerts({}, s.deps)).toEqual({ routed: [], unrouted: [] });
     expect(s.nudges).toEqual([]);
+  });
+
+  // #4970 — the rule uid rides to ops-nudge, which reads that Alert row's notify.
+  test('the rule uid from generatorURL is handed to the nudge, so ops-nudge can read its row', () => {
+    const s = sinks();
+    routeGrafanaAlerts({ alerts: [{ ...sensorRed, generatorURL: 'http://localhost:3000/alerting/grafana/sensor-run-not-green/view?orgId=1' }] }, s.deps);
+    expect(s.rules).toEqual(['sensor-run-not-green']);
+  });
+
+  // NEGATIVE PROOF: no URL, or one that is not a rule view, names no rule (nothing gated).
+  test('no generatorURL, or a foreign one, names no rule', () => {
+    expect(ruleUid({})).toBe('');
+    expect(ruleUid({ generatorURL: 'http://x/alerting/list' })).toBe('');
+    expect(ruleUid({ generatorURL: 'http://x/alerting/grafana/a b/view' })).toBe('');
   });
 });

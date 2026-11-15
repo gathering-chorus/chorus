@@ -42,7 +42,6 @@ API_BASE="${API_BASE:-http://localhost:3340}"
 BEDROOM_HOST="${BEDROOM_HOST:-192.168.86.242}"
 CLEARING_PORT="${CLEARING_PORT:-3470}"
 API_MEM_CEILING_MB="${API_MEM_CEILING_MB:-900}"
-FUSEKI_MEM_CEILING_MB="${FUSEKI_MEM_CEILING_MB:-2000}"
 
 # --- result accumulation ---
 declare -a CHECK_NAMES=()
@@ -318,9 +317,10 @@ if [ "$fuseki_mem" = "ABSENT" ]; then
   fail "fuseki-memory" "UNMEASURED — ${FUSEKI_LABEL} is not in the service registry (or reports no rss). This is NOT zero memory; the check could not read the store."
 elif [ "$fuseki_mem" -eq 0 ] 2>/dev/null; then
   warn "fuseki-memory" "${FUSEKI_LABEL} reports rss=0"
-elif [ "$fuseki_mem" -gt "$FUSEKI_MEM_CEILING_MB" ] 2>/dev/null; then
-  warn "fuseki-memory" "${fuseki_mem}MB exceeds ceiling ${FUSEKI_MEM_CEILING_MB}MB"
 else
+  # #4970 (OFF, Jeff via Wren 2026-11-14 17:47): no size line. Fuseki runs with
+  # -Xmx3g and caps itself; the old 2000MB ceiling sat under that heap, so it
+  # warned 48 times in 7 days on a healthy store. Size is reported, never judged.
   pass "fuseki-memory" "rss=${fuseki_mem}MB"
 fi
 
