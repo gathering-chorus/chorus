@@ -208,6 +208,12 @@ def main():
         proc, base = boot(work)
         load(base, prod(f"CONSTRUCT {{ ?a <http://www.w3.org/2000/01/rdf-schema#subClassOf> ?b }} WHERE {{ GRAPH <{ONTOLOGY}> "
                         f"{{ ?a <http://www.w3.org/2000/01/rdf-schema#subClassOf> ?b }} }}", "application/n-triples", cred))
+        # #4920 — the classes themselves: a row that names a class (Domain definesVocabulary,
+        # sh:class owl:Class) finds it typed only if the class's own type is here. Without it the
+        # census counted 118 domains as violations the store does not hold (2026-11-15 13:38).
+        load(base, prod(f"CONSTRUCT {{ ?a a ?t }} WHERE {{ GRAPH <{ONTOLOGY}> {{ ?a a ?t "
+                        f"VALUES ?t {{ <http://www.w3.org/2002/07/owl#Class> <http://www.w3.org/2000/01/rdf-schema#Class> }} }} }}",
+                        "application/n-triples", cred))
         for g in graphs:
             try:
                 load(base, prod(f"CONSTRUCT {{ ?s ?p ?o }} WHERE {{ GRAPH <{g}> {{ ?s ?p ?o }} }}", "application/n-triples", cred))

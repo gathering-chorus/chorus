@@ -245,11 +245,15 @@ chorus:OpenSessionActsAsARole a sh:SPARQLConstraint ;
                 || NOT EXISTS { $this <https://jeffbridwell.com/chorus#startedAt> ?s } )
         }""" .
 
+# #4920 — a browser sign-in (person_session.py, channel "browser") has no run by design: no
+# SessionRun in the store has ever had runOf a browser session (measured 2026-11-15 13:26), and
+# every open one failed this rule (123). The rule is for sessions that run an agent.
 chorus:OpenSessionHasOneLiveRun a sh:SPARQLConstraint ;
     sh:message "an open session has exactly one live run (a run of it with no runEndedAt)" ;
     sh:select """
         SELECT $this WHERE {
           $this <https://jeffbridwell.com/chorus#sessionState> "open" .
+          FILTER NOT EXISTS { $this <https://jeffbridwell.com/chorus#channel> "browser" }
           { SELECT $this (COUNT(?run) AS ?live) WHERE {
               OPTIONAL { ?run <https://jeffbridwell.com/chorus#runOf> $this .
                          FILTER NOT EXISTS { ?run <https://jeffbridwell.com/chorus#runEndedAt> ?e } }
@@ -450,7 +454,7 @@ chorus:conversationOf a owl:ObjectProperty ;
 
 chorus:channelKind a owl:DatatypeProperty ;
     rdfs:label "channel kind" ;
-    rdfs:comment "terminal, nudge or clearing: the three ways a principal is reached today. A new channel is a model change, not a free string. #4323." ;
+    rdfs:comment "terminal, nudge, clearing or agent: the four ways a principal is reached today (agent: a runtime reached through its supervisor, #4424). A new channel is a model change, not a free string. #4323, #4920." ;
     rdfs:domain chorus:Channel ;
     rdfs:range xsd:string .
 
@@ -511,7 +515,8 @@ chorus:ChannelShape-ownedBy a sh:PropertyShape ;
     sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal .
 chorus:ChannelShape-channelKind a sh:PropertyShape ;
     sh:path chorus:channelKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
-    sh:pattern "^(terminal|nudge|clearing)$" .
+    # #4920: agent added: chorus-principal writes channel-agent (#4424, a runtime reached through its supervisor); 42 reachableOver links use it
+    sh:pattern "^(terminal|nudge|clearing|agent)$" .
 
 
 # =============================================================================

@@ -5,6 +5,8 @@
 @prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
 @prefix dcterms: <http://purl.org/dc/terms/> .
 
+# #4920 (2026-11-15): reloaded on this card. #4965 added runtimeSource here and handed the file to athena on
+# 2026-11-14 (model.handoff.athena), but the three rows in the store never received it (census MinCount 3).
 # #4572 — the AgentRuntime ROWS (the schema is agent-runtimes-4444.ttl). Their home
 # is urn:chorus:domains:identity, as the shape declares; platform/config/
 # domain-set-manifest.txt loads this file there. athena-gen still reads it to write

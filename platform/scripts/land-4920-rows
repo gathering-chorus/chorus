@@ -1,0 +1,68 @@
+#!/usr/bin/env python3
+"""#4920: after the land, run the SHACL census once, so the gauge the alert and the AC checks read
+reflects the land's model deploy and ledger entries at the prove, not at the next nightly.
+# @domain: persistence
+Then every census line must be in the named remainder (designing/domains/monitors/shacl-remainder-4920.json, AC2).
+DRY RUN unless --apply. Exit 0 = this run's census is all named (or the plan printed); 1 = the census failed,
+its file is not this run's (stale, or no total line), or a line is unnamed; 2 = the census, its file or the
+remainder could not be run or read.
+"""
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+CENSUS = os.environ.get("SHACL_CENSUS", os.path.join(HERE, "shacl-census"))
+NAMED = os.path.join(os.path.dirname(os.path.dirname(HERE)), "designing/domains/monitors/shacl-remainder-4920.json")
+PROM = os.path.join(os.environ.get("TEXTFILE_DIR", os.path.expanduser("~/CascadeProjects/shared-observability/data/textfile_collector")), "athena_shacl.prom")
+
+
+def unnamed(prom_text, named):
+    """AC2: every census line left after the land is named; returns the ones that are not."""
+    keys = {(n["class"], n["path"], n["component"]) for n in named}
+    out = []
+    for line in prom_text.splitlines():
+        m = re.match(r'athena_shacl_violations_by_field\{class="([^"]*)",path="([^"]*)",component="([^"]*)ConstraintComponent"\} (\d+)', line)
+        if m and int(m.group(4)) > 0 and (m.group(1), m.group(2), m.group(3)) not in keys:
+            out.append(f"{m.group(1)}.{m.group(2) or '-'} {m.group(3)} {m.group(4)}")
+    return out
+
+
+def main(argv):
+    if "--apply" not in argv:
+        print("plan: run the SHACL census once after the land (not run in a dry run)")
+        return 0
+    started = time.time()
+    try:
+        c = subprocess.run([CENSUS], capture_output=True, text=True, timeout=2400)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        print(f"land-4920-rows: the SHACL census could not be run: {e}", file=sys.stderr)
+        return 2
+    print((c.stdout + c.stderr).strip()[-400:])
+    if c.returncode != 0:
+        print(f"land-4920-rows: the SHACL census failed (exit {c.returncode})", file=sys.stderr)
+        return 1
+    # the verdict is only as good as the census it reads: this run's file, with its total line
+    try:
+        fresh = os.path.getmtime(PROM) >= started - 1
+        text = open(PROM).read()
+        named = json.load(open(NAMED))["named"]
+    except (OSError, ValueError, KeyError, TypeError) as e:
+        print(f"land-4920-rows: could not read the census or the named remainder: {e}", file=sys.stderr)
+        return 2
+    if not fresh or not re.search(r"^athena_shacl_violations \d+$", text, re.M):
+        print(f"land-4920-rows: the census exited 0 but {PROM} is not this run's census (stale, or no total line); not judged", file=sys.stderr)
+        return 1
+    left = unnamed(text, named)
+    if left:
+        print("land-4920-rows: census lines not in the named remainder (unrepaired):\n  " + "\n  ".join(left), file=sys.stderr)
+        return 1
+    print("every census line is in the named remainder")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
