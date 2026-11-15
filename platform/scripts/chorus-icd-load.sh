@@ -30,6 +30,16 @@ INSTANCES_DIR="$CHORUS_ROOT/building/products/convergence/domains/integrations/i
 # that), and the DAL takes a verified identity only (#3687). Seed with
 # athena-model, as the caller's role, with a minted token.
 CHORUS_MODEL="${CHORUS_MODEL:-$(command -v athena-model || echo "$CHORUS_ROOT/platform/services/athena-model/target/release/athena-model")}"
+# athena-model verifies the token against CSS_ISSUER and fetches keys from CHORUS_JWKS_URL
+# (#3690). A land runs with no role shell, so neither was set and the verifier fell back to
+# http://localhost:3001/, whose /.oidc/jwks CSS refuses ("outside the configured identifier
+# space"): JwksUnreachable, nothing loaded (#4977 land, 2026-11-15 04:59). Take the
+# deployment values from the one place they live, chorus-env-setup.sh.
+if [ -z "${CSS_ISSUER:-}" ] || [ -z "${CHORUS_JWKS_URL:-}" ]; then
+  eval "$(grep -E '^export (CSS_ISSUER|CHORUS_JWKS_URL)=' "$CHORUS_ROOT/platform/scripts/chorus-env-setup.sh" 2>/dev/null)"
+fi
+[ -n "${CSS_ISSUER:-}" ] && [ -n "${CHORUS_JWKS_URL:-}" ] || { echo "FATAL: no CSS_ISSUER/CHORUS_JWKS_URL (chorus-env-setup.sh) — nothing loaded" >&2; exit 1; }
+export CSS_ISSUER CHORUS_JWKS_URL
 
 count_triples() {
   curl -sf --max-time 15 -H "Accept: application/sparql-results+json" \
