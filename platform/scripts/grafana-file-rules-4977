@@ -3,13 +3,13 @@
 # grafana-file-rules-4977 — the one post-land step of #4977, on Jeff's yes (Kade, 2026-11-14 21:0x).
 #
 # Grafana reads alert provisioning live from shared-observability (grafana-wrapper.sh sets
-# GF_PATHS_PROVISIONING), and no land step writes there. Two rules #4977 makes from rows,
-# sensor-run-not-green and shacl-violations-above-baseline, are still held by files there,
-# and Grafana refuses an API write to a rule a file provisions. So, in order:
-#   1. copy this land's two rule files (deleteRules for both uids) into shared-observability
+# GF_PATHS_PROVISIONING), and no land step writes there. Two old rules live in files there,
+# sensor-run-not-green and shacl-violations-above-baseline; the land already made their
+# successors from rows under new uids (sensor-run-red, shacl-above-baseline), and the old
+# ones are quiet (their Alert rows say notify off). So, in order:
+#   1. copy this land's two rule files (deleteRules for the two OLD uids) into shared-observability
 #   2. Jeff restarts Grafana so it applies them (launchctl kickstart, his launchd domain)
-#   3. convergence-land-alert lands the two row-made rules
-#   4. the two Alert rows go notify on (they were kept quiet until their rules landed)
+#   3. the two old Alert rows, whose rules are gone, are deleted
 # Prints the steps; changes nothing. Each step names who runs it.
 set -euo pipefail
 
@@ -31,11 +31,7 @@ cat <<STEPS
 2. (Jeff) restart Grafana so it deletes the two file rules:
    ! launchctl kickstart -k gui/\$(id -u)/com.gathering.grafana
 
-3. (Silas) land the two row-made rules:
-   convergence-land-alert alert=sensor-run-not-green
-   convergence-land-alert alert=shacl-violations-above-baseline
-
-4. (Silas) tell their owners again:
-   athena-set alerts/alerts sensor-run-not-green notify=on
-   athena-set alerts/alerts shacl-violations-above-baseline notify=on
+3. (Silas) delete the two old Alert rows, whose rules are gone:
+   mcp athena-delete domain=alerts class=alerts id=sensor-run-not-green
+   mcp athena-delete domain=alerts class=alerts id=shacl-violations-above-baseline
 STEPS

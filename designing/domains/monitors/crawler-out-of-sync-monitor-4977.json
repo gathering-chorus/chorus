@@ -4,7 +4,7 @@
   "label": "Crawler out of sync with git",
   "measures": "Are crawled rows missing or stale against git for over an hour?",
   "monitorKind": "grafana",
-  "monitorSays": "The graph is out of step with git for over an hour: {{ $labels.subject }} has {{ $labels.metric }} rows.",
+  "monitorSays": "The graph is out of step with git for over an hour: {{ $labels.metric }} rows (read /sync for which classes).",
   "monitorLine": "0",
   "monitorWhen": "above",
   "monitorFor": "60m",

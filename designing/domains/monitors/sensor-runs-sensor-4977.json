@@ -1,4 +1,15 @@
-{ "id": "chorus:sensor-runs", "data": { "label": "sensor-runs", "sensorSource": "grafana", "sensorDatasource": "loki",
+{
+ "id": "chorus:sensor-runs",
+ "data": {
+  "label": "sensor-runs",
+  "sensorSource": "grafana",
+  "sensorDatasource": "loki",
   "sensorReads": "the spine on Loki: sensor.run.ended events whose outcome is red or unmeasured, per sensor and owner, over 75 minutes",
-  "sensorQuery": "sum by (sensor, owner) (count_over_time({job=\"platform-chorus\", appName=\"chorus-events\"} |= \"sensor.run.ended\" | json | outcome=~\"red|unmeasured\" [75m]))", "sensorWindowMinutes": "60" },
-  "links": { "ownedBy": "chorus:principal-kade", "type": "chorus:Sensor" } }
+  "sensorQuery": "sum by (sensor, owner) (count_over_time({job=\"platform-chorus\", appName=\"chorus-events\"} |= \"sensor.run.ended\" | json | outcome=~\"red|unmeasured\" [75m]))",
+  "sensorWindowMinutes": "75"
+ },
+ "links": {
+  "ownedBy": "chorus:principal-kade",
+  "type": "chorus:Sensor"
+ }
+}

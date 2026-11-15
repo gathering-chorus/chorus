@@ -9,11 +9,11 @@ designing/domains/monitors/*.json, which ship in this land, so the store and the
 differ. The door, the runner, the compare, the 403 wait and the exit codes are land-4960-rows'
 own; the sensor/monitor field reading is land-4970-rows' own (one implementation each).
 
-After the rows, convergence-land lands each rule whose uid no file-provisioned rule holds.
-sensor-run-not-green and shacl-violations-above-baseline are held by files in
-shared-observability provisioning (Kade, 2026-11-14 21:0x): their rows are written here, and
-their rules land in the post-land op on Jeff's yes, after the file rules are removed
-(platform/scripts/grafana-file-rules-4977, which prints the steps).
+After the rows, convergence-land lands every made rule. Two old rules live in files in
+shared-observability provisioning (sensor-run-not-green, shacl-violations-above-baseline);
+their row-made successors take new uids (sensor-run-red, shacl-above-baseline), and the old
+ones stay quiet until the post-land op on Jeff's yes removes them
+(platform/scripts/grafana-file-rules-4977 prints the steps).
 Exit 0 = plan printed (or applied); 1 = a write or a rule land was refused; 2 = the door or
 the plan could not be read.
 """
@@ -46,10 +46,12 @@ PAIRS = [
     ("fuseki-memory-monitor-4977", "fuseki-memory-sensor-4977", "on", True),
     # Buzz stays recorded, not told, while PULSE_BUZZ_DELIVER is off (Wren, 2026-11-14 17:47)
     ("buzz-shadow-monitor-4977", "buzz-shadow-sensor-4977", "off", True),
-    # held by file rules until the post-land op; they stay quiet until their row-made
-    # rules land, so the old file rule never tells anyone in between
-    ("sensor-run-not-green-monitor-4977", "sensor-runs-sensor-4977", "off", False),
-    ("shacl-above-baseline-monitor-4977", "shacl-above-baseline-sensor-4977", "off", False),
+    # new uids (sensor-run-red, shacl-above-baseline): the file rules' deleteRules stay in
+    # Grafana's provisioning for good and name the old uids, so a row-made rule under an old
+    # uid would be deleted on every Grafana restart (code review, round 1). The old file rules
+    # stay quiet (their rows say notify off) until the post-land op removes them.
+    ("sensor-run-not-green-monitor-4977", "sensor-runs-sensor-4977", "on", True),
+    ("shacl-above-baseline-monitor-4977", "shacl-above-baseline-sensor-4977", "on", True),
 ]
 # the retired yml's row keeps a provenance a reader can open: the monitor row it is made from
 PROVENANCE = {"crawler-out-of-sync": "chorus/designing/domains/monitors/crawler-out-of-sync-monitor-4977.json"}
@@ -86,8 +88,7 @@ def main(argv):
     rc = land.main(argv)
     rules = rows()[1]
     if "--apply" not in argv:
-        print(f"then: convergence-land-alert for {', '.join(rules)} (not run in a dry run); "
-              "sensor-run-not-green and shacl-violations-above-baseline wait for the post-land op")
+        print(f"then: convergence-land-alert for {', '.join(rules)} (not run in a dry run)")
         return rc
     if rc != 0:
         return rc

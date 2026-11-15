@@ -40,7 +40,7 @@ SYNC='chorus_sensor_reading{sensor="sync",metric="missing",subject="codefile",ma
 STALE='chorus_sensor_reading{sensor="sync",metric="stale",subject="codefile",machine="library"}'
 AGE='node_textfile_mtime_seconds{file="/x/sensor_sync.prom",machine="library"}'
 # expected labels, kept in single quotes so bash never brace-expands their commas
-L_SYNC='{"exp_labels": {"metric": "missing", "subject": "codefile"}}'
+L_SYNC='{"exp_labels": {"metric": "missing"}}'
 L_AGE='{"exp_labels": {"file": "/x/sensor_sync.prom", "machine": "library"}}'
 L_JAVA='{"exp_labels": {"name": "java", "machine": "library"}}'
 L_NONE='{"exp_labels": {}}'
@@ -54,7 +54,7 @@ L_ABSENT='{"exp_labels": {"sensor": "sync"}}'
 }
 
 # --- crawler A: out of sync (the five 4647 cases, 1-3 here) ---
-@test "crawler 1: a class out of sync for over an hour fires, naming the class and the metric" {
+@test "crawler 1: rows out of sync for over an hour fire, naming the metric (the gauges carry no class; the text points at /sync)" {
   build crawler-out-of-sync-monitor crawler-sync-sensor
   ptest crawler-out-of-sync-monitor "[$(S "$SYNC" '3x90'), $(S "$STALE" '0x90')]" \
     "[$(A 30m crawler-out-of-sync ''), $(A 61m crawler-out-of-sync "$L_SYNC")]"
@@ -89,7 +89,7 @@ L_ABSENT='{"exp_labels": {"sensor": "sync"}}'
 @test "SHACL: at the baseline is quiet, above it for 5m fires, back to the baseline clears" {
   build shacl-above-baseline-monitor shacl-above-baseline-sensor
   ptest shacl-above-baseline-monitor "[$(S 'athena_shacl_violations' '9892x10 9900x10 9892x10'), $(S 'athena_shacl_violations_baseline' '9892x30')]" \
-    "[$(A 9m shacl-violations-above-baseline ''), $(A 17m shacl-violations-above-baseline "$L_NONE"), $(A 25m shacl-violations-above-baseline '')]"
+    "[$(A 9m shacl-above-baseline ''), $(A 17m shacl-above-baseline "$L_NONE"), $(A 25m shacl-above-baseline '')]"
 }
 # --- the two Loki-read monitors: promtool cannot run LogQL, so they run on a throwaway Loki ---
 @test "sensor-run-not-green and Buzz shadow, both ways, on Loki's own engine (4977-loki-rules-fire-once-clear.bats)" {

@@ -1,4 +1,19 @@
-{ "id": "chorus:shacl-violations-above-baseline", "data": { "label": "SHACL violations above baseline", "measures": "Has the store's SHACL violation count risen above its ratchet baseline?",
-  "monitorKind": "grafana", "monitorSays": "The store has more SHACL violations than its baseline (the lowest count the census has seen).", "monitorLine": "0", "monitorWhen": "above",
-  "monitorAction": "Run athena-validate, find which shape grew, and file the fix or lower the count" },
-  "links": { "monitorOfSensor": "chorus:shacl-over-baseline", "ownedBy": "chorus:principal-silas", "hasDomain": "chorus:monitors", "type": "chorus:Monitor" } }
+{
+ "id": "chorus:shacl-above-baseline",
+ "data": {
+  "label": "SHACL violations above baseline",
+  "measures": "Has the store's SHACL violation count risen above its ratchet baseline?",
+  "monitorKind": "grafana",
+  "monitorSays": "The store has more SHACL violations than its baseline (the lowest count the census has seen).",
+  "monitorLine": "0",
+  "monitorWhen": "above",
+  "monitorAction": "Run athena-validate, find which shape grew, and file the fix or lower the count",
+  "monitorFor": "0m"
+ },
+ "links": {
+  "monitorOfSensor": "chorus:shacl-over-baseline",
+  "ownedBy": "chorus:principal-silas",
+  "hasDomain": "chorus:monitors",
+  "type": "chorus:Monitor"
+ }
+}

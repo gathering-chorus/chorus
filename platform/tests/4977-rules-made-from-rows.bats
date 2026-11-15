@@ -44,11 +44,17 @@ held() {
   printf 'apiVersion: 1\ngroups:\n  - name: g\n    rules:\n      - uid: sensor-run-not-green\ndeleteRules:\n  - orgId: 1\n    uid: sensor-run-not-green\n' > "$T"
   ! held "$T" sensor-run-not-green || return 1
 }
-@test "the held two land their rules only after the post-land op, and stay quiet until then" {
-  grep -q '("sensor-run-not-green-monitor-4977", "sensor-runs-sensor-4977", "off", False)' "$L" || return 1
-  grep -q '("shacl-above-baseline-monitor-4977", "shacl-above-baseline-sensor-4977", "off", False)' "$L" || return 1
+@test "the two successors take new uids, so the file deleteRules (which stay for good) never remove them" {
+  for pair in "sensor-run-not-green-monitor-4977 sensor-run-red sensor-run-not-green" "shacl-above-baseline-monitor-4977 shacl-above-baseline shacl-violations-above-baseline"; do
+    set -- $pair
+    [ "$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['id'])" "$ROOT/designing/domains/monitors/$1.json")" = "chorus:$2" ] || return 1
+    [ "$2" != "$3" ] || return 1
+    grep -q "(\"$1\", \"[a-z-]*-4977\", \"on\", True)" "$L" || return 1
+  done
+}
+@test "the post-land op removes the two old file rules and their quiet rows, nothing else" {
   CHORUS_ROOT="$ROOT" OBS_DIR="$BATS_TEST_TMPDIR" run "$ROOT/platform/scripts/grafana-file-rules-4977"
   [ "$status" -eq 0 ] || return 1
-  [[ "$output" == *"convergence-land-alert alert=sensor-run-not-green"* ]] || return 1
-  [[ "$output" == *"notify=on"* ]] || return 1
+  [[ "$output" == *"id=sensor-run-not-green"* ]] || return 1
+  [[ "$output" == *"id=shacl-violations-above-baseline"* ]] || return 1
 }

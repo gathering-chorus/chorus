@@ -11,8 +11,6 @@ groups:
     folder: Chorus
     interval: 5m
     rules:
-      # Ratchet (Jeff 10-24 06:08): the baseline is the lowest count the census
-      # has seen and only goes down; the alert fires when the count rises above it.
       - uid: shacl-shared-bnodes-empty
         title: Empty shared blank nodes in the shapes
         condition: B
