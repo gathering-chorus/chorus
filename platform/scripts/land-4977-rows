@@ -105,13 +105,14 @@ land.plan = plan
 # no repeat_interval and re-told every 4h (found 2026-11-15 00:37). The land loads the ICD
 # first (the one loader, idempotent), and refuses a rule whose built form has no repeat wait.
 ICD_LOAD = os.environ.get("ICD_LOAD", os.path.join(land.ROOT, "platform/scripts/chorus-icd-load.sh"))
-CONVERGENCE = os.environ.get("CONVERGENCE_LAND", os.path.expanduser("~/.chorus/bin/convergence-land"))
 
 
 def built_repeats(name):
     """The rule convergence-land would land for this row carries a repeat_interval."""
+    # through the runner, as land_rule lands it: a role account has no convergence-land of its own (Kade)
     try:
-        r = subprocess.run([CONVERGENCE, "alert", name, "--dry-run"], capture_output=True, text=True)
+        r = subprocess.run([land.RUNNER, "call", "convergence-land-alert", f"alert={name}", "dry_run=true"],
+                           capture_output=True, text=True)
     except OSError:
         return False
     return r.returncode == 0 and '"repeat_interval"' in r.stdout

@@ -13,14 +13,14 @@ setup() {
   ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
   B="$BATS_TEST_TMPDIR"; LOG="$B/calls"; : > "$LOG"
   printf '#!/bin/sh\necho icd-load >> "%s"\nexit "${ICD_RC:-0}"\n' "$LOG" > "$B/icd"
-  # the builder stub: prints a rule with a repeat wait unless BARE names this rule
-  printf '#!/bin/sh\necho "built $2" >> "%s"\nif [ "$2" = "$BARE" ]; then echo "{\\"notification_settings\\": {\\"receiver\\": \\"r\\"}}"; else echo "{\\"notification_settings\\": {\\"receiver\\": \\"r\\", \\"repeat_interval\\": \\"8760h\\"}}"; fi\n' "$LOG" > "$B/conv"
-  chmod +x "$B/icd" "$B/conv"
+  # the runner stub: a dry-run build prints a rule with a repeat wait unless BARE names it
+  printf '#!/bin/sh\necho "runner $*" >> "%s"\nn="${3#alert=}"\nif [ "$n" = "$BARE" ]; then echo "{\\"notification_settings\\": {\\"receiver\\": \\"r\\"}}"; else echo "{\\"notification_settings\\": {\\"receiver\\": \\"r\\", \\"repeat_interval\\": \\"8760h\\"}}"; fi\n' "$LOG" > "$B/runner"
+  chmod +x "$B/icd" "$B/runner"
 }
 
 # main(--apply) with the door write and the rule land stubbed; the land of each rule is logged
 apply() {
-  ICD_LOAD="$B/icd" CONVERGENCE_LAND="$B/conv" LOG="$LOG" python3 - "$ROOT/platform/scripts/land-4977-rows" <<'EOF'
+  ICD_LOAD="$B/icd" CHORUS_RUNNER="$B/runner" LOG="$LOG" python3 - "$ROOT/platform/scripts/land-4977-rows" <<'EOF'
 import importlib.machinery, importlib.util, os, sys
 p = sys.argv[1]; sys.argv = [p, "--apply"]
 loader = importlib.machinery.SourceFileLoader("l4977", p)
@@ -56,4 +56,10 @@ EOF
     "$ROOT/building/products/convergence/domains/integrations/icd-instances/icd-instance-grafana.ttl" || return 1
   grep -q 'INSTANCES_DIR="$CHORUS_ROOT/building/products/convergence/domains/integrations/icd-instances"' \
     "$ROOT/platform/scripts/chorus-icd-load.sh" || return 1
+}
+@test "the dry-run build goes through the runner, as land_rule does, never a path of its own (Kade, 00:45)" {
+  run apply
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  grep -q '^runner call convergence-land-alert alert=bedroom-disk-full dry_run=true$' "$LOG" || { cat "$LOG"; return 1; }
+  ! grep -q 'bin/convergence-land' "$ROOT/platform/scripts/land-4977-rows" || return 1
 }
