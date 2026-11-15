@@ -66,7 +66,46 @@ m = importlib.util.module_from_spec(s); sys.argv = [sys.argv[1]]; l.exec_module(
 land = [p[0] for p in m.PAIRS]; kade = [p[0] for p in m.KADE_PAIRS]
 assert not any(x.startswith("crawler") for x in land), land
 assert kade == ["crawler-out-of-sync-monitor-4977", "crawler-sync-quiet-monitor-4977"], kade
-src = open(sys.argv[0]).read()
-assert '("alerts", "crawler-out-of-sync", None)' in src, "the land does not hand the row over"
+planned = [(c, n) for c, n, w in m.plan({}) if c == "alerts" and n.startswith("crawler")]
+assert not planned, f"the land touches Kade's crawler Alert rows: {planned}"
 PY
+}
+# the mint adds each kind's prefix and refuses a name that already carries it (ADR-040 Rule 0):
+# the 11-15 02:24 land was refused for sensor 'sensor-runs' (Jeff's yes to read the refusal, 02:50)
+bare_names() {
+  python3 - "$1" <<'PY'
+import importlib.machinery, importlib.util, sys
+p = sys.argv[1]; sys.argv = [p]
+loader = importlib.machinery.SourceFileLoader("l4977", p)
+m = importlib.util.module_from_spec(importlib.util.spec_from_loader("l4977", loader)); loader.exec_module(m)
+PRE = {"sensors": "sensor-", "monitors": "monitor-", "alerts": "alert-"}
+bad = [f"{c}/{n}" for c, n, _ in m.rows(m.PAIRS)[0] + m.rows(m.KADE_PAIRS)[0] if n.startswith(PRE[c])]
+print(" ".join(bad)); sys.exit(1 if bad else 0)
+PY
+}
+@test "no row the land writes carries its kind's prefix, so the mint takes every name" {
+  run bare_names "$L"
+  [ "$status" -eq 0 ] || { echo "double prefix: $output"; return 1; }
+}
+@test "NEGATIVE PROOF: the check above catches the 11-15 sensor name 'sensor-runs'" {
+  T="$BATS_TEST_TMPDIR/l"; mkdir -p "$T/designing/domains/monitors" "$T/platform/scripts"
+  cp "$ROOT"/platform/scripts/{land-4977-rows,land-4970-rows,land-4960-rows,monitor-alert} "$T/platform/scripts/"
+  cp "$ROOT"/designing/domains/monitors/*.json "$T/designing/domains/monitors/"
+  sed -i "" 's/"chorus:runs-not-green"/"chorus:sensor-runs"/' "$T/designing/domains/monitors/sensor-runs-sensor-4977.json" "$T/designing/domains/monitors/sensor-run-not-green-monitor-4977.json"
+  run bare_names "$T/platform/scripts/land-4977-rows"
+  [ "$status" -eq 1 ] || return 1
+  [[ "$output" == *"sensors/sensor-runs"* ]] || { echo "$output"; return 1; }
+}
+# sensor-run routes to silas, not each sensor's owner (Kade 2026-11-14 22:03); the row said kade (Kade, 11-15 02:58)
+route_of() {
+  "$ROOT/platform/scripts/monitor-alert" build "$1" "$ROOT/designing/domains/monitors/sensor-runs-sensor-4977.json" \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["alertRoute"])'
+}
+@test "the sensor-run alert routes to silas" {
+  [ "$(route_of "$ROOT/designing/domains/monitors/sensor-run-not-green-monitor-4977.json")" = "silas" ] || return 1
+}
+@test "NEGATIVE PROOF: a sensor-run monitor owned by kade routes to kade, and the check above would fail" {
+  T="$BATS_TEST_TMPDIR/m.json"
+  sed 's/"ownedBy": "chorus:principal-silas"/"ownedBy": "chorus:principal-kade"/' "$ROOT/designing/domains/monitors/sensor-run-not-green-monitor-4977.json" > "$T"
+  [ "$(route_of "$T")" = "kade" ] || return 1
 }

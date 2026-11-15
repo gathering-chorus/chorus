@@ -1,7 +1,7 @@
 {
- "id": "chorus:sensor-runs",
+ "id": "chorus:runs-not-green",
  "data": {
-  "label": "sensor-runs",
+  "label": "runs-not-green",
   "sensorSource": "grafana",
   "sensorDatasource": "loki",
   "sensorReads": "the spine on Loki: sensor.run.ended events whose outcome is red or unmeasured, per sensor and owner, over 75 minutes",
@@ -9,7 +9,7 @@
   "sensorWindowMinutes": "75"
  },
  "links": {
-  "ownedBy": "chorus:principal-kade",
+  "ownedBy": "chorus:principal-silas",
   "type": "chorus:Sensor"
  }
 }

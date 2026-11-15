@@ -22,14 +22,14 @@ setup() {
 apply() {
   ICD_LOAD="$B/icd" CHORUS_RUNNER="$B/runner" LOG="$LOG" python3 - "$ROOT/platform/scripts/land-4977-rows" <<'EOF'
 import importlib.machinery, importlib.util, os, sys
-p = sys.argv[1]; sys.argv = [p, "--apply"]
+p = sys.argv[1]; sys.argv = [p, "--apply"] + (["--kade"] if os.environ.get("KADE") else [])
 loader = importlib.machinery.SourceFileLoader("l4977", p)
 m = importlib.util.module_from_spec(importlib.util.spec_from_loader("l4977", loader)); loader.exec_module(m)
 m.land.main = lambda argv: 0
 def landed(n):
     open(os.environ["LOG"], "a").write(f"landed {n}\n"); return True
 m.l4970.land_rule = landed
-sys.exit(m.main(["--apply"]))
+sys.exit(m.main(sys.argv[1:]))
 EOF
 }
 
@@ -62,4 +62,14 @@ EOF
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   grep -q '^runner call convergence-land-alert alert=bedroom-disk-full dry_run=true$' "$LOG" || { cat "$LOG"; return 1; }
   ! grep -q 'bin/convergence-land' "$ROOT/platform/scripts/land-4977-rows" || return 1
+}
+@test "--kade does not load the ICD (kade cannot write it; 11-15 02:57) and still refuses a bare rule" {
+  KADE=1 run apply
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  ! grep -q '^icd-load$' "$LOG" || { cat "$LOG"; return 1; }
+  [ "$(grep -c '^landed ' "$LOG")" -eq 2 ] || { cat "$LOG"; return 1; }
+  : > "$LOG"
+  KADE=1 BARE=crawler-out-of-sync run apply
+  [ "$status" -eq 1 ] || return 1
+  ! grep -q '^landed ' "$LOG" || return 1
 }
