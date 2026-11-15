@@ -160,6 +160,7 @@ chorus:MonitorShape a sh:NodeShape ;
     sh:property [ sh:path chorus:monitorLine ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:decimal ] ;
     sh:property [ sh:path chorus:monitorWhen ; sh:maxCount 1 ; sh:in ( "above" "below" ) ] ;
     sh:property [ sh:path chorus:monitorAction ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:monitorSays ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal ] .
 
 # #4970 — the monitor is the judge (Jeff, 2026-11-14 17:34: "a clear sensor that
@@ -174,6 +175,8 @@ chorus:monitorLine a owl:DatatypeProperty ; rdfs:label "line" ; rdfs:domain chor
     rdfs:comment "The value that is wrong, in the sensor's own unit, exact (99 for a disk percent)." .
 chorus:monitorWhen a owl:DatatypeProperty ; rdfs:label "when" ; rdfs:domain chorus:Monitor ; rdfs:range xsd:string ;
     rdfs:comment "above (the default) or below: which side of the line is wrong." .
+chorus:monitorSays a owl:DatatypeProperty ; rdfs:label "says" ; rdfs:domain chorus:Monitor ; rdfs:range xsd:string ;
+    rdfs:comment "#4977 — what the alert's text says when it fires, naming what is wrong. It may name the series in Grafana's own template words ({{ $labels.mountpoint }}, {{ $value }}); Grafana fills them per alert." .
 chorus:monitorAction a owl:DatatypeProperty ; rdfs:label "action" ; rdfs:domain chorus:Monitor ; rdfs:range xsd:string ;
     rdfs:comment "The one thing the owner does when the line is crossed." .
 

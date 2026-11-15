@@ -73,7 +73,9 @@ def build(monitor, sensor):
     return {
         "name": name_of(monitor),
         "label": field(monitor, "label") or name_of(monitor),
-        "comment": f"{measures} Line: {when} {line}. Owner: {owner}. Action: {field(monitor, 'monitorAction')}",
+        # #4977 — the text a person reads: what the monitor says (Grafana fills its
+        # {{ $labels.x }} per alert), else the question it measures
+        "comment": f"{field(monitor, 'monitorSays') or measures} Line: {when} {line}. Owner: {owner}. Action: {field(monitor, 'monitorAction')}",
         "alertSource": "grafana",
         "alertRoute": owner,
         "metricDatasource": field(sensor, "sensorDatasource"),
