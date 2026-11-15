@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""#4980: after the land, run the services sensor once and refuse unless it ends green.
+"""#4980: after the land, run the services sensor and the SHACL census once each.
 # @domain: services
 
 The services sensor runs hourly (com.chorus.service-harvest). The prove runs minutes after
 the land, while the newest run is still the red one from before it (Wren, 2026-11-15 09:13),
 so the land runs the sensor itself, through the runner, the same call the hourly agent makes,
-against the map this land ships. DRY RUN unless --apply. Exit 0 = green (or the plan printed);
+against the map this land ships. The SHACL census runs once too: the rule reads its gauge, which
+otherwise moves only at the nightly run, so the fixed DomainShape shows at the prove (Wren 09:27).
+DRY RUN unless --apply. Exit 0 = green (or the plan printed);
 1 = the run was not green; 2 = the runner could not be called.
 """
 import os
@@ -14,6 +16,7 @@ import sys
 
 RUNNER = os.environ.get("CHORUS_RUNNER", os.path.expanduser("~/.chorus/bin/chorus-runner"))
 CALL = [RUNNER, "call", "herald-run", "sensor=services", "wait=true"]
+CENSUS = os.environ.get("SHACL_CENSUS", os.path.join(os.path.dirname(os.path.abspath(__file__)), "shacl-census"))
 
 
 def verdict(out):
@@ -23,7 +26,7 @@ def verdict(out):
 
 def main(argv):
     if "--apply" not in argv:
-        print("plan: run the services sensor once and refuse unless it ends green (not run in a dry run)")
+        print("plan: run the services sensor once and refuse unless it ends green, then the SHACL census once (not run in a dry run)")
         return 0
     try:
         r = subprocess.run(CALL, capture_output=True, text=True, timeout=600)
@@ -32,11 +35,20 @@ def main(argv):
         return 2
     out = r.stdout + r.stderr
     tail = "\n".join(l for l in out.splitlines() if "finding:" in l or "services:" in l)
-    if r.returncode == 0 and verdict(out):
-        print(f"services sensor green after the land\n{tail}")
-        return 0
-    print(f"land-4980-rows: the services sensor did not end green (exit {r.returncode})\n{tail or out[-800:]}", file=sys.stderr)
-    return 1
+    if not (r.returncode == 0 and verdict(out)):
+        print(f"land-4980-rows: the services sensor did not end green (exit {r.returncode})\n{tail or out[-800:]}", file=sys.stderr)
+        return 1
+    print(f"services sensor green after the land\n{tail}")
+    try:
+        c = subprocess.run([CENSUS], capture_output=True, text=True, timeout=2400)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        print(f"land-4980-rows: the SHACL census could not be run: {e}", file=sys.stderr)
+        return 2
+    print((c.stdout + c.stderr).strip()[-400:])
+    if c.returncode != 0:
+        print(f"land-4980-rows: the SHACL census failed (exit {c.returncode})", file=sys.stderr)
+        return 1
+    return 0
 
 
 if __name__ == "__main__":

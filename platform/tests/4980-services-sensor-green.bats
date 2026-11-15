@@ -32,13 +32,16 @@ EOF
 land() { # <stub stdout> <stub exit>
   printf '#!/bin/sh\necho "$*" > "%s/call"\nprintf "%%s\\n" "%s"\nexit %s\n' "$BATS_TEST_TMPDIR" "$1" "$2" > "$BATS_TEST_TMPDIR/runner"
   chmod +x "$BATS_TEST_TMPDIR/runner"
-  CHORUS_RUNNER="$BATS_TEST_TMPDIR/runner" python3 "$ROOT/platform/scripts/land-4980-rows" --apply
+  printf '#!/bin/sh\necho census >> "%s/call"\necho "shacl-census: 6755 violation(s)"\nexit "${CENSUS_RC:-0}"\n' "$BATS_TEST_TMPDIR" > "$BATS_TEST_TMPDIR/census"
+  chmod +x "$BATS_TEST_TMPDIR/census"
+  CHORUS_RUNNER="$BATS_TEST_TMPDIR/runner" SHACL_CENSUS="$BATS_TEST_TMPDIR/census" python3 "$ROOT/platform/scripts/land-4980-rows" --apply
 }
 
 @test "the land runs the services sensor through the runner and passes on green" {
   run land "services: green — every unit is mapped or external, nothing stale" 0
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$(cat "$BATS_TEST_TMPDIR/call")" = "call herald-run sensor=services wait=true" ] || return 1
+  [ "$(head -1 "$BATS_TEST_TMPDIR/call")" = "call herald-run sensor=services wait=true" ] || return 1
+  [ "$(sed -n 2p "$BATS_TEST_TMPDIR/call")" = census ] || { cat "$BATS_TEST_TMPDIR/call"; return 1; }
 }
 
 # NEGATIVE PROOF: a red run, an unmeasured one, or a runner that fails stops the land
@@ -49,6 +52,14 @@ land() { # <stub stdout> <stub exit>
   [ "$status" -eq 1 ] || { echo "$output"; return 1; }
   run land "services: green" 2
   [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+}
+
+# NEGATIVE PROOF: a census that fails stops the land; a red sensor never reaches the census
+@test "a failed census refuses the land, and a red sensor runs no census" {
+  CENSUS_RC=1 run land "services: green" 0
+  [ "$status" -eq 1 ] && [[ "$output" == *"SHACL census failed"* ]] || { echo "$output"; return 1; }
+  run land "services: RED — 3 finding(s)" 1
+  ! grep -q census "$BATS_TEST_TMPDIR/call" || return 1
 }
 
 @test "a dry run runs nothing" {
