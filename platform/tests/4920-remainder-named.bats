@@ -65,7 +65,6 @@ for n in d:
   CENSUS_OUT="$BATS_TEST_TMPDIR/unnamed.prom" land
   [ "$status" -eq 1 ] && [[ "$output" == *"Session.- SPARQL 123"* ]] || { echo "$output"; return 1; }
   # NEGATIVE PROOF: a census that exits 0 but writes nothing leaves an old file; it is not judged
-  touch -t 202601010000 "$BATS_TEST_TMPDIR/athena_shacl.prom"
   cp "$BATS_TEST_TMPDIR/named.prom" "$BATS_TEST_TMPDIR/athena_shacl.prom"; touch -t 202601010000 "$BATS_TEST_TMPDIR/athena_shacl.prom"
   CENSUS_OUT= land
   [ "$status" -eq 1 ] && [[ "$output" == *"not this run's census"* ]] || { echo "$output"; return 1; }
@@ -74,7 +73,7 @@ for n in d:
   CENSUS_OUT="$BATS_TEST_TMPDIR/empty.prom" land
   [ "$status" -eq 1 ] && [[ "$output" == *"not this run's census"* ]] || { echo "$output"; return 1; }
   CENSUS_RC=1 CENSUS_OUT="$BATS_TEST_TMPDIR/named.prom" land
-  [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+  [ "$status" -eq 1 ] && [[ "$output" == *"the SHACL census failed (exit 1)"* ]] || { echo "$output"; return 1; }
   SHACL_CENSUS=/nonexistent run python3 "$ROOT/platform/scripts/land-4920-rows"
   [ "$status" -eq 0 ] && [[ "$output" == plan:* ]] || { echo "$output"; return 1; }
 }

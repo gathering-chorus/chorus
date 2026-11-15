@@ -454,7 +454,7 @@ chorus:conversationOf a owl:ObjectProperty ;
 
 chorus:channelKind a owl:DatatypeProperty ;
     rdfs:label "channel kind" ;
-    rdfs:comment "terminal, nudge or clearing: the three ways a principal is reached today. A new channel is a model change, not a free string. #4323." ;
+    rdfs:comment "terminal, nudge, clearing or agent: the four ways a principal is reached today (agent: a runtime reached through its supervisor, #4424). A new channel is a model change, not a free string. #4323, #4920." ;
     rdfs:domain chorus:Channel ;
     rdfs:range xsd:string .
 
