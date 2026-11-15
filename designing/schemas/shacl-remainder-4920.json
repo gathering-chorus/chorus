@@ -1,0 +1,709 @@
+{
+ "_comment": "#4920 AC2/AC3: the SHACL violations left after the card, named by class, field, constraint and owner. A census line not named here is unrepaired damage; the check fails on it.",
+ "named": [
+  {
+   "class": "AgentRole",
+   "path": "comment",
+   "component": "MinCount",
+   "owner": "none",
+   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
+   "count_11_15": 3
+  },
+  {
+   "class": "AgentRole",
+   "path": "roleKind",
+   "component": "MinCount",
+   "owner": "none",
+   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
+   "count_11_15": 3
+  },
+  {
+   "class": "AgentRole",
+   "path": "roleKind",
+   "component": "Pattern",
+   "owner": "none",
+   "reason": "named, not repaired on #4920",
+   "count_11_15": 1
+  },
+  {
+   "class": "AgentRuntime",
+   "path": "runtimeSource",
+   "component": "MinCount",
+   "owner": "none",
+   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
+   "count_11_15": 3
+  },
+  {
+   "class": "Channel",
+   "path": "channelKind",
+   "component": "Pattern",
+   "owner": "silas",
+   "reason": "named, not repaired on #4920",
+   "count_11_15": 1
+  },
+  {
+   "class": "Delivery",
+   "path": "",
+   "component": "SPARQL",
+   "owner": "silas",
+   "reason": "suppressed nudges recorded delivered: the messages card (suppressed truth + duplicate key)",
+   "count_11_15": 267
+  },
+  {
+   "class": "Document",
+   "path": "",
+   "component": "Node",
+   "owner": "jeff",
+   "reason": "named, not repaired on #4920",
+   "count_11_15": 4
+  },
+  {
+   "class": "Document",
+   "path": "label",
+   "component": "MaxCount",
+   "owner": "jeff",
+   "reason": "named, not repaired on #4920",
+   "count_11_15": 2
+  },
+  {
+   "class": "Domain",
+   "path": "",
+   "component": "Node",
+   "owner": "wren",
+   "reason": "named, not repaired on #4920",
+   "count_11_15": 4
+  },
+  {
+   "class": "Domain",
+   "path": "apiSurface",
+   "component": "Closed",
+   "owner": "wren",
+   "reason": "named, not repaired on #4920",
+   "count_11_15": 1
+  },
+  {
+   "class": "Domain",
+   "path": "asIs",
+   "component": "Closed",
+   "owner": "wren",
+   "reason": "named, not repaired on #4920",
+   "count_11_15": 1
+  },
+  {
+   "class": "Domain",
+   "path": "atStep",
+   "component": "Closed",
+   "owner": "wren",
+   "reason": "named, not repaired on #4920",
+   "count_11_15": 1
+  },
+  {
+   "class": "Domain",
+   "path": "audience",
+   "component": "Closed",
+   "owner": "wren",
+   "reason": "named, not repaired on #4920",
+   "count_11_15": 1
+  },
+  {
+   "class": "Domain",
+   "path": "comment",
+   "component": "MinCount",
+   "owner": "wren",
+   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
+   "count_11_15": 18
+  },
+  {
+   "class": "Domain",
+   "path": "definesVocabulary",
+   "component": "Class",
+   "owner": "wren",
+   "reason": "3 real: two name Card (an ArtifactType), one names wearsHat (a property)",
+   "count_11_15": 118
+  },
+  {
+   "class": "Domain",
+   "path": "definesVocabulary",
+   "component": "Closed",
+   "owner": "wren",
+   "reason": "named, not repaired on #4920",
+   "count_11_15": 3
+  },
+  {
+   "class": "Domain",
+   "path": "docState",
+   "component": "Closed",
+   "owner": "wren",
+   "reason": "named, not repaired on #4920",
+   "count_11_15": 1
+  },
+  {
+   "class": "Domain",
+   "path": "gaps",
+   "component": "MinCount",
+   "owner": "wren",
+   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
+   "count_11_15": 46
+  },
+  {
+   "class": "Domain",
+   "path": "hasDesignDoc",
+   "component": "Class",
+   "owner": "wren",
+   "reason": "design docs never written (kade 4, silas 2): content",
+   "count_11_15": 6
+  },
+  {
+   "class": "Domain",
+   "path": "hasDesignDoc",
+   "component": "MinCount",
+   "owner": "wren",
+   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
+   "count_11_15": 47
+  },
+  {
+   "class": "Domain",
+   "path": "hasDomain",
+   "component": "Closed",
+   "owner": "wren",
+   "reason": "named, not repaired on #4920",
+   "count_11_15": 1
+  },
+  {
+   "class": "Domain",
+   "path": "hosts",
+   "component": "Class",
+   "owner": "wren",
+   "reason": "named, not repaired on #4920",
+   "count_11_15": 2
+  },
+  {
+   "class": "Domain",
+   "path": "instancesGraph",
+   "component": "Closed",
+   "owner": "wren",
+   "reason": "named, not repaired on #4920",
+   "count_11_15": 1
+  },
+  {
+   "class": "Domain",
+   "path": "model",
+   "component": "Closed",
+   "owner": "wren",
+   "reason": "named, not repaired on #4920",
+   "count_11_15": 1
+  },
+  {
+   "class": "Domain",
+   "path": "notInScope",
+   "component": "Closed",
+   "owner": "wren",
+   "reason": "named, not repaired on #4920",
+   "count_11_15": 1
+  },
+  {
+   "class": "Domain",
+   "path": "pagesAndFlow",
+   "component": "Closed",
+   "owner": "wren",
+   "reason": "named, not repaired on #4920",
+   "count_11_15": 1
+  },
+  {
+   "class": "Domain",
+   "path": "promise",
+   "component": "Closed",
+   "owner": "wren",
+   "reason": "named, not repaired on #4920",
+   "count_11_15": 1
+  },
+  {
+   "class": "Domain",
+   "path": "purpose",
+   "component": "Closed",
+   "owner": "wren",
+   "reason": "named, not repaired on #4920",
+   "count_11_15": 1
+  },
+  {
+   "class": "Domain",
+   "path": "purpose",
+   "component": "MinCount",
+   "owner": "wren",
+   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
+   "count_11_15": 13
+  },
+  {
+   "class": "Domain",
+   "path": "references",
+   "component": "Closed",
+   "owner": "wren",
+   "reason": "named, not repaired on #4920",
+   "count_11_15": 1
+  },
+  {
+   "class": "Domain",
+   "path": "runsOn",
+   "component": "Closed",
+   "owner": "wren",
+   "reason": "named, not repaired on #4920",
+   "count_11_15": 1
+  },
+  {
+   "class": "Domain",
+   "path": "status",
+   "component": "MinCount",
+   "owner": "wren",
+   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
+   "count_11_15": 46
+  },
+  {
+   "class": "Domain",
+   "path": "structure",
+   "component": "Closed",
+   "owner": "wren",
+   "reason": "named, not repaired on #4920",
+   "count_11_15": 1
+  },
+  {
+   "class": "Domain",
+   "path": "toBe",
+   "component": "Closed",
+   "owner": "wren",
+   "reason": "named, not repaired on #4920",
+   "count_11_15": 1
+  },
+  {
+   "class": "Domain",
+   "path": "valueProposition",
+   "component": "Closed",
+   "owner": "wren",
+   "reason": "named, not repaired on #4920",
+   "count_11_15": 1
+  },
+  {
+   "class": "Domain",
+   "path": "vision",
+   "component": "Closed",
+   "owner": "wren",
+   "reason": "named, not repaired on #4920",
+   "count_11_15": 1
+  },
+  {
+   "class": "EventType",
+   "path": "producedBy",
+   "component": "Class",
+   "owner": "none",
+   "reason": "13 event types on the retired gates domain: no owner and no source (#4517)",
+   "count_11_15": 25
+  },
+  {
+   "class": "HumanRole",
+   "path": "comment",
+   "component": "MinCount",
+   "owner": "none",
+   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
+   "count_11_15": 1
+  },
+  {
+   "class": "HumanRole",
+   "path": "roleKind",
+   "component": "MinCount",
+   "owner": "none",
+   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
+   "count_11_15": 1
+  },
+  {
+   "class": "HumanRole",
+   "path": "roleKind",
+   "component": "Pattern",
+   "owner": "none",
+   "reason": "named, not repaired on #4920",
+   "count_11_15": 1
+  },
+  {
+   "class": "KeyRegistryEntry",
+   "path": "keyId",
+   "component": "Pattern",
+   "owner": "none",
+   "reason": "named, not repaired on #4920",
+   "count_11_15": 2
+  },
+  {
+   "class": "KeyRegistryEntry",
+   "path": "permittedScope",
+   "component": "MinCount",
+   "owner": "none",
+   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
+   "count_11_15": 5
+  },
+  {
+   "class": "KeyRegistryEntry",
+   "path": "permittedScope",
+   "component": "Pattern",
+   "owner": "none",
+   "reason": "named, not repaired on #4920",
+   "count_11_15": 1
+  },
+  {
+   "class": "Knowledge",
+   "path": "comment",
+   "component": "MinCount",
+   "owner": "none",
+   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
+   "count_11_15": 2
+  },
+  {
+   "class": "LongTermMemory",
+   "path": "comment",
+   "component": "MinCount",
+   "owner": "quartet",
+   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
+   "count_11_15": 24
+  },
+  {
+   "class": "LongTermMemory",
+   "path": "label",
+   "component": "MinCount",
+   "owner": "quartet",
+   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
+   "count_11_15": 1
+  },
+  {
+   "class": "Memory",
+   "path": "comment",
+   "component": "MinCount",
+   "owner": "none",
+   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
+   "count_11_15": 1
+  },
+  {
+   "class": "Nudge",
+   "path": "label",
+   "component": "MinCount",
+   "owner": "kade",
+   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
+   "count_11_15": 1
+  },
+  {
+   "class": "Nudge",
+   "path": "messageBody",
+   "component": "MinCount",
+   "owner": "kade",
+   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
+   "count_11_15": 1
+  },
+  {
+   "class": "Nudge",
+   "path": "messageKind",
+   "component": "MinCount",
+   "owner": "kade",
+   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
+   "count_11_15": 1
+  },
+  {
+   "class": "Nudge",
+   "path": "senderName",
+   "component": "MinCount",
+   "owner": "kade",
+   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
+   "count_11_15": 1
+  },
+  {
+   "class": "Nudge",
+   "path": "sentAt",
+   "component": "MinCount",
+   "owner": "kade",
+   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
+   "count_11_15": 1
+  },
+  {
+   "class": "Nudge",
+   "path": "sentBy",
+   "component": "Class",
+   "owner": "kade",
+   "reason": "named, not repaired on #4920",
+   "count_11_15": 1
+  },
+  {
+   "class": "Nudge",
+   "path": "sentTo",
+   "component": "Class",
+   "owner": "kade",
+   "reason": "named, not repaired on #4920",
+   "count_11_15": 1
+  },
+  {
+   "class": "Permission",
+   "path": "accessTo",
+   "component": "Datatype",
+   "owner": "jeff",
+   "reason": "jeff's 2 rows in the old string form: his write",
+   "count_11_15": 2
+  },
+  {
+   "class": "Permission",
+   "path": "mode",
+   "component": "In",
+   "owner": "jeff",
+   "reason": "jeff's 2 rows in the old string form: his write",
+   "count_11_15": 2
+  },
+  {
+   "class": "Pipeline",
+   "path": "automates",
+   "component": "MinCount",
+   "owner": "kade",
+   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
+   "count_11_15": 5
+  },
+  {
+   "class": "PipelineRun",
+   "path": "traceId",
+   "component": "MinCount",
+   "owner": "none",
+   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
+   "count_11_15": 3
+  },
+  {
+   "class": "Practice",
+   "path": "comment",
+   "component": "MinCount",
+   "owner": "wren",
+   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
+   "count_11_15": 18
+  },
+  {
+   "class": "Principal",
+   "path": "",
+   "component": "SPARQL",
+   "owner": "none",
+   "reason": "named, not repaired on #4920",
+   "count_11_15": 5
+  },
+  {
+   "class": "Role",
+   "path": "comment",
+   "component": "MinCount",
+   "owner": "none",
+   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
+   "count_11_15": 1
+  },
+  {
+   "class": "Role",
+   "path": "roleKind",
+   "component": "Pattern",
+   "owner": "none",
+   "reason": "named, not repaired on #4920",
+   "count_11_15": 3
+  },
+  {
+   "class": "RoleState",
+   "path": "activity",
+   "component": "MinCount",
+   "owner": "pulse",
+   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
+   "count_11_15": 1
+  },
+  {
+   "class": "RoleState",
+   "path": "comment",
+   "component": "MinCount",
+   "owner": "pulse",
+   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
+   "count_11_15": 12
+  },
+  {
+   "class": "RoleState",
+   "path": "label",
+   "component": "MinCount",
+   "owner": "pulse",
+   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
+   "count_11_15": 12
+  },
+  {
+   "class": "RoleState",
+   "path": "stateSource",
+   "component": "In",
+   "owner": "pulse",
+   "reason": "named, not repaired on #4920",
+   "count_11_15": 1
+  },
+  {
+   "class": "ScheduledJob",
+   "path": "binaryPath",
+   "component": "MaxCount",
+   "owner": "silas",
+   "reason": "named, not repaired on #4920",
+   "count_11_15": 1
+  },
+  {
+   "class": "ScheduledJob",
+   "path": "lastObserved",
+   "component": "MaxCount",
+   "owner": "silas",
+   "reason": "named, not repaired on #4920",
+   "count_11_15": 1
+  },
+  {
+   "class": "Service",
+   "path": "^hosts",
+   "component": "MaxCount",
+   "owner": "kade",
+   "reason": "named, not repaired on #4920",
+   "count_11_15": 1
+  },
+  {
+   "class": "Service",
+   "path": "asIs",
+   "component": "MinCount",
+   "owner": "kade",
+   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
+   "count_11_15": 1
+  },
+  {
+   "class": "Service",
+   "path": "docState",
+   "component": "MinCount",
+   "owner": "kade",
+   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
+   "count_11_15": 12
+  },
+  {
+   "class": "Service",
+   "path": "gaps",
+   "component": "MinCount",
+   "owner": "kade",
+   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
+   "count_11_15": 1
+  },
+  {
+   "class": "Service",
+   "path": "hasDesignDoc",
+   "component": "Class",
+   "owner": "kade",
+   "reason": "named, not repaired on #4920",
+   "count_11_15": 1
+  },
+  {
+   "class": "Service",
+   "path": "hasDesignDoc",
+   "component": "MinCount",
+   "owner": "kade",
+   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
+   "count_11_15": 10
+  },
+  {
+   "class": "Service",
+   "path": "implementationPlan",
+   "component": "MinCount",
+   "owner": "kade",
+   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
+   "count_11_15": 1
+  },
+  {
+   "class": "Service",
+   "path": "notInScope",
+   "component": "MinCount",
+   "owner": "kade",
+   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
+   "count_11_15": 1
+  },
+  {
+   "class": "Service",
+   "path": "overview",
+   "component": "MinCount",
+   "owner": "kade",
+   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
+   "count_11_15": 1
+  },
+  {
+   "class": "Service",
+   "path": "pathToClose",
+   "component": "MinCount",
+   "owner": "kade",
+   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
+   "count_11_15": 1
+  },
+  {
+   "class": "Service",
+   "path": "status",
+   "component": "MinCount",
+   "owner": "kade",
+   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
+   "count_11_15": 1
+  },
+  {
+   "class": "Service",
+   "path": "toBe",
+   "component": "MinCount",
+   "owner": "kade",
+   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
+   "count_11_15": 1
+  },
+  {
+   "class": "Session",
+   "path": "channel",
+   "component": "Pattern",
+   "owner": "jeff",
+   "reason": "named, not repaired on #4920",
+   "count_11_15": 1
+  },
+  {
+   "class": "ShortTermMemory",
+   "path": "comment",
+   "component": "MinCount",
+   "owner": "quartet",
+   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
+   "count_11_15": 24
+  },
+  {
+   "class": "ShortTermMemory",
+   "path": "label",
+   "component": "MinCount",
+   "owner": "quartet",
+   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
+   "count_11_15": 1
+  },
+  {
+   "class": "UnitDomainMapping",
+   "path": "hasDomain",
+   "component": "Class",
+   "owner": "none",
+   "reason": "13 rows on retired alerts-monitors: dotted names the door refuses; source maps them, the deploy does not load it (#4517)",
+   "count_11_15": 13
+  },
+  {
+   "class": "Value",
+   "path": "expressedBy",
+   "component": "Class",
+   "owner": "none",
+   "reason": "5 XP values point at 11 XP principles never authored (content)",
+   "count_11_15": 15
+  },
+  {
+   "class": "ValueStream",
+   "path": "^inStream",
+   "component": "MinCount",
+   "owner": "none",
+   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
+   "count_11_15": 1
+  },
+  {
+   "class": "Version",
+   "path": "label",
+   "component": "MinCount",
+   "owner": "none",
+   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
+   "count_11_15": 1
+  },
+  {
+   "class": "Version",
+   "path": "ownedBy",
+   "component": "MinCount",
+   "owner": "none",
+   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
+   "count_11_15": 1
+  }
+ ]
+}
