@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# @test-type: unit — fixtures for the verdict; the live case reads prod Prometheus after the land
+# @test-type: unit — fixtures for the verdict and the land's census step; no store, no Prometheus
 # @domain: persistence
 # @card: #4920 · owner: silas
 # Checks designing/domains/monitors/shacl-remainder-4920.json and platform/scripts/land-4920-rows.
@@ -54,15 +54,26 @@ for n in d:
 }
 
 @test "the land runs the census once; a failed census refuses the land; a dry run runs nothing" {
-  printf '#!/bin/sh\necho census\nexit "${CENSUS_RC:-0}"\n' > "$BATS_TEST_TMPDIR/census"; chmod +x "$BATS_TEST_TMPDIR/census"
-  printf 'athena_shacl_violations_by_field{class="Delivery",path="",component="SPARQLConstraintComponent"} 267\n' > "$BATS_TEST_TMPDIR/athena_shacl.prom"
-  TEXTFILE_DIR="$BATS_TEST_TMPDIR" SHACL_CENSUS="$BATS_TEST_TMPDIR/census" run python3 "$ROOT/platform/scripts/land-4920-rows" --apply
-  [ "$status" -eq 0 ] && [[ "$output" == *"all is named"* || "$output" == *"every census line is in the named remainder"* ]] || { echo "$output"; return 1; }
+  # the fake census writes $CENSUS_OUT as this run's textfile, as shacl-census does
+  printf '#!/bin/sh\necho census\n[ -n "$CENSUS_OUT" ] && cp "$CENSUS_OUT" "$TEXTFILE_DIR/athena_shacl.prom"\nexit "${CENSUS_RC:-0}"\n' > "$BATS_TEST_TMPDIR/census"; chmod +x "$BATS_TEST_TMPDIR/census"
+  land() { TEXTFILE_DIR="$BATS_TEST_TMPDIR" SHACL_CENSUS="$BATS_TEST_TMPDIR/census" run python3 "$ROOT/platform/scripts/land-4920-rows" --apply; }
+  printf 'athena_shacl_violations 267\nathena_shacl_violations_by_field{class="Delivery",path="",component="SPARQLConstraintComponent"} 267\n' > "$BATS_TEST_TMPDIR/named.prom"
+  CENSUS_OUT="$BATS_TEST_TMPDIR/named.prom" land
+  [ "$status" -eq 0 ] && [[ "$output" == *"every census line is in the named remainder"* ]] || { echo "$output"; return 1; }
   # NEGATIVE PROOF: an unnamed census line after the land refuses it, naming the line
-  printf 'athena_shacl_violations_by_field{class="Session",path="",component="SPARQLConstraintComponent"} 123\n' > "$BATS_TEST_TMPDIR/athena_shacl.prom"
-  TEXTFILE_DIR="$BATS_TEST_TMPDIR" SHACL_CENSUS="$BATS_TEST_TMPDIR/census" run python3 "$ROOT/platform/scripts/land-4920-rows" --apply
+  printf 'athena_shacl_violations 123\nathena_shacl_violations_by_field{class="Session",path="",component="SPARQLConstraintComponent"} 123\n' > "$BATS_TEST_TMPDIR/unnamed.prom"
+  CENSUS_OUT="$BATS_TEST_TMPDIR/unnamed.prom" land
   [ "$status" -eq 1 ] && [[ "$output" == *"Session.- SPARQL 123"* ]] || { echo "$output"; return 1; }
-  CENSUS_RC=1 TEXTFILE_DIR="$BATS_TEST_TMPDIR" SHACL_CENSUS="$BATS_TEST_TMPDIR/census" run python3 "$ROOT/platform/scripts/land-4920-rows" --apply
+  # NEGATIVE PROOF: a census that exits 0 but writes nothing leaves an old file; it is not judged
+  touch -t 202601010000 "$BATS_TEST_TMPDIR/athena_shacl.prom"
+  cp "$BATS_TEST_TMPDIR/named.prom" "$BATS_TEST_TMPDIR/athena_shacl.prom"; touch -t 202601010000 "$BATS_TEST_TMPDIR/athena_shacl.prom"
+  CENSUS_OUT= land
+  [ "$status" -eq 1 ] && [[ "$output" == *"not this run's census"* ]] || { echo "$output"; return 1; }
+  # NEGATIVE PROOF: a fresh file with no total line (no census in it) is not judged either
+  printf '# nothing\n' > "$BATS_TEST_TMPDIR/empty.prom"
+  CENSUS_OUT="$BATS_TEST_TMPDIR/empty.prom" land
+  [ "$status" -eq 1 ] && [[ "$output" == *"not this run's census"* ]] || { echo "$output"; return 1; }
+  CENSUS_RC=1 CENSUS_OUT="$BATS_TEST_TMPDIR/named.prom" land
   [ "$status" -eq 1 ] || { echo "$output"; return 1; }
   SHACL_CENSUS=/nonexistent run python3 "$ROOT/platform/scripts/land-4920-rows"
   [ "$status" -eq 0 ] && [[ "$output" == plan:* ]] || { echo "$output"; return 1; }

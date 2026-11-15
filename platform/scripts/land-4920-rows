@@ -5,6 +5,7 @@ reflects the land's model deploy and ledger entries at the prove, not at the nex
 Then every census line must be in the named remainder (designing/domains/monitors/shacl-remainder-4920.json, AC2).\nDRY RUN unless --apply. Exit 0 = the census ran and all is named (or the plan printed); 1 = it failed or a line is unnamed; 2 = it could not run.
 """
 import os
+import re
 import subprocess
 import sys
 
@@ -30,6 +31,8 @@ def main(argv):
     if "--apply" not in argv:
         print("plan: run the SHACL census once after the land (not run in a dry run)")
         return 0
+    import json, time
+    started = time.time()
     try:
         c = subprocess.run([CENSUS], capture_output=True, text=True, timeout=2400)
     except (OSError, subprocess.TimeoutExpired) as e:
@@ -39,8 +42,18 @@ def main(argv):
     if c.returncode != 0:
         print(f"land-4920-rows: the SHACL census failed (exit {c.returncode})", file=sys.stderr)
         return 1
-    import json
-    left = unnamed(open(PROM).read(), json.load(open(NAMED))["named"])
+    # the verdict is only as good as the census it reads: this run's file, with its total line
+    try:
+        fresh = os.path.getmtime(PROM) >= started - 1
+        text = open(PROM).read()
+        named = json.load(open(NAMED))["named"]
+    except (OSError, ValueError, KeyError) as e:
+        print(f"land-4920-rows: could not read the census or the named remainder: {e}", file=sys.stderr)
+        return 2
+    if not fresh or not re.search(r"^athena_shacl_violations \d+$", text, re.M):
+        print(f"land-4920-rows: the census exited 0 but {PROM} is not this run's census (stale, or no total line); not judged", file=sys.stderr)
+        return 1
+    left = unnamed(text, named)
     if left:
         print("land-4920-rows: census lines not in the named remainder (unrepaired):\n  " + "\n  ".join(left), file=sys.stderr)
         return 1

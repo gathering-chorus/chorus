@@ -26,14 +26,6 @@
    "count_11_15": 3
   },
   {
-   "class": "Channel",
-   "path": "channelKind",
-   "component": "Pattern",
-   "owner": "silas",
-   "reason": "channel-agent's kind 'agent' is outside the shape's terminal|nudge|clearing: the shape predates agent delivery",
-   "count_11_15": 1
-  },
-  {
    "class": "Delivery",
    "path": "",
    "component": "SPARQL",
@@ -309,9 +301,9 @@
    "class": "KeyRegistryEntry",
    "path": "permittedScope",
    "component": "MinCount",
-   "owner": "none",
-   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
-   "count_11_15": 5
+   "owner": "silas",
+   "reason": "held: cred-bridge-nostr and cred-marknakib-nostr; a scope would affirm an old bridge key and an outside person's key may post to Buzz, so keep or cut is Jeff's (Wren asked 2026-11-15 15:35). jeff, wren and kade moved to door rows with scope urn:chorus:buzz on this card",
+   "count_11_15": 2
   },
   {
    "class": "Knowledge",
@@ -442,38 +434,6 @@
    "count_11_15": 1
   },
   {
-   "class": "RoleState",
-   "path": "activity",
-   "component": "MinCount",
-   "owner": "pulse",
-   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
-   "count_11_15": 1
-  },
-  {
-   "class": "RoleState",
-   "path": "comment",
-   "component": "MinCount",
-   "owner": "pulse",
-   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
-   "count_11_15": 12
-  },
-  {
-   "class": "RoleState",
-   "path": "label",
-   "component": "MinCount",
-   "owner": "pulse",
-   "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
-   "count_11_15": 12
-  },
-  {
-   "class": "RoleState",
-   "path": "stateSource",
-   "component": "In",
-   "owner": "pulse",
-   "reason": "role-state-wren says 'declared', retired for 'observed'",
-   "count_11_15": 1
-  },
-  {
    "class": "ScheduledJob",
    "path": "binaryPath",
    "component": "MaxCount",
@@ -583,14 +543,6 @@
    "component": "MinCount",
    "owner": "kade",
    "reason": "content: the row's owner writes the missing fact (Jeff 10-17, no made-up data)",
-   "count_11_15": 1
-  },
-  {
-   "class": "Session",
-   "path": "channel",
-   "component": "Pattern",
-   "owner": "silas",
-   "reason": "one old silas session row with an empty channel",
    "count_11_15": 1
   },
   {
