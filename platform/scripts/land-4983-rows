@@ -32,6 +32,8 @@ OLD = ["config/loki/loki-native.yaml", "config/loki/loki-config.yaml"]
 AGENTS = os.environ.get("LAUNCH_AGENTS_DIR", os.path.expanduser("~/Library/LaunchAgents"))
 LAUNCHCTL = os.environ.get("LAUNCHCTL", "launchctl")
 READY_WAIT = int(os.environ.get("LOKI_READY_WAIT", "180"))
+# the account this land runs as (a test sets it to prove the wrong-owner refusal)
+RUN_UID = int(os.environ.get("LAND_AS_UID", os.getuid()))
 
 # the #4983 limits, as /config prints them
 WANT = {
@@ -59,7 +61,7 @@ def get(path, timeout=5):
 
 def reload(installed):
     """Reload the agent from the installed plist; '' on success, else why."""
-    uid = str(os.getuid())
+    uid = str(RUN_UID)
     try:
         subprocess.run([LAUNCHCTL, "bootout", f"gui/{uid}/{LABEL}"], capture_output=True, timeout=60)
         r = subprocess.run([LAUNCHCTL, "bootstrap", f"gui/{uid}", installed], capture_output=True, text=True, timeout=60)
@@ -126,9 +128,9 @@ def main(argv):
     try:
         # the agent belongs to the account whose LaunchAgents holds it; reloading it from any
         # other account would start a second Loki or none (Wren 18:41)
-        if os.stat(installed).st_uid != os.getuid():
+        if os.stat(installed).st_uid != RUN_UID:
             print(f"land-4983-rows: {installed} belongs to uid {os.stat(installed).st_uid}, this land runs as "
-                  f"{os.getuid()}; nothing changed", file=sys.stderr)
+                  f"{RUN_UID}; nothing changed", file=sys.stderr)
             return 2
         with open(installed, "rb") as f:
             before = f.read()

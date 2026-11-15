@@ -85,7 +85,7 @@ http.server.HTTPServer(("127.0.0.1", port), H).serve_forever()
 PY
   SRV=$!
   for _ in $(seq 1 20); do curl -sf -o /dev/null "http://127.0.0.1:$PORT/ready" && break; sleep 0.2; done
-  CHORUS_HOME="$ROOT" OBS_REPO="$T/obs" LAUNCH_AGENTS_DIR="$T/agents" LAUNCHCTL="$T/launchctl" \
+  CHORUS_HOME="$ROOT" LAND_AS_UID="${LAND_AS_UID:-$(id -u)}" OBS_REPO="$T/obs" LAUNCH_AGENTS_DIR="$T/agents" LAUNCHCTL="$T/launchctl" \
     LOKI_URL="http://127.0.0.1:$PORT" LOKI_READY_WAIT=3 GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t \
     GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t run python3 "$ROOT/platform/scripts/land-4983-rows" --apply
   kill "$SRV" 2>/dev/null; wait "$SRV" 2>/dev/null || true
@@ -108,4 +108,14 @@ PY
   [ "$(cat "$BATS_TEST_TMPDIR/agents/com.gathering.loki.plist")" = "OLD PLIST" ] || { echo "old plist not restored"; return 1; }
   [ "$(grep -c '^bootstrap' "$BATS_TEST_TMPDIR/launchctl.log")" -eq 2 ] || { cat "$BATS_TEST_TMPDIR/launchctl.log"; return 1; }
   [ -e "$BATS_TEST_TMPDIR/obs/config/loki/loki-native.yaml" ] && [ -e "$BATS_TEST_TMPDIR/obs/config/loki/loki-config.yaml" ] || { echo "old files removed"; return 1; }
+}
+
+# NEGATIVE PROOF: a land running as an account that does not own the agent changes nothing
+@test "a land whose account does not own the Loki agent refuses and touches nothing" {
+  printf 'max_outstanding_requests_per_tenant: 1024\nsplit_queries_by_interval: 2h\ncache_results: true\nparallelise_shardable_queries: false\n' > "$BATS_TEST_TMPDIR/config"
+  LAND_AS_UID=99999 fake_land
+  [ "$status" -eq 2 ] && [[ "$output" == *"this land runs as 99999; nothing changed"* ]] || { echo "$output"; return 1; }
+  [ "$(cat "$BATS_TEST_TMPDIR/agents/com.gathering.loki.plist")" = "OLD PLIST" ] || { echo "plist changed"; return 1; }
+  [ ! -s "$BATS_TEST_TMPDIR/launchctl.log" ] || { cat "$BATS_TEST_TMPDIR/launchctl.log"; return 1; }
+  [ -e "$BATS_TEST_TMPDIR/obs/config/loki/loki-native.yaml" ] || { echo "old file removed"; return 1; }
 }
