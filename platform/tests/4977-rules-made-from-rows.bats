@@ -70,3 +70,29 @@ src = open(sys.argv[0]).read()
 assert '("alerts", "crawler-out-of-sync", None)' in src, "the land does not hand the row over"
 PY
 }
+# the mint adds each kind's prefix and refuses a name that already carries it (ADR-040 Rule 0):
+# the 11-15 02:24 land was refused for sensor 'sensor-runs' (Jeff's yes to read the refusal, 02:50)
+bare_names() {
+  python3 - "$1" <<'PY'
+import importlib.machinery, importlib.util, sys
+p = sys.argv[1]; sys.argv = [p]
+loader = importlib.machinery.SourceFileLoader("l4977", p)
+m = importlib.util.module_from_spec(importlib.util.spec_from_loader("l4977", loader)); loader.exec_module(m)
+PRE = {"sensors": "sensor-", "monitors": "monitor-", "alerts": "alert-"}
+bad = [f"{c}/{n}" for c, n, _ in m.rows(m.PAIRS)[0] + m.rows(m.KADE_PAIRS)[0] if n.startswith(PRE[c])]
+print(" ".join(bad)); sys.exit(1 if bad else 0)
+PY
+}
+@test "no row the land writes carries its kind's prefix, so the mint takes every name" {
+  run bare_names "$L"
+  [ "$status" -eq 0 ] || { echo "double prefix: $output"; return 1; }
+}
+@test "NEGATIVE PROOF: the check above catches the 11-15 sensor name 'sensor-runs'" {
+  T="$BATS_TEST_TMPDIR/l"; mkdir -p "$T/designing/domains/monitors" "$T/platform/scripts"
+  cp "$ROOT"/platform/scripts/{land-4977-rows,land-4970-rows,land-4960-rows,monitor-alert} "$T/platform/scripts/"
+  cp "$ROOT"/designing/domains/monitors/*.json "$T/designing/domains/monitors/"
+  sed -i "" 's/"chorus:runs-not-green"/"chorus:sensor-runs"/' "$T/designing/domains/monitors/sensor-runs-sensor-4977.json" "$T/designing/domains/monitors/sensor-run-not-green-monitor-4977.json"
+  run bare_names "$T/platform/scripts/land-4977-rows"
+  [ "$status" -eq 1 ] || return 1
+  [[ "$output" == *"sensors/sensor-runs"* ]] || { echo "$output"; return 1; }
+}

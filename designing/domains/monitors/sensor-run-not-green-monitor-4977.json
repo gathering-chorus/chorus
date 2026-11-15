@@ -11,7 +11,7 @@
   "monitorAction": "Read the sensor's last run (/cws or the sensor-run row) and fix what it could not read or write"
  },
  "links": {
-  "monitorOfSensor": "chorus:sensor-runs",
+  "monitorOfSensor": "chorus:runs-not-green",
   "ownedBy": "chorus:principal-kade",
   "hasDomain": "chorus:monitors",
   "type": "chorus:Monitor"
