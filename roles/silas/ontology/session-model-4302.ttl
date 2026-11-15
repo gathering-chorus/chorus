@@ -245,11 +245,15 @@ chorus:OpenSessionActsAsARole a sh:SPARQLConstraint ;
                 || NOT EXISTS { $this <https://jeffbridwell.com/chorus#startedAt> ?s } )
         }""" .
 
+# #4920 — a browser sign-in (person_session.py, channel "browser") has no run by design: no
+# SessionRun in the store has ever had runOf a browser session (measured 2026-11-15 13:26), and
+# every open one failed this rule (123). The rule is for sessions that run an agent.
 chorus:OpenSessionHasOneLiveRun a sh:SPARQLConstraint ;
     sh:message "an open session has exactly one live run (a run of it with no runEndedAt)" ;
     sh:select """
         SELECT $this WHERE {
           $this <https://jeffbridwell.com/chorus#sessionState> "open" .
+          FILTER NOT EXISTS { $this <https://jeffbridwell.com/chorus#channel> "browser" }
           { SELECT $this (COUNT(?run) AS ?live) WHERE {
               OPTIONAL { ?run <https://jeffbridwell.com/chorus#runOf> $this .
                          FILTER NOT EXISTS { ?run <https://jeffbridwell.com/chorus#runEndedAt> ?e } }
