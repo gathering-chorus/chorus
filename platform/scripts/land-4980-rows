@@ -4,19 +4,29 @@
 
 The services sensor runs hourly (com.chorus.service-harvest). The prove runs minutes after
 the land, while the newest run is still the red one from before it (Wren, 2026-11-15 09:13),
-so the land runs the sensor itself, through the runner, the same call the hourly agent makes,
+so the land runs the sensor itself, the same call the hourly agent makes,
 against the map this land ships. The SHACL census runs once too: the rule reads its gauge, which
 otherwise moves only at the nightly run, so the fixed DomainShape shows at the prove (Wren 09:27).
 DRY RUN unless --apply. Exit 0 = green (or the plan printed);
-1 = the run was not green; 2 = the runner could not be called.
+1 = the run was not green; 2 = the sensor could not be called.
 """
 import os
 import subprocess
 import sys
 
-RUNNER = os.environ.get("CHORUS_RUNNER", os.path.expanduser("~/.chorus/bin/chorus-runner"))
-CALL = [RUNNER, "call", "herald-run", "sensor=services", "wait=true"]
-CENSUS = os.environ.get("SHACL_CENSUS", os.path.join(os.path.dirname(os.path.abspath(__file__)), "shacl-census"))
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.dirname(HERE))
+# the sensor pass itself (chorus-crawl sensor services, what herald-run runs), from the land
+# process with the repo root named. Through the runner's herald-run task the root was "." and
+# the map did not resolve (10:23 land refused; Kade hit the same on herald-run files, 11-14).
+CRAWL = os.environ.get("CHORUS_CRAWL", os.path.expanduser("~/.chorus/bin/chorus-crawl"))
+ROLE = os.environ.get("CHORUS_ROLE") or "silas"
+CALL = [CRAWL, "sensor", "services"]
+# the services sensor reads launchd, so it must run on the account whose agents it maps: from any
+# other account it sees no units and would retire every row (measured 10:25 from chorus-silas:
+# 0 units, retire 59). That account holds the hourly agent's plist.
+AGENT = os.path.expanduser("~/Library/LaunchAgents/com.chorus.service-harvest.plist")
+CENSUS = os.environ.get("SHACL_CENSUS", os.path.join(HERE, "shacl-census"))
 
 
 def verdict(out):
@@ -28,8 +38,12 @@ def main(argv):
     if "--apply" not in argv:
         print("plan: run the services sensor once and refuse unless it ends green, then the SHACL census once (not run in a dry run)")
         return 0
+    if not os.path.isfile(AGENT):
+        print(f"land-4980-rows: refused: {AGENT} is not here, so this account does not run the services; the sensor would retire every row", file=sys.stderr)
+        return 2
     try:
-        r = subprocess.run(CALL, capture_output=True, text=True, timeout=600)
+        r = subprocess.run(CALL, capture_output=True, text=True, timeout=600,
+                           env={**os.environ, "CHORUS_ROOT": ROOT, "CHORUS_ROLE": ROLE})
     except (OSError, subprocess.TimeoutExpired) as e:
         print(f"land-4980-rows: the services sensor could not be run: {e}", file=sys.stderr)
         return 2

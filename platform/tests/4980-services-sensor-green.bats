@@ -30,17 +30,18 @@ EOF
 # land-4980-rows runs the sensor once after the land (the prove runs before the next hourly
 # run) and refuses unless it ends green; the runner is stubbed here
 land() { # <stub stdout> <stub exit>
-  printf '#!/bin/sh\necho "$*" > "%s/call"\nprintf "%%s\\n" "%s"\nexit %s\n' "$BATS_TEST_TMPDIR" "$1" "$2" > "$BATS_TEST_TMPDIR/runner"
+  printf '#!/bin/sh\necho "$* root=$CHORUS_ROOT" > "%s/call"\nprintf "%%s\\n" "%s"\nexit %s\n' "$BATS_TEST_TMPDIR" "$1" "$2" > "$BATS_TEST_TMPDIR/runner"
   chmod +x "$BATS_TEST_TMPDIR/runner"
   printf '#!/bin/sh\necho census >> "%s/call"\necho "shacl-census: 6755 violation(s)"\nexit "${CENSUS_RC:-0}"\n' "$BATS_TEST_TMPDIR" > "$BATS_TEST_TMPDIR/census"
   chmod +x "$BATS_TEST_TMPDIR/census"
-  CHORUS_RUNNER="$BATS_TEST_TMPDIR/runner" SHACL_CENSUS="$BATS_TEST_TMPDIR/census" python3 "$ROOT/platform/scripts/land-4980-rows" --apply
+  mkdir -p "$BATS_TEST_TMPDIR/home/Library/LaunchAgents"; touch "$BATS_TEST_TMPDIR/home/Library/LaunchAgents/com.chorus.service-harvest.plist"
+  HOME="${LAND_HOME:-$BATS_TEST_TMPDIR/home}" CHORUS_CRAWL="$BATS_TEST_TMPDIR/runner" CHORUS_ROLE=silas SHACL_CENSUS="$BATS_TEST_TMPDIR/census" python3 "$ROOT/platform/scripts/land-4980-rows" --apply
 }
 
-@test "the land runs the services sensor through the runner and passes on green" {
+@test "the land runs the services sensor pass with the repo root named and passes on green" {
   run land "services: green — every unit is mapped or external, nothing stale" 0
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$(head -1 "$BATS_TEST_TMPDIR/call")" = "call herald-run sensor=services wait=true" ] || return 1
+  [ "$(head -1 "$BATS_TEST_TMPDIR/call")" = "sensor services root=$ROOT" ] || { cat "$BATS_TEST_TMPDIR/call"; return 1; }
   [ "$(sed -n 2p "$BATS_TEST_TMPDIR/call")" = census ] || { cat "$BATS_TEST_TMPDIR/call"; return 1; }
 }
 
@@ -63,6 +64,20 @@ land() { # <stub stdout> <stub exit>
 }
 
 @test "a dry run runs nothing" {
-  CHORUS_RUNNER=/nonexistent run python3 "$ROOT/platform/scripts/land-4980-rows"
+  CHORUS_CRAWL=/nonexistent run python3 "$ROOT/platform/scripts/land-4980-rows"
   [ "$status" -eq 0 ] && [[ "$output" == plan:* ]] || { echo "$output"; return 1; }
+}
+
+# 10:23 land: the runner's herald-run task had no repo root, so the map did not resolve.
+@test "the land never goes through the runner's herald-run task" {
+  ! grep -q '"herald-run"\|chorus-runner' "$ROOT/platform/scripts/land-4980-rows" || return 1
+}
+
+# NEGATIVE PROOF: on an account that does not run the services the sensor would retire every
+# row (10:25 from chorus-silas: 0 units seen, retire 59); the land refuses before running it
+@test "an account without the services agent refuses before the sensor runs" {
+  mkdir -p "$BATS_TEST_TMPDIR/bare"
+  LAND_HOME="$BATS_TEST_TMPDIR/bare" run land "services: green" 0
+  [ "$status" -eq 2 ] && [[ "$output" == *"would retire every row"* ]] || { echo "$output"; return 1; }
+  [ ! -f "$BATS_TEST_TMPDIR/call" ] || { cat "$BATS_TEST_TMPDIR/call"; return 1; }
 }
