@@ -89,10 +89,11 @@ describe('#4866 AC4: upload auth error guidance', () => {
       addEventListener: (_e: string, f: () => Promise<void>) => { onChange = f; }
     };
     const input = { value: '', focus: () => {} };
-    const status = { innerHTML: '', textContent: '' };
+    const status: any = { innerHTML: '', textContent: '', style: { display: 'none' }, children: [] as any[], appendChild(c: any) { this.children.push(c); } };
     (global as any).document = {
       getElementById: (id: string) => ({ 'composer-file': picker, 'composer-input': input, 'send-error': status } as any)[id] || null,
-      querySelector: () => null
+      querySelector: () => null,
+      createElement: () => ({ href: '', textContent: '' }),
     };
     (global as any).fetch = async () => ({
       ok: false,
@@ -108,7 +109,11 @@ describe('#4866 AC4: upload auth error guidance', () => {
     watchFileButton();
     await onChange();
 
-    expect(status.innerHTML).toContain(`<a href="${SIGN_IN_URL}">Sign in to send</a>`);
+    // #4966 round 4: a 401 not-signed-in now puts the page in its signed-out state, whose notice owns
+    // this line; #4866's point stands: the line shows, and carries a tappable link to sign in.
+    const link = status.children.find((c: any) => c.href === SIGN_IN_URL);
+    expect([status.style.display, !!link, /signed out/i.test(status.textContent)]).toEqual(['block', true, true]);
+    require('../public/app.js').resetSignedOutState();
     delete (global as any).document;
     delete (global as any).fetch;
   });

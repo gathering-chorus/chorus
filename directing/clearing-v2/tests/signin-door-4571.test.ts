@@ -222,14 +222,20 @@ test('negative proof: with no door configured the refusal still names why, and i
 
     // Round 3 (gate-code, run 2): the guard sends a session IT accepts straight back here. If this
     // server still refuses that cookie, a second redirect is a loop.
+    // a cookie signed with a key this server does not hold: the guard accepted it, this server cannot
+    const foreignCookie = () => {
+      const now = Math.floor(Date.now() / 1000);
+      const payload = b64u(Buffer.from(JSON.stringify({ webid: JEFF.webid, exp: now + 600, iat: now })));
+      return `chorus_share_session=${payload}.${b64u(crypto.createHmac('sha256', Buffer.from('another-key-the-guard-signs-with-32')).update(payload).digest())}`;
+    };
     test('sent to sign in, back within moments with a cookie this server still refuses: told so, never redirected again', async () => {
       const s = await up();
       try {
-        const first = await fetch(`${s.base}/`, { headers: { ...CF, cookie: cookieFor(-60) }, redirect: 'manual' });
+        const first = await fetch(`${s.base}/`, { headers: { ...CF, cookie: foreignCookie() }, redirect: 'manual' });
         expect(first.status).toBe(302);
         const marker = String(first.headers.get('set-cookie')).split(';')[0];
         expect(marker).toBe('cv2_signin_bounce=1');
-        const second = await fetch(`${s.base}/`, { headers: { ...CF, cookie: `${cookieFor(-60)}; ${marker}` }, redirect: 'manual' });
+        const second = await fetch(`${s.base}/`, { headers: { ...CF, cookie: `${foreignCookie()}; ${marker}` }, redirect: 'manual' });
         expect(second.status).toBe(503);
         expect(await second.json()).toMatchObject({ ok: false, error: 'sign-in-not-accepted' });
         expect(second.headers.get('location')).toBeNull();
@@ -250,6 +256,9 @@ test('negative proof: with no door configured the refusal still names why, and i
         expect(none.status).toBe(302);
         const api = await fetch(`${s.base}/api/messages`, { headers: { ...CF, cookie: `${cookieFor(-60)}; cv2_signin_bounce=1` } });
         expect(api.status).toBe(401);
+        // an EXPIRED cookie the guard refuses too: a quick repeat visit is sent to sign in again, not refused
+        const repeat = await fetch(`${s.base}/`, { headers: { ...CF, cookie: `${cookieFor(-60)}; cv2_signin_bounce=1` }, redirect: 'manual' });
+        expect(repeat.status).toBe(302);
       } finally { await s.close(); }
     });
 

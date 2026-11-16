@@ -178,8 +178,8 @@ export interface GateRequest {
   signInUrl: string | undefined;
   /** true when this server cannot read the key sign-ins are signed with */
   keyUnreadable?: boolean;
-  /** true when the request carries a sign-in cookie at all (valid or not) */
-  cookiePresent?: boolean;
+  /** why this request has no signed-in person: 'no-cookie', 'expired', 'bad-signature', 'malformed', 'no-key' */
+  cookieReason?: string;
   /** true when this server sent this browser to sign in moments ago (the bounce marker) */
   bounced?: boolean;
 }
@@ -225,7 +225,11 @@ export function gateDecision(r: GateRequest): GateDecision {
   // cookie (any disagreement between the two: a different key, a different clock), a second
   // redirect would start a loop. A browser we sent to sign in moments ago that returns with a
   // cookie we still refuse is told so, and is not redirected again.
-  if (r.bounced && r.cookiePresent && isPage(r.method, r.path)) {
+  // Only a cookie this server refuses for a reason the guard would not share is a disagreement:
+  // an expired cookie the guard refuses too, so a quick repeat visit with one is sent to sign in
+  // again, never told "not accepted" (Abby, run 4).
+  const disagree = !!r.cookieReason && r.cookieReason !== 'no-cookie' && r.cookieReason !== 'expired';
+  if (r.bounced && disagree && isPage(r.method, r.path)) {
     return {
       allow: false,
       kind: 'refuse',
@@ -283,15 +287,17 @@ export function sessionGate(
   return (req: Request, res: Response, next: NextFunction): void => {
     const cookies = String(req.headers.cookie || '');
     const bounced = cookies.split(';').some((c) => c.trim() === `${BOUNCE_COOKIE}=1`);
+    const principal = principalOf(req);
+    const why = principal ? undefined : whyNot(req);
     const d = gateDecision({
       headers: req.headers as Record<string, unknown>,
       ip: req.socket.remoteAddress || '',
       method: req.method,
       path: req.path,
-      principal: principalOf(req),
+      principal,
       signInUrl,
       keyUnreadable: keyUnreadable(),
-      cookiePresent: shareSessionFromHeader(cookies) !== undefined,
+      cookieReason: why,
       bounced,
     });
     if (d.allow) {
@@ -303,7 +309,7 @@ export function sessionGate(
     }
     // AC1's unnamed case (2026-11-15): the phone arrived with no sign-in 36 minutes after one, and
     // nothing recorded whether it sent no cookie or a cookie this server refused. Now it is recorded.
-    limited(refusalLine(d.kind === 'redirect' ? 302 : d.status, req.method, req.path, whyNot(req), String(req.headers['user-agent'] || '')));
+    limited(refusalLine(d.kind === 'redirect' ? 302 : d.status, req.method, req.path, why || 'unknown', String(req.headers['user-agent'] || '')));
     // never let a browser or the edge keep a copy of a refusal, or of the room, across a sign-in change
     res.setHeader('Cache-Control', 'no-store');
     if (d.kind === 'redirect') { res.append('Set-Cookie', BOUNCE_SET); res.redirect(302, d.location); return; }

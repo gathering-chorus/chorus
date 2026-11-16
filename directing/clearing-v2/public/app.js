@@ -471,7 +471,7 @@ function watchFileButton() {
         // #4966 — shown, not only written: style.css hides this line unless it is displayed
         const lead = failed.length + ' of ' + files.length + ' files not attached: ';
         // if the refusal was the sign-in, the tiles call says so and the page enters the signed-out state
-        probeSignIn();
+        await probeSignIn();
         if (firstFail && firstFail.html) showStatus(status, '', lead + firstFail.html);
         else showStatus(status, lead + (firstFail && firstFail.text ? firstFail.text : firstFail));
       } else {
@@ -600,7 +600,7 @@ function watchMicButton() {
         const out = await transcribeVoice(new Blob(chunks, { type: recorder.mimeType || 'audio/webm' }));
         say(out.ok ? '' : 'Voice not added: ' + out.reason, out.errorInfo && out.errorInfo.html ? 'Voice not added: ' + out.errorInfo.html : undefined);
         // #4966 — if the refusal was the sign-in, the page enters the signed-out state (as attach does)
-        if (!out.ok) probeSignIn();
+        if (!out.ok) await probeSignIn();
         const input = document.getElementById('composer-input');
         if (out.ok && input) {
           let text = out.transcript || '';
