@@ -395,6 +395,15 @@ def session_claims(cookie, key, now=None, max_life=SESSION_MAX_LIFE):
         return None
 
 
+def signed_in_landing(state, next_raw):
+    """#4966 — where /_auth/ sends a caller: on to where they were going when their
+    session is good, else None (the sign-in page). On 2026-11-14 at 21:12:49 the door
+    logged jeff, with a session 59 minutes old, at /_auth/?next=<the Clearing>, showed him
+    the sign-in page anyway, and he signed in again. safe_return keeps the target on this
+    door's own domain, so a signed-in caller is never bounced to another site."""
+    return safe_return(next_raw) if state == "ok" else None
+
+
 def replaced_sid(old_claims, webid):
     """#4500 — signing in again from a browser that still carries this door's
     cookie for the SAME person replaces that session: its sid is closed, so one
@@ -1052,7 +1061,14 @@ Nothing is wrong with your account. Try again in a moment.</p>""")
 <p><a class="quiet" href="{pub(AUTH_PREFIX)}logout">Sign out</a></p>""")
 
         if path in (AUTH_PREFIX, AUTH_PREFIX.rstrip("/")):
-            return self._sign_in_page(args.get("next", [pub("/")])[0])
+            nxt = args.get("next", [pub("/")])[0]
+            # #4966 — a caller whose session is good is sent on, never shown the sign-in page
+            state, renew_cookie = self._renewal(self._session_claims())
+            target = signed_in_landing(state, nxt)
+            if target:
+                self._redirect(target, renew_cookie)
+                return True
+            return self._sign_in_page(nxt)
 
         if path == AUTH_PREFIX + "clientid.jsonld":
             payload = json.dumps(client_document(), indent=2).encode()
