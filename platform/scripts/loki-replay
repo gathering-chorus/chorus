@@ -14,7 +14,6 @@ platform-chorus read, the instant rule read) instead of the scratch job="replay"
 import argparse
 import concurrent.futures
 import json
-import os
 import sys
 import time
 import urllib.error
@@ -26,11 +25,12 @@ READ_3D = '{job="replay"} |= "event"'
 INSTANT = 'sum(count_over_time({job="replay"} |= "card." [5m]))'
 # the reads that queued at 15:32 (Loki's own frontend lines): the spine card-event read on the
 # spine log file, and the platform-chorus reads
-SPINE = os.path.expanduser("~/.chorus/chorus.log")
+# matched by its path tail: the stream's label is the jeffbridwell path, whoever runs the replay
 LIVE = (
-    '{filename="%s"} |= "\\"event\\":\\"card."' % SPINE,
+    '{filename=~".+/[.]chorus/chorus[.]log"} |= `"event":"card.`',
     '{job="platform-chorus"} |= `"event"`',
-    'sum(count_over_time({job="platform-chorus"} |= `"event":"card.` [5m]))',
+    # any event, not card events: a quiet five minutes with no card event is normal (Wren 20:08)
+    'sum(count_over_time({job="platform-chorus"} |= `"event"` [5m]))',
 )
 
 
