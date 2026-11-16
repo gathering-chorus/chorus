@@ -22,6 +22,7 @@ import { renderTodayPage, renderRolesPage, renderRoomsPage, renderBoardPage, ren
 import { byDay, DOUBLE_COLUMNS, fetchReadings, syncByDay } from './sources/readings';
 import { fetchStreams } from './sources/streams';
 import { registerUploadRoutes, DEFAULT_UPLOAD_DIR } from './uploads';
+import { sessionGate } from './session-gate';
 import { registerVoiceRoutes, DEFAULT_VOICE_DIR } from './voice';
 import { fetchBoard } from './sources/board';
 import { DataService, ROOM_PAGE_MESSAGES } from './data-service';
@@ -445,6 +446,8 @@ function registerWriteRoutes(ctx: RouteContext): void {
 }
 
 function registerRoutes(ctx: RouteContext): void {
+  // #4966 — no sign-in, no room: one gate in front of every page and API route (src/session-gate)
+  ctx.app.use(sessionGate((req) => sessionPrincipal(req, ctx.cookieKey), ctx.signInUrl));
   registerReadApiRoutes(ctx);
   registerPageRoutes(ctx);
   registerWriteRoutes(ctx);
