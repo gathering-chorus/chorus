@@ -73,11 +73,19 @@ export function gateDecision(r: GateRequest): GateDecision {
   };
 }
 
+/** One line per refused request: when, what, why, and which browser. Never the cookie. */
+export function refusalLine(status: number, method: string, path: string, why: string, ua: string, now: Date = new Date()): string {
+  return `[clearing-v2] gate.refused ${now.toISOString()} status=${status} why=${why} ${method} ${path} ua="${ua.replace(/"/g, "'").slice(0, 120)}"`;
+}
+
 /** The gate as one middleware, in front of every page and API route. */
 export function sessionGate(
   principalOf: (req: Request) => { id: string; name: string; webid: string } | null,
   signInUrl: string | undefined,
   keyUnreadable: () => boolean = () => false,
+  /** #4966 — why this request has no signed-in person: 'no-cookie', 'expired', 'bad-signature', 'malformed', 'no-key' */
+  whyNot: (req: Request) => string = () => 'unknown',
+  log: (line: string) => void = (line) => console.log(line),
 ) {
   return (req: Request, res: Response, next: NextFunction): void => {
     const d = gateDecision({
@@ -95,6 +103,9 @@ export function sessionGate(
       next();
       return;
     }
+    // AC1's unnamed case (2026-11-15): the phone arrived with no sign-in 36 minutes after one, and
+    // nothing recorded whether it sent no cookie or a cookie this server refused. Now it is recorded.
+    log(refusalLine(d.kind === 'redirect' ? 302 : d.status, req.method, req.path, whyNot(req), String(req.headers['user-agent'] || '')));
     // never let a browser or the edge keep a copy of a refusal, or of the room, across a sign-in change
     res.setHeader('Cache-Control', 'no-store');
     if (d.kind === 'redirect') { res.redirect(302, d.location); return; }

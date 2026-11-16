@@ -139,6 +139,8 @@ interface RouteContext {
   /** #4966 — the sign-in guard, on this machine, that renews his sign-in; and the clock (a test seam). */
   guardUrl: string;
   now: () => number;
+  /** #4966 — where a refused request is recorded (default: stdout, the service log). */
+  gateLog?: (line: string) => void;
   signInUrl?: string;
   boardUrl: string;
   streamUrl: string;
@@ -469,6 +471,13 @@ function registerRoutes(ctx: RouteContext): void {
     (req) => sessionPrincipal(req, ctx.cookieKey),
     ctx.signInUrl,
     () => (ctx.cookieKey !== undefined ? ctx.cookieKey : readCookieKey()) === null,
+    (req) => {
+      const raw = shareSessionFromHeader(req.headers.cookie);
+      if (!raw) return 'no-cookie';
+      const v = verifyShareSession(raw, ctx.cookieKey !== undefined ? ctx.cookieKey : readCookieKey());
+      return v.ok ? 'unknown' : v.reason;
+    },
+    ctx.gateLog,
   ));
   registerReadApiRoutes(ctx);
   registerPageRoutes(ctx);
@@ -555,6 +564,8 @@ export interface CreateAppOptions {
   /** #4966 — test seams: the sign-in guard's address (default SHARE_GUARD_URL or :8899) and the clock. */
   guardUrl?: string;
   now?: () => number;
+  /** #4966 — test seam: where the gate records a refused request. */
+  gateLog?: (line: string) => void;
   /** #4571 — test seams: the relay's Host and reader key (null = no key), the sign-in door. */
   relayHost?: string;
   signInUrl?: string;
@@ -760,6 +771,7 @@ export function createApp(options?: CreateAppOptions) {
     keys,
     cookieKey: options?.cookieKey,
     guardUrl: options?.guardUrl ?? SHARE_GUARD_URL,
+    gateLog: options?.gateLog,
     now: options?.now ?? Date.now,
     signInUrl: options?.signInUrl ?? (SIGN_IN_URL || undefined),
     boardUrl: options?.boardUrl ?? BOARD_URL,

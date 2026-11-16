@@ -69,17 +69,22 @@ if not hasattr(ps, "close_expired_sessions"):
 logs = []
 door = Door(ROWS)
 n = ps.close_expired_sessions("jeff", FRESH, NOW, "jeff-browser-new", door, "http://door", logs.append)
-puts = [c for c in door.calls if c[0] == "PUT"]
+puts = [c for c in door.calls if c[0] == "PATCH"]
 closed = sorted(c[1].rsplit("/", 1)[-1] for c in puts)
 check("his two expired open browser sessions are closed, and nothing else", closed == ["jeff-browser-old-1", "jeff-browser-old-2"])
 check("it reports how many it closed", n == 2)
 check("each is closed with his NEW sign-in as the bearer", all(c[2] == FRESH for c in puts))
 check("each ends at its own expiresAt, the true end, not now",
       sorted(c[3]["endedAt"] for c in puts) == sorted([PAST, PAST2]) and all(c[3]["sessionState"] == "closed" for c in puts))
-check("the door's empty-string fields are not sent back", all("" not in c[3].values() for c in puts))
-check("the row keeps who it was (owner, channel, name)",
-      all(c[3]["ownedBy"] == "principal-jeff" and c[3]["channel"] == "browser" and c[3]["name"] in closed for c in puts))
+# Silas, measured 2026-11-15 18:36: the door refuses its own served row sent back (422, prefixed links)
+check("the close is a PATCH of exactly the two fields that change, never the served row",
+      all(sorted(c[3].keys()) == ["endedAt", "sessionState"] for c in puts))
+check("no whole-row write is made at all", not [c for c in door.calls if c[0] == "PUT"])
 check("the list is read once, unsigned (reads are open)", [c[0] for c in door.calls].count("GET") == 1)
+# measured at the door 2026-11-15: this URL returns his 124 open browser rows; ?ownedBy=jeff returns 0 (Abby)
+get = [c for c in door.calls if c[0] == "GET"][0]
+check("the list asks the door for open browser sessions, with no owner filter the door would misread",
+      get[1] == "http://door/v1/identity/sessions?endedAt.absent=true&channel=browser&limit=5000" and get[2] is None)
 
 # NEGATIVE PROOFS, each on the stub door above
 check("NEGATIVE: an unexpired earlier session of his stays open", "jeff-browser-live" not in closed)
@@ -100,11 +105,11 @@ check("with no sign-in token nothing is read or written", ps.close_expired_sessi
 door4 = Door(ROWS, put_status=403)
 logs.clear()
 check("a refused close is not counted", ps.close_expired_sessions("jeff", FRESH, NOW, "jeff-browser-new", door4, "http://door", logs.append) == 0)
-check("and the log says how many were not closed", any("NOT closed" in line and "2" in line for line in logs))
+check("and the log says how many were not closed, and the door's status", any("2 NOT closed (HTTP 403)" in line for line in logs))
 
 # a door that cannot be listed: nothing written, never raises
 door5 = Door(ROWS, get_status=500)
 check("a list that fails writes nothing", ps.close_expired_sessions("jeff", FRESH, NOW, "x", door5, "http://door", logs.append) == 0
-      and not [c for c in door5.calls if c[0] == "PUT"])
+      and not [c for c in door5.calls if c[0] in ("PUT", "PATCH")])
 
 sys.exit(1 if FAILS else 0)

@@ -210,8 +210,10 @@ def close_expired_sessions(principal, id_token, now, keep, http, api, log):
 
     Closes only rows that are his (ownedBy), browser sessions (never an agent's pane session,
     #4948), open, with an expiresAt already past, and never `keep` (the session this sign-in
-    just made). Each ends at its own expiresAt, its true end, not now (Silas). The door's
-    empty-string fields are not sent back. Never raises; returns how many it closed.
+    just made). Each ends at its own expiresAt, its true end, not now (Silas). The close is a
+    PATCH of the two fields that change, never the row the door served: that row carries
+    prefixed links (ownedBy principal-jeff, actsAs role-...), which the door refuses 422 when
+    sent back (Silas, measured 2026-11-15 18:36). Never raises; returns how many it closed.
     """
     if not id_token:
         return 0
@@ -225,7 +227,7 @@ def close_expired_sessions(principal, id_token, now, keep, http, api, log):
         return 0
     items = listing if isinstance(listing, list) else next(
         (listing.get(k) for k in ("items", "data", "rows") if isinstance(listing, dict) and isinstance(listing.get(k), list)), [])
-    closed, refused = 0, 0
+    closed, refused = 0, {}
     for r in items:
         if not isinstance(r, dict) or not r.get("name") or r["name"] == keep:
             continue
@@ -238,19 +240,19 @@ def close_expired_sessions(principal, id_token, now, keep, http, api, log):
         exp = r.get("expiresAt")
         if not exp or exp > iso(now):
             continue
-        row = {k: v for k, v in r.items() if v != ""}
-        row.update(sessionState="closed", endedAt=exp)
         try:
-            st, _ = http("PUT", f"{api}/v1/identity/sessions/{urllib.parse.quote(row['name'])}", id_token, row)
+            st, _ = http("PATCH", f"{api}/v1/identity/sessions/{urllib.parse.quote(r['name'])}", id_token,
+                         {"sessionState": "closed", "endedAt": exp})
         except Exception:
             st = 0
         if st in (200, 204):
             closed += 1
         else:
-            refused += 1
+            refused[st] = refused.get(st, 0) + 1
     if closed or refused:
-        log(f"person-session: {principal} sign-in closed {closed} expired browser session(s)"
-            + (f", {refused} NOT closed" if refused else ""))
+        # the status says why: 401/403 his token, 422 the body, 0 the door could not be reached
+        why = ", ".join(f"{n} NOT closed (HTTP {st})" for st, n in sorted(refused.items()))
+        log(f"person-session: {principal} sign-in closed {closed} expired browser session(s)" + (f", {why}" if why else ""))
     return closed
 
 

@@ -174,6 +174,30 @@ describe('#4966 the real app asks the gate on every route', () => {
     } finally { relay.close(); await new Promise<void>((r) => server.close(() => r())); }
   });
 
+  // AC1's unnamed case: a refused request now says why, so the next one names itself
+  test('each refused request is recorded with why and which browser, and never the cookie', async () => {
+    const lines: string[] = [];
+    const { app, relay } = createApp({ relayUrl: 'ws://127.0.0.1:1', pulseUrl: 'http://127.0.0.1:9', cookieKey: KEY, signInUrl: SIGN_IN, gateLog: (l) => lines.push(l) });
+    const server = http.createServer(app);
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
+    const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+    try {
+      const UA = { 'user-agent': 'Mozilla/5.0 (iPhone) Version/19 Mobile Safari' };
+      await fetch(`${base}/`, { headers: { ...CF, ...UA }, redirect: 'manual' });
+      const stale = cookieFor(-60);
+      await fetch(`${base}/api/tiles`, { headers: { ...CF, ...UA, cookie: stale } });
+      await fetch(`${base}/api/tiles`, { headers: { ...CF, ...UA, cookie: 'chorus_share_session=abc.def' } });
+      expect(lines[0]).toMatch(/^\[clearing-v2\] gate\.refused \S+ status=302 why=no-cookie GET \/ ua="Mozilla\/5\.0 \(iPhone\)/);
+      expect(lines[1]).toMatch(/status=401 why=expired GET \/api\/tiles/);
+      expect(lines[2]).toMatch(/status=401 why=bad-signature/);
+      expect(lines.join('\n')).not.toContain(stale.split('=')[1]);
+      // NEGATIVE PROOF: a served request records nothing
+      const before = lines.length;
+      await fetch(`${base}/api/tiles`, { headers: { ...CF, ...UA, cookie: cookieFor(3600) } });
+      expect(lines.length).toBe(before);
+    } finally { relay.close(); await new Promise<void>((r) => server.close(() => r())); }
+  });
+
   test("this machine's own callers still read with no sign-in", async () => {
     const s = await up();
     try {
