@@ -2,6 +2,7 @@
 // @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #2167
 // @owner: wren
+// also proves #4966 (AC4, tests stay on this machine): its cases are the last block in this file
 /**
  * server.ts — unit tests (#2167 phase 3).
  *
@@ -457,9 +458,13 @@ describe('server — name + logout flow', () => {
     expect([200, 302, 400]).toContain(r.status);
   });
 
-  test('GET /logout clears cookie and redirects or renders', async () => {
-    const r = await call('/logout');
-    expect([200, 302]).toContain(r.status);
+  // #4966 — assert on the redirect itself. Following it reached the public sign-in guard on
+  // every run of this suite (measured in the guard's log, 2026-11-15); tests stay on this machine.
+  test('GET /logout clears the name cookie and redirects to the sign-out address', async () => {
+    const r = await call('/logout', { redirect: 'manual' });
+    expect(r.status).toBe(302);
+    expect(r.headers.get('location')).toMatch(/\/_auth\/logout$/);
+    expect(r.headers.get('set-cookie') || '').toMatch(/bridge_name=;/);
   });
 });
 
@@ -830,3 +835,72 @@ describe('restart (destructive shutdown path)', () => {
   });
 });
 
+// ==========================================================================================
+// #4966 — AC4, tests stay on this machine
+// (kept in this file: the layout policy counts new files in a package not yet migrated)
+// ==========================================================================================
+/**
+ * #4966 AC4 — no test run signs out or replaces a real person's session at the public guard.
+ *
+ * Measured 2026-11-15: server-unit.test.ts 'GET /logout' let fetch follow the route's redirect
+ * to the public guard, so every run of this suite made a sign-out and a sign-in start there (the
+ * `ua=node` lines in the guard's log at 03:23, 03:39 and 11:19). It closed nothing of Jeff's,
+ * and it is still a test reaching a real person's door.
+ *
+ * platform/tests/fixtures/stay-local-4966.setup.ts makes that impossible for every test in this package: a fetch
+ * to another machine, or a redirect that leads to one, fails naming the address.
+ */
+{
+  const http = require('http');
+
+  const PUBLIC_LOGOUT = 'https://chorus.lightlifeurbangardens.com/_auth/logout';
+
+  function redirector(to: string): Promise<{ base: string; close: () => Promise<void> }> {
+    const server = http.createServer((req: import('http').IncomingMessage, res: import('http').ServerResponse) => {
+      if (req.url === '/go') { res.writeHead(302, { Location: to }); res.end(); return; }
+      res.writeHead(200, { 'Content-Type': 'text/plain' }); res.end('here');
+    });
+    return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve({
+      base: `http://127.0.0.1:${(server.address() as { port: number }).port}`,
+      close: () => new Promise<void>((r) => server.close(() => r())),
+    })));
+  }
+
+  describe('#4966 tests stay on this machine', () => {
+    test('a fetch straight to the public guard fails, naming the address', async () => {
+      await expect(fetch(PUBLIC_LOGOUT)).rejects.toThrow(/leave this machine.*chorus\.lightlifeurbangardens\.com\/_auth\/logout/);
+    });
+
+    test("the live sign-in guard's own ports on this machine are refused too", async () => {
+      await expect(fetch('http://127.0.0.1:8899/_auth/logout')).rejects.toThrow(/leave this machine/);
+      await expect(fetch('http://localhost:8898/_auth/login')).rejects.toThrow(/leave this machine/);
+    });
+
+    // the shape that reached the guard: a local route that redirects to it
+    test('a local redirect that leads to the public guard is not followed', async () => {
+      const s = await redirector(PUBLIC_LOGOUT);
+      try {
+        await expect(fetch(`${s.base}/go`)).rejects.toThrow(/leave this machine.*_auth\/logout/);
+      } finally { await s.close(); }
+    });
+
+    test('asking not to follow shows the redirect itself, which is what a test should assert', async () => {
+      const s = await redirector(PUBLIC_LOGOUT);
+      try {
+        const res = await fetch(`${s.base}/go`, { redirect: 'manual' });
+        expect(res.status).toBe(302);
+        expect(res.headers.get('location')).toBe(PUBLIC_LOGOUT);
+      } finally { await s.close(); }
+    });
+
+    // NEGATIVE PROOF: the guard on fetch does not stop tests talking to this machine
+    test('a local fetch, and a local redirect to a local page, work as before', async () => {
+      const s = await redirector('/landed');
+      try {
+        const res = await fetch(`${s.base}/go`);
+        expect(res.status).toBe(200);
+        expect(await res.text()).toBe('here');
+      } finally { await s.close(); }
+    });
+  });
+}

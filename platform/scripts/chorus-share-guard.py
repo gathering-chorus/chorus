@@ -314,10 +314,17 @@ def safe_return(raw, default=None):
     default = pub(LANDING) if default is None else default
     if not raw:
         return default
-    # //evil.tld/x is host-relative to a browser and looks like a path to a
-    # naive startswith('/') check. Rule it out before anything else.
-    if raw.startswith("//"):
-        return default
+    # #4966 (gate-code, 2026-11-16; shape by Silas) — judge the value AND its once-decoded
+    # form, because a browser or a proxy may decode it again. A control character would
+    # start a new response header (`/x%0d%0a...` arrives here as CR LF); a backslash is read
+    # by browsers as a slash, so `/\\evil.tld` is another host. Both collapse to the default.
+    for form in (raw, urllib.parse.unquote(raw)):
+        if any(ord(c) < 0x20 or ord(c) == 0x7f for c in form) or "\\" in form:
+            return default
+        # //evil.tld/x is host-relative to a browser and looks like a path to a
+        # naive startswith('/') check: a relative target has exactly ONE leading slash.
+        if form.startswith("//"):
+            return default
     if raw.startswith("/"):
         return raw
     try:
@@ -393,6 +400,22 @@ def session_claims(cookie, key, now=None, max_life=SESSION_MAX_LIFE):
         return claims if claims.get("webid") else None
     except Exception:
         return None
+
+
+def signed_in_landing(state, next_raw):
+    """#4966 — where /_auth/ sends a caller: on to where they were going when their
+    session is good, else None (the sign-in page). On 2026-11-14 at 21:12:49 the door
+    logged jeff, with a session 59 minutes old, at /_auth/?next=<the Clearing>, showed him
+    the sign-in page anyway, and he signed in again. safe_return keeps the target on this
+    door's own domain, so a signed-in caller is never bounced to another site."""
+    if state != "ok":
+        return None
+    target = safe_return(next_raw)
+    # Never on to this door's own routes (Silas 2026-11-15): /_auth/logout would sign a
+    # signed-in person out from a crafted link, and /_auth/ would send them round again.
+    if AUTH_PREFIX in urllib.parse.unquote(urllib.parse.urlparse(target).path) + "/":
+        return pub(LANDING)
+    return target
 
 
 def replaced_sid(old_claims, webid):
@@ -706,6 +729,22 @@ def _refresh(refresh_token):
 SESSIONS_LOCK = threading.Lock()
 
 
+def close_expired_person_sessions(rec, now, live):
+    """#4966 — with this new sign-in, as him, close his earlier browser sessions that have
+    run out. In its own thread: there can be many (123 on 2026-11-15), and a sign-in never
+    waits on it. `live` is every session this door still holds (the new one included): a
+    store row can say expired while the door's own record is live (a renewal that failed to
+    reach the store), and such a session is never closed. Test mode (OFFLINE) makes no call:
+    a test never reaches the real door."""
+    if OFFLINE or not rec.get("principal") or not rec.get("id_token"):
+        return None
+    t = threading.Thread(
+        target=lambda: person_session.close_expired_sessions(rec["principal"], rec["id_token"], now, live, _http, ATHENA_URL, _log),
+        daemon=True)
+    t.start()
+    return t
+
+
 def open_person_session(webid, tok):
     """Never raises and never blocks the sign-in; the record is kept 0600 for sign-out.
 
@@ -723,8 +762,9 @@ def open_person_session(webid, tok):
             for key in ended:
                 recs.pop(key)
             save_state(SESSIONS_FILE, recs)
-        for old in ended.values():
-            person_session.close_session(old, now, _http, ATHENA_URL, _refresh, _log)
+        # #4966 — the ended records are dropped here and their rows are closed below, with
+        # THIS sign-in (close_expired_person_sessions). The loop that closed each with its own
+        # long-expired sign-in is retired: the store refused it ("token expired, no refresh").
         rec = person_session.open_session(webid, tok, now, SESSION_TTL, _sparql, _http, ATHENA_URL, _log)
         sid = rec["row"]["name"] if rec else None
         if sid:
@@ -732,6 +772,8 @@ def open_person_session(webid, tok):
                 recs = load_state(SESSIONS_FILE)
                 recs[sid] = rec
                 save_state(SESSIONS_FILE, recs)
+                live = set(recs)
+            close_expired_person_sessions(rec, now, live)
         return sid
     except Exception as e:
         _log(f"person-session: sign-in row NOT written: {e}")
@@ -1052,7 +1094,14 @@ Nothing is wrong with your account. Try again in a moment.</p>""")
 <p><a class="quiet" href="{pub(AUTH_PREFIX)}logout">Sign out</a></p>""")
 
         if path in (AUTH_PREFIX, AUTH_PREFIX.rstrip("/")):
-            return self._sign_in_page(args.get("next", [pub("/")])[0])
+            nxt = args.get("next", [pub("/")])[0]
+            # #4966 — a caller whose session is good is sent on, never shown the sign-in page
+            state, renew_cookie = self._renewal(self._session_claims())
+            target = signed_in_landing(state, nxt)
+            if target:
+                self._redirect(target, renew_cookie)
+                return True
+            return self._sign_in_page(nxt)
 
         if path == AUTH_PREFIX + "clientid.jsonld":
             payload = json.dumps(client_document(), indent=2).encode()

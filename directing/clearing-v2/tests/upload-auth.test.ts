@@ -2,6 +2,7 @@
 // @card: #4866
 // @owner: abby-normal
 // @domain: messages
+// also proves #4966 (AC2, the open page when the sign-in has gone): its cases are the last block in this file
 /**
  * #4866 AC4 — Clear auth error guidance when session cookie is absent on mobile upload/voice calls.
  * 401 returns not-signed-in with signInUrl and clear detail; UI renders actionable sign-in link.
@@ -88,10 +89,11 @@ describe('#4866 AC4: upload auth error guidance', () => {
       addEventListener: (_e: string, f: () => Promise<void>) => { onChange = f; }
     };
     const input = { value: '', focus: () => {} };
-    const status = { innerHTML: '', textContent: '' };
+    const status: any = { innerHTML: '', textContent: '', style: { display: 'none' }, children: [] as any[], appendChild(c: any) { this.children.push(c); } };
     (global as any).document = {
       getElementById: (id: string) => ({ 'composer-file': picker, 'composer-input': input, 'send-error': status } as any)[id] || null,
-      querySelector: () => null
+      querySelector: () => null,
+      createElement: () => ({ href: '', textContent: '' }),
     };
     (global as any).fetch = async () => ({
       ok: false,
@@ -107,8 +109,244 @@ describe('#4866 AC4: upload auth error guidance', () => {
     watchFileButton();
     await onChange();
 
-    expect(status.innerHTML).toContain(`<a href="${SIGN_IN_URL}">Sign in to send</a>`);
+    // #4966 round 4: a 401 not-signed-in now puts the page in its signed-out state, whose notice owns
+    // this line; #4866's point stands: the line shows, and carries a tappable link to sign in.
+    const link = status.children.find((c: any) => c.href === SIGN_IN_URL);
+    expect([status.style.display, !!link, /signed out/i.test(status.textContent)]).toEqual(['block', true, true]);
+    require('../public/app.js').resetSignedOutState();
     delete (global as any).document;
     delete (global as any).fetch;
   });
 });
+
+// ==========================================================================================
+// #4966 — AC2, the open page when the sign-in has gone
+// (kept in this file: the layout policy counts new files in a package not yet migrated)
+// ==========================================================================================
+/**
+ * #4966 AC2 — with the sign-in gone, the open page says so without Jeff sending anything, shows
+ * nothing of the room, and refuses attach and record with a reason he can see.
+ *
+ * Jeff, 2026-11-13, walking: "It looks like I'm logged in ... I can't attach a transcription.
+ * I can't attach a photo. No errors happen." Measured 2026-11-15: the refusals were written to
+ * #send-error, which style.css hides, and nothing told the open page its sign-in had gone.
+ */
+{
+  const app = require('../public/app.js');
+
+  const SIGN_IN = 'https://chorus.example/_auth/?next=https%3A%2F%2Fexample%2Fclearing-v2%2F';
+  const REFUSAL = { ok: false, error: 'not-signed-in', detail: 'Not signed in here.', signInUrl: SIGN_IN };
+
+  type El = { id: string; textContent: string; innerHTML: string; className: string; style: { display: string }; children: El[]; href?: string; appendChild(c: El): void };
+  function el(id: string, text = ''): El {
+    const e: El = {
+      id, textContent: text, innerHTML: text, className: '', style: { display: 'none' }, children: [],
+      appendChild(c: El) { this.children.push(c); },
+    };
+    return e;
+  }
+  function page() {
+    const els: Record<string, El> = {
+      'messages-stream': el('messages-stream', '<div class="message">a team message</div>'),
+      'send-error': el('send-error'),
+      'relay-indicator': el('relay-indicator', 'Connected'),
+    };
+    const doc = {
+      getElementById: (id: string) => els[id] || null,
+      createElement: (_tag: string) => el(''),
+    };
+    return { els, doc };
+  }
+  const res = (status: number, body: unknown) => ({ status, ok: status >= 200 && status < 300, json: async () => body });
+
+  beforeEach(() => app.resetSignedOutState());
+
+  describe('#4966 the open page when the sign-in has gone', () => {
+    test('a 401 not-signed-in on any call clears the room and shows the notice with the sign-in link', async () => {
+      const { els, doc } = page();
+      let closed = 0;
+      app.setActiveEventSource({ close: () => { closed += 1; } });
+      expect(await app.checkSignedOut(res(401, REFUSAL), doc)).toBe(true);
+      expect(app.isSignedOut()).toBe(true);
+      expect(els['messages-stream'].innerHTML).toBe('');
+      expect(els['send-error'].style.display).toBe('block');
+      expect(els['send-error'].children[0].href).toBe(SIGN_IN);
+      expect(els['send-error'].textContent).toMatch(/signed out/i);
+      expect(els['relay-indicator'].textContent).toBe('Signed out');
+      expect(closed).toBe(1);
+    });
+
+    // NEGATIVE PROOF: with a valid sign-in the same call leaves the room alone and shows no notice
+    test('a 200 leaves the room, the notice and the stream untouched', async () => {
+      const { els, doc } = page();
+      let closed = 0;
+      app.setActiveEventSource({ close: () => { closed += 1; } });
+      expect(await app.checkSignedOut(res(200, []), doc)).toBe(false);
+      expect(app.isSignedOut()).toBe(false);
+      expect(els['messages-stream'].innerHTML).toContain('a team message');
+      expect(els['send-error'].style.display).toBe('none');
+      expect(els['relay-indicator'].textContent).toBe('Connected');
+      expect(closed).toBe(0);
+    });
+
+    // NEGATIVE PROOF: a 401 that is not the sign-in refusal (or a server error) is not "signed out"
+    test.each([[401, { ok: false, error: 'bad-signature' }], [500, { error: 'boom' }], [503, { ok: false, error: 'sign-in-unreadable' }]])(
+      'a %i that is not not-signed-in does not clear the room',
+      async (status, body) => {
+        const { els, doc } = page();
+        expect(await app.checkSignedOut(res(status as number, body), doc)).toBe(false);
+        expect(els['messages-stream'].innerHTML).toContain('a team message');
+      },
+    );
+
+    test('once signed out, attach and record are refused before anything is picked or recorded, with a visible reason', () => {
+      const { els, doc } = page();
+      app.enterSignedOutState(REFUSAL, doc);
+      for (const what of ['attach', 'record']) {
+        els['send-error'].style.display = 'none';
+        expect(app.refuseWhenSignedOut(what, doc)).toBe(true);
+        expect(els['send-error'].style.display).toBe('block');
+        expect(els['send-error'].textContent).toMatch(new RegExp(`cannot ${what}`, 'i'));
+      }
+    });
+
+    // Round 3 (gate-code, run 2)
+    test('a lapse empties every part of the page that shows the room, closes the drawers, and empties a non-room page', () => {
+      const { els, doc } = page();
+      for (const id of app.ROOM_CONTENT_IDS) els[id] = el(id, `<b>${id} content</b>`);
+      for (const id of app.ROOM_DRAWER_IDS) { els[id] = el(id, 'open'); els[id].style.display = 'block'; }
+      // the non-room pages as views.ts renders them: a div.page on Today/Roles/Board, a main.page on Counts/Streams
+      const today = el('', '<h1>Today</h1> working now: Silas');
+      const counts = el('', '<h1>Counts</h1> 4966 open');
+      const chat = el('', 'the room shell');
+      (doc as any).querySelectorAll = (q: string) => (q === '.page' ? [today, counts] : []);
+      (doc as any).querySelector = (q: string) => (q === 'main.chat' ? chat : null);
+      app.enterSignedOutState(REFUSAL, doc);
+      for (const id of app.ROOM_CONTENT_IDS) expect([id, els[id].innerHTML]).toEqual([id, '']);
+      for (const id of app.ROOM_DRAWER_IDS) expect([id, els[id].style.display]).toEqual([id, 'none']);
+      expect([today.innerHTML, counts.innerHTML]).toEqual(['', '']);
+      // the room's own main holds the notice: it is never emptied
+      expect(chat.innerHTML).toBe('the room shell');
+      expect(app.ROOM_CONTENT_IDS).toEqual(expect.arrayContaining(['messages-stream', 'rooms-people-row', 'tiles-container', 'trust-dots']));
+      expect(app.ROOM_CONTENT_IDS).not.toContain('send-error');
+    });
+
+    test('once signed out, no later status line writes over the notice, and it keeps its sign-in link', () => {
+      const { els, doc } = page();
+      app.enterSignedOutState(REFUSAL, doc);
+      app.showStatus(els['send-error'], 'Uploading…');
+      app.showStatus(els['send-error'], '');
+      expect(els['send-error'].textContent).toMatch(/signed out/i);
+      expect(els['send-error'].style.display).toBe('block');
+      app.refuseWhenSignedOut('attach', doc);
+      expect(els['send-error'].textContent).toMatch(/cannot attach/i);
+      expect(els['send-error'].children[els['send-error'].children.length - 1].href).toBe(SIGN_IN);
+    });
+
+    test('a status line written as text after an html one leaves none of the html behind', () => {
+      const { els } = page();
+      app.showStatus(els['send-error'], '', '<a href="x">old link</a>');
+      app.showStatus(els['send-error'], '');
+      expect([els['send-error'].innerHTML, els['send-error'].style.display]).toEqual(['', 'none']);
+    });
+
+    // NEGATIVE PROOF: signed in, a status line is written and cleared as before
+    test('signed in, a status line shows and hides', () => {
+      const { els } = page();
+      app.showStatus(els['send-error'], 'Uploading…');
+      expect([els['send-error'].textContent, els['send-error'].style.display]).toEqual(['Uploading…', 'block']);
+      app.showStatus(els['send-error'], '');
+      expect(els['send-error'].style.display).toBe('none');
+    });
+
+    describe('through the buttons themselves', () => {
+      const g = global as any;
+      const saved = { document: g.document, navigator: g.navigator };
+      afterEach(() => { g.document = saved.document; g.navigator = saved.navigator; });
+      function wired() {
+        const { els, doc } = page();
+        const handlers: Record<string, (e: any) => any> = {};
+        const listen = (name: string) => ({ addEventListener: (ev: string, fn: (e: any) => any) => { handlers[`${name}:${ev}`] = fn; } });
+        let pickerClicks = 0; let micAsks = 0;
+        const picker: any = { ...listen('picker'), dataset: {}, click: () => { pickerClicks += 1; } };
+        const label: any = listen('label');
+        const mic: any = { ...listen('mic'), dataset: {}, classList: { add() {}, remove() {} }, setAttribute() {} };
+        g.document = { ...doc, getElementById: (id: string) => ({ 'composer-file': picker, 'composer-mic': mic } as any)[id] || els[id] || null, querySelector: (q: string) => (q === '.composer-file' ? label : null) };
+        g.navigator = { mediaDevices: { getUserMedia: async () => { micAsks += 1; throw new Error('refused in test'); } } };
+        app.watchFileButton(); app.watchMicButton();
+        return { els, handlers, picked: () => pickerClicks, asked: () => micAsks };
+      }
+      test('signed out: the attach click is stopped before the picker opens, and the mic click before the microphone is asked', async () => {
+        const w = wired();
+        app.enterSignedOutState(REFUSAL, g.document);
+        let prevented = 0;
+        w.handlers['label:click']({ target: {}, preventDefault: () => { prevented += 1; } });
+        await w.handlers['mic:click']({});
+        expect([prevented, w.picked(), w.asked()]).toEqual([1, 0, 0]);
+        expect(w.els['send-error'].textContent).toMatch(/cannot record/i);
+      });
+      // NEGATIVE PROOF: signed in, the same clicks open the picker and reach for the microphone
+      test('signed in: the attach click opens the picker', () => {
+        const w = wired();
+        w.handlers['label:click']({ target: {}, preventDefault: () => {} });
+        expect(w.picked()).toBe(1);
+      });
+    });
+
+    // NEGATIVE PROOF: signed in, attach and record are not refused and no notice appears
+    test('signed in, attach and record go ahead', () => {
+      const { els, doc } = page();
+      expect(app.refuseWhenSignedOut('attach', doc)).toBe(false);
+      expect(app.refuseWhenSignedOut('record', doc)).toBe(false);
+      expect(els['send-error'].style.display).toBe('none');
+    });
+  });
+
+  describe('#4966 the page asks, it is not only able to', () => {
+    const realFetch = globalThis.fetch;
+    afterEach(() => { globalThis.fetch = realFetch; });
+
+    // the call the 5 s poll, a dropped stream, waking the phone and a failed attach all make
+    test('the sign-in probe on a refused call puts the page in the signed-out state', async () => {
+      const asked: string[] = [];
+      globalThis.fetch = (async (url: string) => { asked.push(String(url)); return new Response(JSON.stringify(REFUSAL), { status: 401 }); }) as typeof fetch;
+      await app.probeSignIn();
+      expect(asked[0]).toMatch(/\/api\/tiles$/);
+      expect(app.isSignedOut()).toBe(true);
+    });
+
+    // NEGATIVE PROOF: a served call, and a network failure, leave the page signed in
+    test('a served probe, or one that cannot reach the server, changes nothing', async () => {
+      globalThis.fetch = (async () => new Response('[]', { status: 200 })) as typeof fetch;
+      await app.probeSignIn();
+      expect(app.isSignedOut()).toBe(false);
+      globalThis.fetch = (async () => { throw new Error('offline'); }) as typeof fetch;
+      await app.probeSignIn();
+      expect(app.isSignedOut()).toBe(false);
+    });
+
+    test('a real response can still be read by its caller after the check', async () => {
+      const r = new Response(JSON.stringify({ ok: false, error: 'bad-signature' }), { status: 401 });
+      expect(await app.checkSignedOut(r)).toBe(false);
+      expect(await r.json()).toEqual({ ok: false, error: 'bad-signature' });
+    });
+  });
+
+  describe('#4966 attach and voice messages are visible', () => {
+    test('a status with text is shown; an empty one is hidden again', () => {
+      const { els } = page();
+      app.showStatus(els['send-error'], '1 of 1 files not attached: Not signed in here.');
+      expect(els['send-error'].style.display).toBe('block');
+      expect(els['send-error'].textContent).toMatch(/not attached/);
+      app.showStatus(els['send-error'], '');
+      expect(els['send-error'].style.display).toBe('none');
+    });
+
+    test('a status given as html keeps its link and is shown', () => {
+      const { els } = page();
+      app.showStatus(els['send-error'], '', `<a href="${SIGN_IN}">Sign in</a>`);
+      expect(els['send-error'].innerHTML).toContain(SIGN_IN);
+      expect(els['send-error'].style.display).toBe('block');
+    });
+  });
+}

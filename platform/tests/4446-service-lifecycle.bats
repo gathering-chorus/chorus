@@ -15,6 +15,10 @@
 
 TREE="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 BIN="$TREE/platform/services/chorus-hooks/target/release/chorus-hooks"
+# #4966 — the fixture jobs carry THIS tree's binaries on their PATH. Since #4915 (2026-11-06) the
+# logging wrapper (chorus-log -> shim-wrapper.sh) finds chorus-hook-shim on PATH or in ~/.chorus/bin
+# only; these jobs run with their own HOME and launchd's bare PATH, so every service that logs
+# through the wrapper wrote nothing and 20 of 34 cases were red from the 11-07 nightly on.
 
 setup() {
   [[ -x "$BIN" ]] || skip "release binary not built: $BIN"
@@ -51,6 +55,7 @@ write_plist() {
   <key>KeepAlive</key><true/>
   <key>ThrottleInterval</key><integer>1</integer>
   <key>EnvironmentVariables</key><dict>
+    <key>PATH</key><string>$(dirname "$BIN"):/usr/bin:/bin:/usr/sbin:/sbin</string>
     <key>HOME</key><string>$FIXHOME</string>
     <key>CHORUS_LOG_FILE</key><string>$SPINE</string>
     <key>CHORUS_CONTEXT</key><string>test</string>

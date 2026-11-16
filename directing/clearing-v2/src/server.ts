@@ -14,7 +14,7 @@ import { deliverJeffInput } from './jeff-input';
 import { verifyNostrEvent, resolveRoleByPubkey, resolveSenderIdentity } from './identity';
 import { RegistryKeys, DEFAULT_KEYS_URL } from './key-registry';
 import { decideBind } from './room-bind';
-import { shareSessionFromHeader, verifyShareSession, readCookieKey } from './share-session';
+import { shareSessionFromHeader, verifyShareSession, readCookieKey, relayRenew, sessionGate } from './share-session';
 import { NostrEvent } from './types';
 import { roomOf, kindOf, toClearingMessage } from './converters';
 
@@ -76,6 +76,8 @@ const HOST = process.env.HOST || activeConfig.host || '127.0.0.1';
 const BUZZ_RELAY_URL = process.env.BUZZ_RELAY_URL || activeConfig.buzzRelayUrl || '';
 const BUZZ_RELAY_HOST = process.env.BUZZ_RELAY_HOST_HEADER || activeConfig.buzzRelayHost || '';
 const SIGN_IN_URL = process.env.CLEARING_V2_SIGNIN_URL || activeConfig.signInUrl || '';
+/** #4966 — the sign-in guard on this machine; it renews a session when this server relays the cookie. */
+const SHARE_GUARD_URL = process.env.SHARE_GUARD_URL || 'http://127.0.0.1:8899';
 
 /** #4571 — the refusal for join/send without a session: why, and where to sign in. */
 export function notSignedIn(signInUrl: string | undefined): { ok: false; error: 'not-signed-in'; detail: string; signInUrl?: string } {
@@ -133,6 +135,11 @@ interface RouteContext {
   onInboundEvent: (event: NostrEvent, where?: string) => void;
   keys: Map<string, string>;
   cookieKey?: Buffer | null;
+  /** #4966 — the sign-in guard, on this machine, that renews his sign-in; and the clock (a test seam). */
+  guardUrl: string;
+  now: () => number;
+  /** #4966 — where a refused request is recorded (default: stdout, the service log). */
+  gateLog?: (line: string) => void;
   signInUrl?: string;
   boardUrl: string;
   streamUrl: string;
@@ -445,6 +452,32 @@ function registerWriteRoutes(ctx: RouteContext): void {
 }
 
 function registerRoutes(ctx: RouteContext): void {
+  // #4966 — keep his sign-in alive while he uses the page: the tunnel brings his traffic straight
+  // here, so the guard never sees it. Relay the cookie to the guard, at most once per ten minutes
+  // per session, and hand the renewed cookie back. A guard that is down never refuses his request.
+  const renewAsked = new Map<string, number>();
+  ctx.app.use((req: Request, res: Response, next) => {
+    const raw = shareSessionFromHeader(req.headers.cookie);
+    const key = ctx.cookieKey !== undefined ? ctx.cookieKey : readCookieKey();
+    const v = raw && key ? verifyShareSession(raw, key) : null;
+    if (!v || !v.ok || !v.sid) { next(); return; }
+    void relayRenew(req.headers.cookie, v.sid, renewAsked, ctx.guardUrl, ctx.now())
+      .then((cookie) => { if (cookie && !res.headersSent) res.append('Set-Cookie', cookie); })
+      .finally(() => next());
+  });
+  // #4966 — no sign-in, no room: one gate in front of every page and API route (src/share-session sessionGate)
+  ctx.app.use(sessionGate(
+    (req) => sessionPrincipal(req, ctx.cookieKey),
+    ctx.signInUrl,
+    () => (ctx.cookieKey !== undefined ? ctx.cookieKey : readCookieKey()) === null,
+    (req) => {
+      const raw = shareSessionFromHeader(req.headers.cookie);
+      if (!raw) return 'no-cookie';
+      const v = verifyShareSession(raw, ctx.cookieKey !== undefined ? ctx.cookieKey : readCookieKey());
+      return v.ok ? 'unknown' : v.reason;
+    },
+    ctx.gateLog,
+  ));
   registerReadApiRoutes(ctx);
   registerPageRoutes(ctx);
   registerWriteRoutes(ctx);
@@ -527,6 +560,11 @@ export interface CreateAppOptions {
   keysRetryGapMs?: number;
   relayConfigured?: boolean;
   cookieKey?: Buffer | null;
+  /** #4966 — test seams: the sign-in guard's address (default SHARE_GUARD_URL or :8899) and the clock. */
+  guardUrl?: string;
+  now?: () => number;
+  /** #4966 — test seam: where the gate records a refused request. */
+  gateLog?: (line: string) => void;
   /** #4571 — test seams: the relay's Host and reader key (null = no key), the sign-in door. */
   relayHost?: string;
   signInUrl?: string;
@@ -731,6 +769,9 @@ export function createApp(options?: CreateAppOptions) {
     onInboundEvent,
     keys,
     cookieKey: options?.cookieKey,
+    guardUrl: options?.guardUrl ?? SHARE_GUARD_URL,
+    gateLog: options?.gateLog,
+    now: options?.now ?? Date.now,
     signInUrl: options?.signInUrl ?? (SIGN_IN_URL || undefined),
     boardUrl: options?.boardUrl ?? BOARD_URL,
     streamUrl: STREAM_URL,
