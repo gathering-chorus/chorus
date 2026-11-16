@@ -171,7 +171,8 @@ function deriveSessions(
   mySessions: SessionInfo[],
   nowMs: number,
   lastActionMs: number,
-  lastActionIso?: string
+  lastActionIso?: string,
+  runGone = false
 ): DerivedSessionsResult {
   const sessionResults: Array<{ id: string; channel: string; live: boolean; lastActionAt?: string }> = [];
   let hasLiveSession = false;
@@ -189,7 +190,11 @@ function deriveSessions(
     // never stale: quiet time does not end it, only logout (endedAt) does. A sign-in still goes stale.
     const isStale = s.channel !== 'pane' && (lastActivityMs === 0 || nowMs - lastActivityMs > THIRTY_MINUTES_MS);
 
-    const live = !isClosed && !isExpired && !isStale;
+    // #4985 AC4 — a pane whose process died without a logout ends on a fact: the sweep ended
+    // its run (pid gone), so the role has no live run and reads 'offline'.
+    const isDead = s.channel === 'pane' && runGone;
+
+    const live = !isClosed && !isExpired && !isStale && !isDead;
     if (live) hasLiveSession = true;
 
     let sessionLastAction: string = s.lastSeenAt;
@@ -505,7 +510,8 @@ function deriveOneActor(
     mySessions,
     nowMs,
     lastActionMs,
-    actionFact?.lastActionAt
+    actionFact?.lastActionAt,
+    input.reachability?.[role] === 'offline'
   );
 
   const hasRecentAction30m = lastActionMs > 0 && nowMs - lastActionMs <= THIRTY_MINUTES_MS;

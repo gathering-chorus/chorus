@@ -43,3 +43,22 @@ test('#4985 NEGATIVE PROOF: a quiet browser sign-in still goes stale (Jeff\'s si
   const k = deriveActorState(input({ channel: 'browser', expiresAt: '2026-11-17T00:00:00Z' })).find((s) => s.aboutPrincipal === KADE);
   expect(k?.sessions.map((s) => s.live)).toEqual([false]);
 });
+
+// AC4 (Wren 16:53): a pane whose process died without a logout ends on a fact, never a timer.
+// The sweep ends a crashed RUN (pid gone, chorus-principal sweep); with no live run the
+// role's reachability reads 'offline', and its pane session is then not live.
+test('#4985 a pane whose run crashed (reachability offline) is not live, and the role is off', () => {
+  const k = deriveActorState({ ...input({}), reachability: { kade: 'offline' } }).find((s) => s.aboutPrincipal === KADE);
+  expect(k?.sessions.map((s) => s.live)).toEqual([false]);
+  expect(k?.stateValue).toBe('off');
+});
+
+test('#4985 NEGATIVE PROOF: a quiet pane with a live run (reachable) stays live', () => {
+  const k = deriveActorState({ ...input({}), reachability: { kade: 'reachable' } }).find((s) => s.aboutPrincipal === KADE);
+  expect(k?.sessions.map((s) => s.live)).toEqual([true]);
+});
+
+test('#4985 NEGATIVE PROOF: reachability not read keeps a pane as its row says (no guess from silence)', () => {
+  const k = deriveActorState({ ...input({}), reachability: undefined }).find((s) => s.aboutPrincipal === KADE);
+  expect(k?.sessions.map((s) => s.live)).toEqual([true]);
+});
