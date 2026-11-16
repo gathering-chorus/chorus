@@ -217,6 +217,8 @@ def close_expired_sessions(principal, id_token, now, keep, http, api, log):
     """
     if not id_token:
         return 0
+    # keep: the session this sign-in made, or every session the door still holds live
+    kept = {keep} if isinstance(keep, str) else set(keep or ())
     try:
         status, listing = http("GET", f"{api}/v1/identity/sessions?endedAt.absent=true&channel=browser&limit=5000", None, None)
     except Exception as e:
@@ -229,7 +231,7 @@ def close_expired_sessions(principal, id_token, now, keep, http, api, log):
         (listing.get(k) for k in ("items", "data", "rows") if isinstance(listing, dict) and isinstance(listing.get(k), list)), [])
     closed, refused = 0, {}
     for r in items:
-        if not isinstance(r, dict) or not r.get("name") or r["name"] == keep:
+        if not isinstance(r, dict) or not r.get("name") or r["name"] in kept:
             continue
         if bare(r.get("ownedBy")) != principal:
             continue
@@ -238,6 +240,9 @@ def close_expired_sessions(principal, id_token, now, keep, http, api, log):
         if r.get("sessionState") != "open":
             continue
         exp = r.get("expiresAt")
+        # the store writes expiresAt as iso(); anything else is not a time we can judge
+        if not isinstance(exp, str) or len(exp) != 20 or not exp.endswith("Z"):
+            continue
         if not exp or exp > iso(now):
             continue
         try:

@@ -97,6 +97,16 @@ check("NEGATIVE: a row with no expiry, or already closed, is left alone", "jeff-
 door2 = Door([row("jeff-browser-new", "principal-jeff", "browser", "open", PAST)])
 check("NEGATIVE: keep wins over an expiry on the new session", ps.close_expired_sessions("jeff", FRESH, NOW, "jeff-browser-new", door2, "http://door", logs.append) == 0)
 
+# the door still holds a session whose store row says expired (a renewal that never reached the store)
+door6 = Door([row("jeff-browser-held", "principal-jeff", "browser", "open", PAST), row("jeff-browser-old-9", "principal-jeff", "browser", "open", PAST)])
+ps.close_expired_sessions("jeff", FRESH, NOW, {"jeff-browser-new", "jeff-browser-held"}, door6, "http://door", logs.append)
+closed6 = sorted(c[1].rsplit("/", 1)[-1] for c in door6.calls if c[0] == "PATCH")
+check("NEGATIVE: a session the door still holds live is never closed, though its row says expired", closed6 == ["jeff-browser-old-9"])
+# an expiresAt that is not the store's time form is not judged
+door7 = Door([row("jeff-browser-odd", "principal-jeff", "browser", "open", "yesterday"), row("jeff-browser-num", "principal-jeff", "browser", "open", 5)])
+check("NEGATIVE: an expiry that is not a time is left alone, and nothing raises",
+      ps.close_expired_sessions("jeff", FRESH, NOW, "x", door7, "http://door", logs.append) == 0)
+
 # no token, no writes
 door3 = Door(ROWS)
 check("with no sign-in token nothing is read or written", ps.close_expired_sessions("jeff", "", NOW, "x", door3, "http://door", logs.append) == 0 and not door3.calls)

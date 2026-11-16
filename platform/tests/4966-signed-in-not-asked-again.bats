@@ -52,9 +52,39 @@ setup() {
 @test "NEGATIVE PROOF: a door that sends a good session on to its own sign-out fails" {
   work="$BATS_TEST_TMPDIR/scripts"
   mkdir -p "$work" && cp -R "$ROOT/platform/scripts/lib" "$work/lib"
-  sed '/    if AUTH_PREFIX in urllib.parse.urlparse(target).path + "\/":/{N;d;}' "$GUARD" > "$work/chorus-share-guard.py"
+  sed '/    if AUTH_PREFIX in urllib.parse.unquote(urllib.parse.urlparse(target).path) + "\/":/{N;d;}' "$GUARD" > "$work/chorus-share-guard.py"
   if cmp -s "$GUARD" "$work/chorus-share-guard.py"; then echo "mutation did not apply"; return 1; fi
   run python3 "$FIX" "$work/chorus-share-guard.py"
   [ "$status" -ne 0 ]
   printf '%s\n' "$output" | grep -q "^FAIL a good session with next=/_auth/logout lands on the default"
+}
+
+@test "NEGATIVE PROOF: a return rule that lets a line break or a backslash through fails" {
+  work="$BATS_TEST_TMPDIR/scripts"
+  mkdir -p "$work" && cp -R "$ROOT/platform/scripts/lib" "$work/lib"
+  # drop the control-character and backslash refusal (two lines)
+  sed '/        if any(ord(c) < 0x20 or ord(c) == 0x7f for c in form) or /{N;d;}' "$GUARD" > "$work/chorus-share-guard.py"
+  if cmp -s "$GUARD" "$work/chorus-share-guard.py"; then echo "mutation did not apply"; return 1; fi
+  run python3 "$FIX" "$work/chorus-share-guard.py"
+  [ "$status" -ne 0 ]
+  printf '%s\n' "$output" | grep -q '^FAIL safe_return refuses a line break (header injection)'
+  printf '%s\n' "$output" | grep -q '^FAIL safe_return refuses a backslash host'
+}
+
+@test "NEGATIVE PROOF: a return rule that judges only the undecoded value fails" {
+  work="$BATS_TEST_TMPDIR/scripts"
+  mkdir -p "$work" && cp -R "$ROOT/platform/scripts/lib" "$work/lib"
+  sed 's/    for form in (raw, urllib.parse.unquote(raw)):/    for form in (raw,):/' "$GUARD" > "$work/chorus-share-guard.py"
+  if cmp -s "$GUARD" "$work/chorus-share-guard.py"; then echo "mutation did not apply"; return 1; fi
+  run python3 "$FIX" "$work/chorus-share-guard.py"
+  [ "$status" -ne 0 ]
+  printf '%s\n' "$output" | grep -q '^FAIL safe_return refuses an encoded backslash host'
+  printf '%s\n' "$output" | grep -q '^FAIL safe_return refuses an encoded line break'
+}
+
+@test "the old loop that closed ended sessions with their own expired sign-in is retired" {
+  if grep -q 'person_session.close_session(old, now, _http, ATHENA_URL, _refresh, _log)' "$GUARD"; then echo "the old close loop is back"; return 1; fi
+  # and the proof this check can fail: the line it looks for, put back, is found
+  printf '%s\n' "            person_session.close_session(old, now, _http, ATHENA_URL, _refresh, _log)" > "$BATS_TEST_TMPDIR/old.py"
+  grep -q 'person_session.close_session(old, now, _http, ATHENA_URL, _refresh, _log)' "$BATS_TEST_TMPDIR/old.py" || return 1
 }

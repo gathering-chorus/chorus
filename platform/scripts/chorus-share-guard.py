@@ -314,10 +314,17 @@ def safe_return(raw, default=None):
     default = pub(LANDING) if default is None else default
     if not raw:
         return default
-    # //evil.tld/x is host-relative to a browser and looks like a path to a
-    # naive startswith('/') check. Rule it out before anything else.
-    if raw.startswith("//"):
-        return default
+    # #4966 (gate-code, 2026-11-16; shape by Silas) — judge the value AND its once-decoded
+    # form, because a browser or a proxy may decode it again. A control character would
+    # start a new response header (`/x%0d%0a...` arrives here as CR LF); a backslash is read
+    # by browsers as a slash, so `/\\evil.tld` is another host. Both collapse to the default.
+    for form in (raw, urllib.parse.unquote(raw)):
+        if any(ord(c) < 0x20 or ord(c) == 0x7f for c in form) or "\\" in form:
+            return default
+        # //evil.tld/x is host-relative to a browser and looks like a path to a
+        # naive startswith('/') check: a relative target has exactly ONE leading slash.
+        if form.startswith("//"):
+            return default
     if raw.startswith("/"):
         return raw
     try:
@@ -406,7 +413,7 @@ def signed_in_landing(state, next_raw):
     target = safe_return(next_raw)
     # Never on to this door's own routes (Silas 2026-11-15): /_auth/logout would sign a
     # signed-in person out from a crafted link, and /_auth/ would send them round again.
-    if AUTH_PREFIX in urllib.parse.urlparse(target).path + "/":
+    if AUTH_PREFIX in urllib.parse.unquote(urllib.parse.urlparse(target).path) + "/":
         return pub(LANDING)
     return target
 
@@ -722,14 +729,17 @@ def _refresh(refresh_token):
 SESSIONS_LOCK = threading.Lock()
 
 
-def close_expired_person_sessions(rec, now, sid):
+def close_expired_person_sessions(rec, now, live):
     """#4966 — with this new sign-in, as him, close his earlier browser sessions that have
     run out. In its own thread: there can be many (123 on 2026-11-15), and a sign-in never
-    waits on it. Test mode (OFFLINE) makes no call: a test never reaches the real door."""
+    waits on it. `live` is every session this door still holds (the new one included): a
+    store row can say expired while the door's own record is live (a renewal that failed to
+    reach the store), and such a session is never closed. Test mode (OFFLINE) makes no call:
+    a test never reaches the real door."""
     if OFFLINE or not rec.get("principal") or not rec.get("id_token"):
         return None
     t = threading.Thread(
-        target=lambda: person_session.close_expired_sessions(rec["principal"], rec["id_token"], now, sid, _http, ATHENA_URL, _log),
+        target=lambda: person_session.close_expired_sessions(rec["principal"], rec["id_token"], now, live, _http, ATHENA_URL, _log),
         daemon=True)
     t.start()
     return t
@@ -752,8 +762,9 @@ def open_person_session(webid, tok):
             for key in ended:
                 recs.pop(key)
             save_state(SESSIONS_FILE, recs)
-        for old in ended.values():
-            person_session.close_session(old, now, _http, ATHENA_URL, _refresh, _log)
+        # #4966 — the ended records are dropped here and their rows are closed below, with
+        # THIS sign-in (close_expired_person_sessions). The loop that closed each with its own
+        # long-expired sign-in is retired: the store refused it ("token expired, no refresh").
         rec = person_session.open_session(webid, tok, now, SESSION_TTL, _sparql, _http, ATHENA_URL, _log)
         sid = rec["row"]["name"] if rec else None
         if sid:
@@ -761,7 +772,8 @@ def open_person_session(webid, tok):
                 recs = load_state(SESSIONS_FILE)
                 recs[sid] = rec
                 save_state(SESSIONS_FILE, recs)
-            close_expired_person_sessions(rec, now, sid)
+                live = set(recs)
+            close_expired_person_sessions(rec, now, live)
         return sid
     except Exception as e:
         _log(f"person-session: sign-in row NOT written: {e}")

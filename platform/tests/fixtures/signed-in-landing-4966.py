@@ -59,4 +59,22 @@ for nxt in ("/_auth/logout", "/_auth/", "/_auth", "/_auth/login?next=/x",
 # NEGATIVE PROOF: a path that only looks like it is still sent on
 case("a good session going to /authors is sent there", landing("ok", "/authors"), "/authors")
 
+# gate-code 2026-11-16, cases by Silas: what a browser or a header reads differently from us
+safe = g["safe_return"]
+CRLF = "/x\r\nSet-Cookie: a=b"          # how `/x%0d%0aSet-Cookie:...` arrives after the query is decoded
+for name, nxt in (("a line break (header injection)", CRLF),
+                  ("an encoded line break", "/x%0d%0aSet-Cookie:%20a=b"),
+                  ("a backslash host", "/\\evil.example/x"),
+                  ("an encoded backslash host", "/%5cevil.example/x"),
+                  ("a double slash host", "//evil.example/x"),
+                  ("an encoded double slash host", "%2f%2fevil.example/x"),
+                  ("a tab", "/x\ty")):
+    case(f"safe_return refuses {name}", safe(nxt), HOME)
+    case(f"and a good session is not sent there ({name})", landing("ok", nxt), HOME)
+case("no refused form puts a control character in the target",
+     all(not any(ord(c) < 0x20 for c in safe(n)) for n in (CRLF, "/x%0d%0a", "/a\x00b")), True)
+# NEGATIVE PROOF: ordinary targets still pass, unchanged
+for nxt in ("/athena/model.html", "/clearing-v2/?room=team&x=1", "/a%20b", ROOM):
+    case(f"an ordinary target passes unchanged: {nxt}", safe(nxt), nxt)
+
 sys.exit(1 if FAILS else 0)

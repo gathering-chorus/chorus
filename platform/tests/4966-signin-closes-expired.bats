@@ -26,10 +26,10 @@ setup() {
 }
 
 @test "the door does it at his sign-in, after the new session is written, with that sign-in's token" {
-  grep -q 'person_session.close_expired_sessions(rec\["principal"\], rec\["id_token"\], now, sid, _http, ATHENA_URL, _log)' "$GUARD"
+  grep -q 'person_session.close_expired_sessions(rec\["principal"\], rec\["id_token"\], now, live, _http, ATHENA_URL, _log)' "$GUARD"
   # after the new row exists: the sign-in calls it below the line that stores the new sid
   new_line=$(grep -n 'recs\[sid\] = rec' "$GUARD" | head -1 | cut -d: -f1)
-  call_line=$(grep -n '^            close_expired_person_sessions(rec, now, sid)' "$GUARD" | head -1 | cut -d: -f1)
+  call_line=$(grep -n '^            close_expired_person_sessions(rec, now, live)' "$GUARD" | head -1 | cut -d: -f1)
   [ -n "$call_line" ] && [ "$call_line" -gt "$new_line" ]
 }
 
