@@ -62,3 +62,13 @@ test('#4985 NEGATIVE PROOF: runs not read keep a pane as its row says (no guess 
   const k = deriveActorState({ ...input({}), liveRun: undefined }).find((s) => s.aboutPrincipal === KADE);
   expect(k?.sessions.map((s) => s.live)).toEqual([true]);
 });
+
+test('#4985 NEGATIVE PROOF: a fresh browser sign-in is never ended by its principal having no run (the run rule is for panes only)', () => {
+  const fresh = '2026-11-16T21:47:00Z';
+  const k = deriveActorState({
+    ...input({ channel: 'browser', expiresAt: '2026-11-17T00:00:00Z', lastSeenAt: fresh }),
+    actions: { kade: { lastActionAt: fresh, recent5mCount: 1 } },
+    liveRun: { kade: false },
+  }).find((s) => s.aboutPrincipal === KADE);
+  expect(k?.sessions.map((s) => s.live)).toEqual([true]);
+});

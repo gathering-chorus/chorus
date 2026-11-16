@@ -10,7 +10,7 @@ import { fetchOpenSessionRows } from './open-sessions';
 import { readdirSync, readFileSync, existsSync } from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { reachabilityFromPresence, type PresenceRow, type RunRow } from './presence-target';
+import { reachabilityFromPresence, hasLiveRun, type PresenceRow, type RunRow } from './presence-target';
 
 export type StateValue =
   | 'building'
@@ -189,7 +189,7 @@ function sessionIsLive(s: SessionInfo, nowMs: number, lastActivityMs: number, ru
 
 /** #4985 — true only when runs were read and the role has none live; unread says nothing. */
 function hasNoLiveRun(liveRun: Record<string, boolean> | undefined, role: string): boolean {
-  return Object.entries(liveRun ?? {}).some(([r, live]) => r === role && !live);
+  return new Map(Object.entries(liveRun ?? {})).get(role) === false;
 }
 
 function deriveSessions(
@@ -1084,12 +1084,14 @@ export function buildLiveActorFactFetcher(options: {
           return [role, reachabilityFromPresence(presence.presences, presence.runs, role)];
         }))
       : undefined;
-    // #4985 — whether each role has a live run at all (runEndedAt empty), Presence or not
+    // #4985 — whether each agent role has a live run at all (runEndedAt empty), Presence or not
     const liveRun = presence
-      ? Object.fromEntries(principals.map((p) => {
-          const role = principalToRole(typeof p === 'string' ? p : p.principal);
-          return [role, presence.runs.some((r) => r.name.startsWith(`${role}-run-`) && !r.runEndedAt)];
-        }))
+      ? Object.fromEntries(principals
+          .filter((p) => !resolvePrincipalInfo(p).isHuman)
+          .map((p) => {
+            const role = resolvePrincipalInfo(p).role;
+            return [role, hasLiveRun(presence.runs, role)];
+          }))
       : undefined;
 
     const cardSteps = await fetchDaguCardSteps(daguBase, wipCards, unmeasured);
@@ -1140,14 +1142,16 @@ async function fetchPresenceFact(
   unmeasured: Array<{ source: string; reason: string }>
 ): Promise<{ presences: PresenceRow[]; runs: RunRow[] } | null> {
   try {
+    // #4985 — runs are read open only (runEndedAt absent): presence-target uses no other, and
+    // an ended-run history past the 5000 cap must never hide a live run (gate-code, run 2)
     const get = async (p: string): Promise<unknown[]> => {
-      const r = await fetch(`${athenaBase}/v1/identity/${p}?limit=5000`, { signal: AbortSignal.timeout(2000) });
+      const r = await fetch(`${athenaBase}/v1/identity/${p}`, { signal: AbortSignal.timeout(2000) });
       if (!r.ok) throw new Error(`${p} answered HTTP ${r.status}`);
       const d = ((await r.json()) as { data?: unknown }).data;
       if (!Array.isArray(d)) throw new Error(`${p} answered no data list`);
       return d;
     };
-    const [presences, runs] = await Promise.all([get('presences'), get('sessionruns')]);
+    const [presences, runs] = await Promise.all([get('presences?limit=5000'), get('sessionruns?runEndedAt.absent=true&limit=5000')]);
     return { presences: presences as PresenceRow[], runs: runs as RunRow[] };
   } catch (e: unknown) {
     unmeasured.push({ source: 'athena:identity:presences', reason: e instanceof Error ? e.message : String(e) });

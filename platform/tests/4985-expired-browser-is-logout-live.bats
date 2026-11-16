@@ -12,7 +12,7 @@ setup() {
 }
 
 verdict() {  # $1 page code, $2 page location, $3 api code
-  [[ "$1" =~ ^30[1278]$ ]] && [[ "$2" == *"/_auth/"* ]] && [[ "$3" == "401" || "$3" == "403" || "$3" =~ ^30 ]]
+  [[ "$1" =~ ^30[1278]$ ]] && [[ "$2" == *"/_auth/"* ]] && [[ "$3" == "401" || "$3" == "403" || "$3" =~ ^30[1278]$ ]]
 }
 
 @test "with no valid session the room page goes to sign-in and its API refuses" {

@@ -23,13 +23,14 @@ def ts(a):
     t = max((s.get("lastActionAt") or "" for s in a.get("sessions", [])), default="")
     try: return int(datetime.datetime.fromisoformat(t.replace("Z", "+00:00")).timestamp())
     except Exception: return 0
+actors = {a.get("aboutPrincipal", "").removeprefix("principal-"): a for a in st.get("actors", [])}
 quiet = []
-for a in st.get("actors", []):
-    role = a.get("aboutPrincipal", "").removeprefix("principal-")
-    if role not in live or role == "jeff": continue
+for role in sorted(live - {"jeff"}):
     if role not in tiles:
         print(f"FAIL {role} has a live run and no tile"); sys.exit(1)
-    if now - ts(a) >= 7200: quiet.append(role)
+    last = ts(actors.get(role, {}))
+    # a role with no recorded action is not "quiet 2 hours": it measures nothing
+    if last and now - last >= 7200: quiet.append(role)
 if not quiet:
     print("UNMEASURED no logged-in role has been quiet 2 hours this pass"); sys.exit(2)
 print("ok quiet 2h with a tile: " + ", ".join(quiet))
@@ -52,4 +53,14 @@ PY
   runs='{"data":[{"name":"kade-run-x"}]}'
   run check "$st" "$runs" '<a class="actor-tile actor-tile-wren">' "$(date +%s)"
   [ "$status" -eq 1 ]
+}
+
+@test "NEGATIVE PROOF: a role with a live run that pulse does not list, and no tile, fails" {
+  run check '{"actors":[]}' '{"data":[{"name":"kade-run-x"}]}' '<a class="actor-tile actor-tile-wren">' "$(date +%s)"
+  [ "$status" -eq 1 ]
+}
+
+@test "NEGATIVE PROOF: a role with no recorded action is not counted as quiet 2 hours" {
+  run check '{"actors":[{"aboutPrincipal":"principal-kade","sessions":[]}]}' '{"data":[{"name":"kade-run-x"}]}' '<a class="actor-tile actor-tile-kade">' "$(date +%s)"
+  [ "$status" -eq 2 ]
 }
