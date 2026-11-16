@@ -457,9 +457,13 @@ describe('server — name + logout flow', () => {
     expect([200, 302, 400]).toContain(r.status);
   });
 
-  test('GET /logout clears cookie and redirects or renders', async () => {
-    const r = await call('/logout');
-    expect([200, 302]).toContain(r.status);
+  // #4966 — assert on the redirect itself. Following it reached the public sign-in guard on
+  // every run of this suite (measured in the guard's log, 2026-11-15); tests stay on this machine.
+  test('GET /logout clears the name cookie and redirects to the sign-out address', async () => {
+    const r = await call('/logout', { redirect: 'manual' });
+    expect(r.status).toBe(302);
+    expect(r.headers.get('location')).toMatch(/\/_auth\/logout$/);
+    expect(r.headers.get('set-cookie') || '').toMatch(/bridge_name=;/);
   });
 });
 

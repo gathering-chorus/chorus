@@ -9,4 +9,6 @@ module.exports = {
     '^.+\\.tsx?$': ['ts-jest', { tsconfig: { esModuleInterop: true, skipLibCheck: true } }],
   },
   transformIgnorePatterns: ['node_modules/(?!@noble)/'],
+  // #4966 — tests stay on this machine: one guard on fetch, shared with the v1 package
+  setupFiles: ['<rootDir>/../clearing/tests/stay-local-4966.setup.ts'],
 };
