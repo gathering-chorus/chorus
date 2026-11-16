@@ -33,7 +33,10 @@ jest_in() {  # $1 = a pulse tree, $2 = test name filter
   work="$BATS_TEST_TMPDIR/pulse"; mkdir -p "$work"
   cp -R "$PULSE/src" "$PULSE/jest.config.js" "$PULSE/tsconfig.json" "$PULSE/test-env.setup.js" "$work/"
   ln -s "$PULSE/node_modules" "$work/node_modules"
-  sed -i '' "s/else if (f\[0\] === 'CLOSED' \&\& ours \&\& page > authPage) {/else if (false) {/" "$work/src/buzz-day-counts.ts"
+  # both refusal paths dropped, as before #4984: the relay's OK false and a later CLOSED
+  sed -i '' -e "s/else if (ok === false) refuse(/else if (false) refuse(/" \
+    -e "s/else if (page > authPage) refuse(/else if (false) refuse(/" "$work/src/buzz-day-counts.ts"
+  [ "$(grep -c 'else if (false) refuse(' "$work/src/buzz-day-counts.ts")" -eq 2 ] || { echo "mutation did not apply twice"; return 1; }
   if cmp -s "$PULSE/src/buzz-day-counts.ts" "$work/src/buzz-day-counts.ts"; then echo "mutation did not apply"; return 1; fi
   run jest_in "$work" 'AC2'
   [ "$status" -ne 0 ]

@@ -61,7 +61,7 @@ describe('#4984 the messages reader signs in with the relay\'s public address, a
     const r = await relay();
     const t0 = Date.now();
     try {
-      await expect(readNotes(r.url, HOST, 0, 60000, signer)).rejects.toThrow(/relay refused page \d+: auth-required/);
+      await expect(readNotes(r.url, HOST, 0, 60000, signer)).rejects.toThrow(/relay refused (the sign-in|page \d+): auth-required/);
       expect(Date.now() - t0).toBeLessThan(5000);
       expect(r.tags).toEqual([`ws://${HOST}`]);
     } finally { await r.close(); }

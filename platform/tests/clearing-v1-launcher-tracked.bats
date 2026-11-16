@@ -125,6 +125,13 @@ SH
   echo "$output" | grep -q '404'
 }
 
+@test "NEGATIVE PROOF: a sign-in the relay refused (authenticated, accepted false) is not proof" {
+  echo '[{"event":"buzz.room.connected"},{"event":"buzz.room.authenticated","accepted":false}]' > "$T/room.json"
+  fake_land
+  [ "$status" -eq 1 ]
+  [ -e "$T/bin/clearing-launch.sh" ]
+}
+
 @test "NEGATIVE PROOF: a room that connects but is never signed in is not proof" {
   echo '[{"event":"buzz.room.connected"}]' > "$T/room.json"
   fake_land
@@ -133,7 +140,7 @@ SH
 }
 
 @test "the land refuses an agent another account owns, and changes nothing" {
-  echo '[{"event":"buzz.room.connected"},{"event":"buzz.room.authenticated"}]' > "$T/room.json"
+  echo '[{"event":"buzz.room.connected"},{"event":"buzz.room.authenticated","accepted":true}]' > "$T/room.json"
   LAND_AS_UID=99999 fake_land
   [ "$status" -eq 2 ]
   [ "$(cat "$T/agents/com.chorus.clearing.plist")" = '<plist>old</plist>' ]

@@ -83,7 +83,9 @@ def room_events(since_ns):
                 ev = json.loads(line)
             except ValueError:
                 continue
-            out.append((int(_ts), ev.get("event", ""), str(ev.get("reason", ""))))
+            # an authenticated event carries the relay's answer: accepted true or false
+            why = str(ev.get("reason", "")) if "accepted" not in ev else f"accepted={str(ev['accepted']).lower()}"
+            out.append((int(_ts), ev.get("event", ""), why))
     return [(e, why) for _t, e, why in sorted(out)]
 
 
@@ -94,7 +96,8 @@ def verdict(events):
     names = [e for e, _ in events]
     if "buzz.room.connected" not in names:
         return "the bridge room never connected"
-    if "buzz.room.authenticated" not in names:
+    # the bridge logs buzz.room.authenticated for every answer to its sign-in, refused ones too
+    if not any(e == "buzz.room.authenticated" and why == "accepted=true" for e, why in events):
         return "the bridge room connected but its sign-in was not accepted"
     return ""
 
