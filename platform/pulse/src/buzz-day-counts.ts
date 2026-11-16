@@ -47,6 +47,9 @@ export function readNotes(url: string, host: string | undefined, since: number, 
     let page = 0;
     let fresh = 0;
     let authed = false;
+    // the page in flight when the sign-in was sent: its REQ went before the sign-in, so its
+    // auth-required CLOSED is expected; a refusal of any later page is a refused sign-in
+    let authPage = Infinity;
     let stepped = false;
     // this page's size and whether every note on it sat in the edge second;
     // the largest page seen stands in for the relay's cap
@@ -72,6 +75,7 @@ export function readNotes(url: string, host: string | undefined, since: number, 
       const { signer, reason } = signerFor();
       if (!signer) { clearTimeout(timer); ws.close(); reject(new Error(reason || 'no bridge key')); return; }
       authed = true;
+      authPage = page;
       const relay = authRelayTag(url, host);
       ws.send(JSON.stringify(['AUTH', signNote(signer, Math.floor(Date.now() / 1000), 22242, [['relay', relay], ['challenge', challenge]], '')]));
       setTimeout(req, 300);
@@ -115,6 +119,9 @@ export function readNotes(url: string, host: string | undefined, since: number, 
       const ours = f[1] === `days-${page}`;
       if (f[0] === 'AUTH' && typeof f[1] === 'string' && !authed) onAuth(f[1]);
       else if (f[0] === 'CLOSED' && ours && /rate-limited/.test(String(f[2]))) onRateLimited(String(f[2]));
+      // #4984 — any other refusal (auth-required after a refused sign-in) is an error at once,
+      // naming the relay's words; it is never waited out (it was, 60 s a day, since 10-26)
+      else if (f[0] === 'CLOSED' && ours && page > authPage) { clearTimeout(timer); ws.close(); reject(new Error(`relay refused page ${page}: ${String(f[2])}`)); }
       else if (f[0] === 'EVENT' && ours) onEvent(f[2] as RoomNote & { id?: string });
       else if (f[0] === 'EOSE' && ours) onEose();
     });

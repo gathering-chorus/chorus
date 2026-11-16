@@ -1987,10 +1987,12 @@ fn run_readings(which: &str, args: &[String]) -> i32 {
         // installed config (the one writer to Buzz), never a literal here
         // #4666 — the reader loads pulse's better-sqlite3, so it runs on pulse's node
         let node = chorus_crawl::readings::pulse_node(std::env::var("PULSE_NODE").ok(), pulse_program());
-        match buzz_relay_host() {
-            None => { println!("{which}: messages-kept UNMEASURED — the relay host is unknown (PULSE_BUZZ_RELAY_HOST unset and not in com.chorus.pulse)"); unmeasured.push("messages-kept".into()); }
-            Some(_) if node.is_empty() => { println!("{which}: messages-kept UNMEASURED — pulse's node is unknown (PULSE_NODE unset and com.chorus.pulse names no node)"); unmeasured.push("messages-kept".into()); }
-            Some(relay_host) => match Command::new(&node).args([reader.as_str(), "--db", db.as_str()]).env("PULSE_BUZZ_RELAY_URL", relay).env("PULSE_BUZZ_RELAY_HOST", relay_host).output() {
+        match (buzz_relay_host(), buzz_auth_relay_url()) {
+            (None, _) => { println!("{which}: messages-kept UNMEASURED — the relay host is unknown (PULSE_BUZZ_RELAY_HOST unset and not in com.chorus.pulse)"); unmeasured.push("messages-kept".into()); }
+            // #4984 — the sign-in must name the relay's public address; never guessed from the host
+            (Some(_), None) => { println!("{which}: messages-kept UNMEASURED — the relay's public address is unknown (BUZZ_AUTH_RELAY_URL unset and not in com.chorus.pulse)"); unmeasured.push("messages-kept".into()); }
+            _ if node.is_empty() => { println!("{which}: messages-kept UNMEASURED — pulse's node is unknown (PULSE_NODE unset and com.chorus.pulse names no node)"); unmeasured.push("messages-kept".into()); }
+            (Some(relay_host), Some(auth_url)) => match Command::new(&node).args([reader.as_str(), "--db", db.as_str()]).envs(reader_env(&relay, &relay_host, &auth_url)).output() {
                 Ok(o) if o.status.success() => c.extend(buzz_counts(&String::from_utf8_lossy(&o.stdout))),
                 Ok(o) => { println!("{which}: messages-kept UNMEASURED — {}", String::from_utf8_lossy(&o.stderr).trim()); unmeasured.push("messages-kept".into()); }
                 Err(e) => { println!("{which}: messages-kept UNMEASURED — cannot run {reader} ({e})"); unmeasured.push("messages-kept".into()); }
@@ -2598,16 +2600,24 @@ fn pulse_program() -> Option<String> {
     (out.status.success() && !p.is_empty()).then_some(p)
 }
 
-fn buzz_relay_host() -> Option<String> {
-    if let Ok(h) = std::env::var("PULSE_BUZZ_RELAY_HOST") {
+/// A key from pulse's environment: the process env first, else pulse's installed
+/// LaunchAgent (pulse is the one writer to Buzz, so its config is the source).
+fn pulse_env(key: &str) -> Option<String> {
+    if let Ok(h) = std::env::var(key) {
         if !h.is_empty() { return Some(h); }
     }
     let home = std::env::var("HOME").ok()?;
     let plist = format!("{home}/Library/LaunchAgents/com.chorus.pulse.plist");
-    let out = Command::new("/usr/libexec/PlistBuddy").args(["-c", "Print :EnvironmentVariables:PULSE_BUZZ_RELAY_HOST", &plist]).output().ok()?;
+    let out = Command::new("/usr/libexec/PlistBuddy").args(["-c", &format!("Print :EnvironmentVariables:{key}"), &plist]).output().ok()?;
     let h = String::from_utf8_lossy(&out.stdout).trim().to_string();
     (out.status.success() && !h.is_empty()).then_some(h)
 }
+
+fn buzz_relay_host() -> Option<String> { pulse_env("PULSE_BUZZ_RELAY_HOST") }
+
+/// #4984 — the relay's public address, named in the reader's sign-in (NIP-42 `relay` tag).
+/// Since the 10-25 cutover the relay refuses any other; without it the reader is unmeasured.
+fn buzz_auth_relay_url() -> Option<String> { pulse_env("BUZZ_AUTH_RELAY_URL") }
 
 fn main() {
     // #4446 — under launchd, a failed run is logged as service.failed (shared/service_lifecycle.rs).
