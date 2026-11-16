@@ -447,6 +447,7 @@ function watchFileButton() {
   const label = document.querySelector ? document.querySelector('.composer-file') : null;
   if (label && label.addEventListener) {
     label.addEventListener('click', (e) => {
+      if (refuseWhenSignedOut('attach')) { e.preventDefault(); return; }
       if (e.target !== picker) {
         e.preventDefault();
         picker.click();
@@ -459,7 +460,7 @@ function watchFileButton() {
     const files = Array.from(picker.files || []);
     const failed = [];
     for (const [i, file] of files.entries()) {
-      if (status) status.textContent = 'Uploading file ' + (i + 1) + ' of ' + files.length + '…';
+      showStatus(status, 'Uploading file ' + (i + 1) + ' of ' + files.length + '…');
       const out = await uploadFile(file);
       if (out.ok && input) input.value = (input.value ? input.value.trimEnd() + ' ' : '') + '📎 ' + out.path + ' ';
       if (!out.ok) failed.push(out.errorInfo || { text: out.reason });
@@ -467,14 +468,15 @@ function watchFileButton() {
     if (status) {
       if (failed.length) {
         const firstFail = failed[0];
-        if (firstFail && firstFail.html && status.innerHTML !== undefined) {
-          status.innerHTML = failed.length + ' of ' + files.length + ' files not attached: ' + firstFail.html;
-        } else {
-          status.textContent = failed.length + ' of ' + files.length + ' files not attached: ' + (firstFail && firstFail.text ? firstFail.text : firstFail);
-        }
+        // #4966 — shown, not only written: style.css hides this line unless it is displayed
+        const lead = failed.length + ' of ' + files.length + ' files not attached: ';
+        // if the refusal was the sign-in, the tiles call says so and the page enters the signed-out state
+        probeSignIn();
+        if (firstFail && firstFail.html) showStatus(status, '', lead + firstFail.html);
+        else showStatus(status, lead + (firstFail && firstFail.text ? firstFail.text : firstFail));
       } else {
         if (status.innerHTML !== undefined) status.innerHTML = '';
-        status.textContent = '';
+        showStatus(status, '');
       }
     }
     picker.value = '';
@@ -561,18 +563,12 @@ function watchMicButton() {
   mic.dataset.wired = 'true';
   let recorder = null;
   let chunks = [];
-  const say = (t, html) => {
-    const s = document.getElementById('send-error');
-    if (s) {
-      if (html && s.innerHTML !== undefined) {
-        s.innerHTML = html;
-      } else {
-        s.textContent = t;
-      }
-    }
-  };
+  // #4966 — shown, not only written: style.css hides this line unless it is displayed
+  const say = (t, html) => showStatus(document.getElementById('send-error'), t, html);
   mic.addEventListener('click', async () => {
     if (recorder && recorder.state === 'recording') { recorder.stop(); return; }
+    // before the microphone is asked for: he must never record a note that cannot be sent
+    if (refuseWhenSignedOut('record')) return;
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof MediaRecorder === 'undefined') {
       say('Voice not available here: this browser cannot record (it needs https)');
       return;
@@ -1126,6 +1122,7 @@ function initStream(customContainer) {
   if (typeof EventSource === 'undefined') return;
   const container = customContainer || messagesContainer || (typeof document !== 'undefined' ? document.getElementById('messages-stream') : null);
   const evtSource = new EventSource(clearingBase() + '/api/events');
+  setActiveEventSource(evtSource);
 
   evtSource.addEventListener('init', (e) => {
     try {
@@ -1176,8 +1173,11 @@ function initStream(customContainer) {
   });
 
   evtSource.onerror = () => {
+    if (signedOut) return;
     relayIndicator.textContent = 'Disconnected (Reconnecting...)';
     relayIndicator.className = 'relay-status';
+    // #4966 — a stream refused for no sign-in looks like any other drop; one call tells them apart
+    probeSignIn();
   };
 }
 
@@ -1329,6 +1329,75 @@ async function handleSendMessage(text, options = {}) {
   }
 }
 
+// #4966 — the open page when the sign-in has gone. Jeff, 2026-11-13: "It looks like I'm logged
+// in ... I can't attach a photo. No errors happen." One state for the whole page: once any call
+// answers 401 not-signed-in, the room is cleared, the stream is closed and the notice is shown,
+// without him sending anything.
+let signedOut = false;
+let activeEventSource = null;
+function isSignedOut() { return signedOut; }
+function resetSignedOutState() { signedOut = false; activeEventSource = null; }
+function setActiveEventSource(es) { activeEventSource = es; }
+
+/** Show a status line, or hide it when it is empty. style.css hides #send-error by default. */
+function showStatus(el, text, html) {
+  if (!el) return;
+  if (html && el.innerHTML !== undefined) el.innerHTML = html;
+  else el.textContent = text || '';
+  if (el.style) el.style.display = (text || html) ? 'block' : 'none';
+}
+
+/** The page is signed out: nothing of the room stays readable, and the notice says so. */
+function enterSignedOutState(json, doc) {
+  const d = doc || (typeof document !== 'undefined' ? document : null);
+  signedOut = true;
+  if (activeEventSource && activeEventSource.close) { activeEventSource.close(); activeEventSource = null; }
+  if (!d) return;
+  const stream = d.getElementById('messages-stream');
+  if (stream) stream.innerHTML = '';
+  const indicator = d.getElementById('relay-indicator');
+  if (indicator) { indicator.textContent = 'Signed out'; indicator.className = 'relay-status'; }
+  const status = d.getElementById('send-error');
+  if (status) {
+    status.innerHTML = '';
+    status.textContent = 'Signed out. Nothing is shown until you sign in. ';
+    const url = json && json.signInUrl;
+    if (url && d.createElement) {
+      const a = d.createElement('a');
+      a.href = url;
+      a.textContent = 'Sign in';
+      status.appendChild(a);
+    }
+    if (status.style) status.style.display = 'block';
+  }
+}
+
+/** Ask of any response: was this the sign-in refusal? If so the page enters the signed-out state. */
+async function checkSignedOut(res, doc) {
+  if (!res || res.status !== 401) return false;
+  let json = null;
+  // read a copy: a caller that goes on to read the body itself must still be able to (Abby 2026-11-15)
+  try { json = await (res.clone ? res.clone() : res).json(); } catch { return false; }
+  if (!json || json.error !== 'not-signed-in') return false;
+  enterSignedOutState(json, doc);
+  return true;
+}
+
+/** Attach and record are refused up front once signed out, so he never records a note that cannot be sent. */
+function refuseWhenSignedOut(what, doc) {
+  if (!signedOut) return false;
+  const d = doc || (typeof document !== 'undefined' ? document : null);
+  const status = d ? d.getElementById('send-error') : null;
+  showStatus(status, `Signed out: cannot ${what} until you sign in.`);
+  return true;
+}
+
+/** One light call that tells the open page whether its sign-in still holds. */
+async function probeSignIn() {
+  if (signedOut || typeof fetch === 'undefined') return;
+  try { await checkSignedOut(await fetch(clearingBase() + '/api/tiles')); } catch { /* a network blip is not a sign-out */ }
+}
+
 /** #4571 — the 401 names why and where to sign in; render it as text plus a link. */
 function showSignInNeeded(statusEl, json) {
   if (!statusEl) return;
@@ -1391,13 +1460,22 @@ if (typeof window !== 'undefined') {
   // Periodic tile poll as fallback
   setInterval(async () => {
     try {
+      if (signedOut) return;
       const res = await fetch(clearingBase() + '/api/tiles');
       if (res.ok) {
         const tiles = await res.json();
         updateTiles(tiles);
+      } else {
+        await checkSignedOut(res);
       }
     } catch {}
   }, 5000);
+
+  // #4966 — when he wakes the phone or comes back to the tab, ask at once
+  if (typeof document !== 'undefined' && document.addEventListener) {
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') probeSignIn(); });
+  }
+  if (window.addEventListener) window.addEventListener('pageshow', () => { probeSignIn(); });
 
   initStream();
   initTrustStripTooltips();
@@ -1405,6 +1483,7 @@ if (typeof window !== 'undefined') {
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
+    isSignedOut, resetSignedOutState, setActiveEventSource, showStatus, enterSignedOutState, checkSignedOut, refuseWhenSignedOut, probeSignIn,
     formatAuthor,
     formatMessageTime,
     appendMessage,
