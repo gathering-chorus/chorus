@@ -475,7 +475,6 @@ function watchFileButton() {
         if (firstFail && firstFail.html) showStatus(status, '', lead + firstFail.html);
         else showStatus(status, lead + (firstFail && firstFail.text ? firstFail.text : firstFail));
       } else {
-        if (status.innerHTML !== undefined) status.innerHTML = '';
         showStatus(status, '');
       }
     }
@@ -1346,13 +1345,13 @@ function setActiveEventSource(es) { activeEventSource = es; }
 function showStatus(el, text, html) {
   if (!el || signedOut) return;
   if (html && el.innerHTML !== undefined) el.innerHTML = html;
-  else el.textContent = text || '';
+  else { if (el.innerHTML !== undefined) el.innerHTML = ''; el.textContent = text || ''; }
   if (el.style) el.style.display = (text || html) ? 'block' : 'none';
 }
 
 /** Everything on the page that shows the room. Emptied when the sign-in has gone. */
 const ROOM_CONTENT_IDS = [
-  'messages-stream', 'rooms-people-row', 'tiles-container', 'team-nudges', 'streams-page', 'history-status',
+  'messages-stream', 'rooms-people-row', 'tiles-container', 'team-nudges', 'history-status',
   'trust-dots', 'stream-drawer-title', 'stream-drawer-status', 'stream-drawer-cards', 'stream-drawer-actions',
   'drawer-card-title', 'drawer-card-meta', 'drawer-card-domains', 'drawer-card-dates', 'drawer-card-desc',
   'drawer-card-cws', 'drawer-card-cws-motion', 'drawer-card-comments', 'drawer-card-ac',
@@ -1392,11 +1391,11 @@ function enterSignedOutState(json, doc) {
     const el = d.getElementById(id);
     if (el && el.style) el.style.display = 'none';
   }
-  // Pages other than a room (today, board, roles, counts, sync, streams) hold everything in a
-  // <main> that is not .chat. A room's main.chat is NOT emptied: the notice lives inside it
-  // (Abby, views.ts: #send-error sits in main.chat's footer).
-  const page = d.querySelector ? d.querySelector('main:not(.chat)') : null;
-  if (page) page.innerHTML = '';
+  // Pages other than a room (today, roles, board, counts, sync, streams) hold everything in an
+  // element of class "page" (a div on some, a main on others; gate-code, run 4). A room's
+  // main.chat is not a .page and is NOT emptied: the notice lives inside it (Abby, views.ts).
+  const pages = d.querySelectorAll ? Array.from(d.querySelectorAll('.page')) : [];
+  for (const page of pages) page.innerHTML = '';
   if (typeof window !== 'undefined') window.PULSE_ACTORS = [];
   const indicator = d.getElementById('relay-indicator');
   if (indicator) { indicator.textContent = 'Signed out'; indicator.className = 'relay-status'; }

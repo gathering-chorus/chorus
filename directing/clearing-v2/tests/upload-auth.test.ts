@@ -210,13 +210,16 @@ describe('#4866 AC4: upload auth error guidance', () => {
       const { els, doc } = page();
       for (const id of app.ROOM_CONTENT_IDS) els[id] = el(id, `<b>${id} content</b>`);
       for (const id of app.ROOM_DRAWER_IDS) { els[id] = el(id, 'open'); els[id].style.display = 'block'; }
-      const other = el('', '<h1>Today</h1> the whole board');
+      // the non-room pages as views.ts renders them: a div.page on Today/Roles/Board, a main.page on Counts/Streams
+      const today = el('', '<h1>Today</h1> working now: Silas');
+      const counts = el('', '<h1>Counts</h1> 4966 open');
       const chat = el('', 'the room shell');
-      (doc as any).querySelector = (q: string) => (q === 'main:not(.chat)' ? other : q === 'main.chat' ? chat : null);
+      (doc as any).querySelectorAll = (q: string) => (q === '.page' ? [today, counts] : []);
+      (doc as any).querySelector = (q: string) => (q === 'main.chat' ? chat : null);
       app.enterSignedOutState(REFUSAL, doc);
       for (const id of app.ROOM_CONTENT_IDS) expect([id, els[id].innerHTML]).toEqual([id, '']);
       for (const id of app.ROOM_DRAWER_IDS) expect([id, els[id].style.display]).toEqual([id, 'none']);
-      expect(other.innerHTML).toBe('');
+      expect([today.innerHTML, counts.innerHTML]).toEqual(['', '']);
       // the room's own main holds the notice: it is never emptied
       expect(chat.innerHTML).toBe('the room shell');
       expect(app.ROOM_CONTENT_IDS).toEqual(expect.arrayContaining(['messages-stream', 'rooms-people-row', 'tiles-container', 'trust-dots']));
@@ -233,6 +236,13 @@ describe('#4866 AC4: upload auth error guidance', () => {
       app.refuseWhenSignedOut('attach', doc);
       expect(els['send-error'].textContent).toMatch(/cannot attach/i);
       expect(els['send-error'].children[els['send-error'].children.length - 1].href).toBe(SIGN_IN);
+    });
+
+    test('a status line written as text after an html one leaves none of the html behind', () => {
+      const { els } = page();
+      app.showStatus(els['send-error'], '', '<a href="x">old link</a>');
+      app.showStatus(els['send-error'], '');
+      expect([els['send-error'].innerHTML, els['send-error'].style.display]).toEqual(['', 'none']);
     });
 
     // NEGATIVE PROOF: signed in, a status line is written and cleared as before

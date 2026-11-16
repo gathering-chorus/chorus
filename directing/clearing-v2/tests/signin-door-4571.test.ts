@@ -244,6 +244,8 @@ test('negative proof: with no door configured the refusal still names why, and i
       try {
         const good = await fetch(`${s.base}/`, { headers: { ...CF, cookie: `${cookieFor(600)}; cv2_signin_bounce=1` }, redirect: 'manual' });
         expect(good.status).toBe(200);
+        // and the spent marker is cleared on the way in
+        expect(String(good.headers.get('set-cookie'))).toMatch(/cv2_signin_bounce=;.*Max-Age=0/);
         const none = await fetch(`${s.base}/`, { headers: { ...CF, cookie: 'cv2_signin_bounce=1' }, redirect: 'manual' });
         expect(none.status).toBe(302);
         const api = await fetch(`${s.base}/api/messages`, { headers: { ...CF, cookie: `${cookieFor(-60)}; cv2_signin_bounce=1` } });

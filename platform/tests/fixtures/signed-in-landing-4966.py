@@ -73,6 +73,7 @@ for name, nxt in (("a line break (header injection)", CRLF),
     case(f"and a good session is not sent there ({name})", landing("ok", nxt), HOME)
 case("no refused form puts a control character in the target",
      all(not any(ord(c) < 0x20 for c in safe(n)) for n in (CRLF, "/x%0d%0a", "/a\x00b")), True)
+case("a good session with next=/_auth%2Flogout (encoded) lands on the default, not on sign-out", landing("ok", "/_auth%2Flogout"), HOME)
 # NEGATIVE PROOF: ordinary targets still pass, unchanged
 for nxt in ("/athena/model.html", "/clearing-v2/?room=team&x=1", "/a%20b", ROOM):
     case(f"an ordinary target passes unchanged: {nxt}", safe(nxt), nxt)

@@ -104,8 +104,10 @@ closed6 = sorted(c[1].rsplit("/", 1)[-1] for c in door6.calls if c[0] == "PATCH"
 check("NEGATIVE: a session the door still holds live is never closed, though its row says expired", closed6 == ["jeff-browser-old-9"])
 # an expiresAt that is not the store's time form is not judged
 door7 = Door([row("jeff-browser-odd", "principal-jeff", "browser", "open", "yesterday"), row("jeff-browser-num", "principal-jeff", "browser", "open", 5)])
+logs7 = []
 check("NEGATIVE: an expiry that is not a time is left alone, and nothing raises",
-      ps.close_expired_sessions("jeff", FRESH, NOW, "x", door7, "http://door", logs.append) == 0)
+      ps.close_expired_sessions("jeff", FRESH, NOW, "x", door7, "http://door", logs7.append) == 0)
+check("and it says so: how many were left open, and why", any("2 open browser session(s) left open" in l for l in logs7))
 
 # no token, no writes
 door3 = Door(ROWS)

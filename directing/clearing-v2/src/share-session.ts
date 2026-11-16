@@ -230,7 +230,7 @@ export function gateDecision(r: GateRequest): GateDecision {
       allow: false,
       kind: 'refuse',
       status: 503,
-      body: { ok: false, error: 'sign-in-not-accepted', detail: 'You signed in, and this server does not accept that sign-in. It is a fault here, not something to retry.' },
+      body: { ok: false, error: 'sign-in-not-accepted', detail: 'This page was sent to sign in moments ago and came back with a sign-in it cannot use. Wait half a minute and open it again; if this repeats right after signing in, the fault is here.' },
     };
   }
   if (isPage(r.method, r.path) && r.signInUrl) return { allow: false, kind: 'redirect', location: r.signInUrl };
@@ -282,6 +282,7 @@ export function sessionGate(
   const limited = refusalLogLimiter(60, log);
   return (req: Request, res: Response, next: NextFunction): void => {
     const cookies = String(req.headers.cookie || '');
+    const bounced = cookies.split(';').some((c) => c.trim() === `${BOUNCE_COOKIE}=1`);
     const d = gateDecision({
       headers: req.headers as Record<string, unknown>,
       ip: req.socket.remoteAddress || '',
@@ -291,9 +292,8 @@ export function sessionGate(
       signInUrl,
       keyUnreadable: keyUnreadable(),
       cookiePresent: shareSessionFromHeader(cookies) !== undefined,
-      bounced: cookies.split(';').some((c) => c.trim() === `${BOUNCE_COOKIE}=1`),
+      bounced,
     });
-    const bounced = cookies.split(';').some((c) => c.trim() === `${BOUNCE_COOKIE}=1`);
     if (d.allow) {
       if (bounced) res.append('Set-Cookie', BOUNCE_CLEAR);
       // a signed-in room must never be kept by the browser or the edge and shown after the sign-in is gone

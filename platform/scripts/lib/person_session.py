@@ -229,7 +229,7 @@ def close_expired_sessions(principal, id_token, now, keep, http, api, log):
         return 0
     items = listing if isinstance(listing, list) else next(
         (listing.get(k) for k in ("items", "data", "rows") if isinstance(listing, dict) and isinstance(listing.get(k), list)), [])
-    closed, refused = 0, {}
+    closed, refused, unjudged = 0, {}, 0
     for r in items:
         if not isinstance(r, dict) or not r.get("name") or r["name"] in kept:
             continue
@@ -242,6 +242,7 @@ def close_expired_sessions(principal, id_token, now, keep, http, api, log):
         exp = r.get("expiresAt")
         # the store writes expiresAt as iso(); anything else is not a time we can judge
         if not isinstance(exp, str) or len(exp) != 20 or not exp.endswith("Z"):
+            unjudged += 1
             continue
         if not exp or exp > iso(now):
             continue
@@ -254,6 +255,9 @@ def close_expired_sessions(principal, id_token, now, keep, http, api, log):
             closed += 1
         else:
             refused[st] = refused.get(st, 0) + 1
+    if unjudged:
+        # said, never silent: a store that re-serialises its times would otherwise turn this into a no-op
+        log(f"person-session: {principal} {unjudged} open browser session(s) left open: expiresAt not in the store's time form")
     if closed or refused:
         # the status says why: 401/403 his token, 422 the body, 0 the door could not be reached
         why = ", ".join(f"{n} NOT closed (HTTP {st})" for st, n in sorted(refused.items()))

@@ -82,11 +82,14 @@ setup() {
   printf '%s\n' "$output" | grep -q '^FAIL safe_return refuses an encoded line break'
 }
 
-@test "the old loop that closed ended sessions with their own expired sign-in is retired" {
-  if grep -q 'person_session.close_session(old, now, _http, ATHENA_URL, _refresh, _log)' "$GUARD"; then echo "the old close loop is back"; return 1; fi
-  # and the proof this check can fail: the line it looks for, put back, is found
-  printf '%s\n' "            person_session.close_session(old, now, _http, ATHENA_URL, _refresh, _log)" > "$BATS_TEST_TMPDIR/old.py"
-  grep -q 'person_session.close_session(old, now, _http, ATHENA_URL, _refresh, _log)' "$BATS_TEST_TMPDIR/old.py" || return 1
+@test "NEGATIVE PROOF: a landing that judges the encoded own-route without decoding fails" {
+  work="$BATS_TEST_TMPDIR/scripts"
+  mkdir -p "$work" && cp -R "$ROOT/platform/scripts/lib" "$work/lib"
+  sed 's/    if AUTH_PREFIX in urllib.parse.unquote(urllib.parse.urlparse(target).path) + "\/":/    if AUTH_PREFIX in urllib.parse.urlparse(target).path + "\/":/' "$GUARD" > "$work/chorus-share-guard.py"
+  if cmp -s "$GUARD" "$work/chorus-share-guard.py"; then echo "mutation did not apply"; return 1; fi
+  run python3 "$FIX" "$work/chorus-share-guard.py"
+  [ "$status" -ne 0 ]
+  printf '%s\n' "$output" | grep -q '^FAIL a good session with next=/_auth%2Flogout (encoded)' || return 1
 }
 
 @test "NEGATIVE PROOF: a route that ignores the landing and always shows the sign-in page fails" {
