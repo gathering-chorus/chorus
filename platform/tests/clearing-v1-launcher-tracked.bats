@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # @test-type: unit — the tracked plist, clearing-room-env on a temp secret, and land-4984-rows
 # against a fake launchctl, a fake Clearing and a fake Loki; nothing live is touched
-# @domain: clearing
+# @domain: services
 # @card: #4984
 #
 # AC3: the current Clearing (v1) starts from one tracked launcher in launchagents-canonical that

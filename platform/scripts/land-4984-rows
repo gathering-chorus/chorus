@@ -2,7 +2,7 @@
 """#4984: after the land, start the current Clearing (v1, com.chorus.clearing) from the tracked
 launcher, prove its Buzz room reaches the relay, and only then retire the untracked
 ~/.chorus/bin/clearing-launch.sh (08-11).
-# @domain: clearing
+# @domain: services
 
 Order (the #4983 shape), so a failure before the proof leaves the Clearing on the old launcher:
   1. the canonical plist and platform/scripts/clearing-room-env are in the canonical checkout
