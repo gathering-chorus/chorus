@@ -191,12 +191,14 @@ describe('Actor State - Session Expiry and Liveness', () => {
     expect(session?.lastActionAt).toBe(SENT_1215);
   });
 
-  test('Fix 2 negative proof: session with stale lastSeenAt and stale action reads not live', () => {
+  // #4985: a quiet pane stays live until logout (actor-state-4985.test.ts); the stale rule now
+  // holds for sign-ins only, so this proof reads a browser session.
+  test('Fix 2 negative proof: a sign-in with stale lastSeenAt and stale action reads not live', () => {
     const input: ActorFactInput = {
       now: baseNow,
       principals: [P_ABBY],
       sessions: [
-        { id: 's-abby-stale', principal: P_ABBY, channel: CH_PANE, expiresAt: EXP_1300, lastSeenAt: '2026-10-15T20:10:00Z' },
+        { id: 's-abby-stale', principal: P_ABBY, channel: CH_BROWSER, expiresAt: EXP_1300, lastSeenAt: '2026-10-15T20:10:00Z' },
       ],
       actions: { 'abby-normal': { lastActionAt: '2026-10-16T11:00:00Z', recent5mCount: 0 } },
     };

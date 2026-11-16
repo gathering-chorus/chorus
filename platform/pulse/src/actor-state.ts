@@ -185,7 +185,9 @@ function deriveSessions(
     const isClosed = Boolean(s.endedAt) || s.sessionState === 'closed';
 
     const lastActivityMs = Math.max(isNaN(lastSeenMs) ? 0 : lastSeenMs, lastActionMs);
-    const isStale = lastActivityMs === 0 || nowMs - lastActivityMs > THIRTY_MINUTES_MS;
+    // #4985 (Jeff 11-16: "they start when we log in and end when we log out") — a pane is
+    // never stale: quiet time does not end it, only logout (endedAt) does. A sign-in still goes stale.
+    const isStale = s.channel !== 'pane' && (lastActivityMs === 0 || nowMs - lastActivityMs > THIRTY_MINUTES_MS);
 
     const live = !isClosed && !isExpired && !isStale;
     if (live) hasLiveSession = true;
