@@ -37,6 +37,7 @@ PY
 }
 
 @test "every logged-in role has a tile, including one quiet 2 hours (live page)" {
+  case "${BATS_TEST_DIRNAME}" in */chorus-werk/*) skip "after-land check: a card's werk has not landed (#4985 AC2)";; esac
   st=$(curl -sf --max-time 10 "$PULSE_URL/api/actor-state")
   runs=$(curl -sf --max-time 10 "$DOOR/v1/identity/sessionruns?runEndedAt.absent=true&limit=5000")
   html=$(curl -sf --max-time 10 "$V2_URL/api/rooms/team/people")

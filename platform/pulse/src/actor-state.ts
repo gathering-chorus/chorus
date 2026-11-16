@@ -169,6 +169,29 @@ interface DerivedSessionsResult {
   hasLiveSession: boolean;
 }
 
+/** One session's liveness: a sign-in ends at expiry, after 30 quiet minutes, or when closed;
+ *  a pane (an agent's login) ends only at logout or when its role has no live run. */
+function sessionIsLive(s: SessionInfo, nowMs: number, lastActivityMs: number, runGone: boolean): boolean {
+  // #4948 — an agent's (pane) session lasts from login to logout: its expiresAt, written once
+  // at login because the shape requires it, is ignored (Silas, pair 4948). A sign-in still expires.
+  const expiresMs = new Date(s.expiresAt ?? '').getTime();
+  const isExpired = s.channel !== 'pane' && (isNaN(expiresMs) || nowMs > expiresMs);
+  const isClosed = Boolean(s.endedAt) || s.sessionState === 'closed';
+  // #4985 (Jeff 11-16: "they start when we log in and end when we log out") — a pane is
+  // never stale: quiet time does not end it, only logout (endedAt) does. A sign-in still goes stale.
+  const isStale = s.channel !== 'pane' && (lastActivityMs === 0 || nowMs - lastActivityMs > THIRTY_MINUTES_MS);
+  // #4985 AC4 — a pane whose process died without a logout ends on a fact: the sweep ended
+  // its run (pid gone), so the role has no live run. Keyed on the run, not on reachability:
+  // a live run without a Presence reads 'offline' there and is still logged in (Wren 16:55).
+  const isDead = s.channel === 'pane' && runGone;
+  return !isClosed && !isExpired && !isStale && !isDead;
+}
+
+/** #4985 — true only when runs were read and the role has none live; unread says nothing. */
+function hasNoLiveRun(liveRun: Record<string, boolean> | undefined, role: string): boolean {
+  return Object.entries(liveRun ?? {}).some(([r, live]) => r === role && !live);
+}
+
 function deriveSessions(
   mySessions: SessionInfo[],
   nowMs: number,
@@ -181,23 +204,8 @@ function deriveSessions(
 
   for (const s of mySessions) {
     const lastSeenMs = new Date(s.lastSeenAt).getTime();
-    // #4948 — an agent's (pane) session lasts from login to logout: its expiresAt, written once
-    // at login because the shape requires it, is ignored (Silas, pair 4948). A sign-in still expires.
-    const expiresMs = new Date(s.expiresAt ?? '').getTime();
-    const isExpired = s.channel !== 'pane' && (isNaN(expiresMs) || nowMs > expiresMs);
-    const isClosed = Boolean(s.endedAt) || s.sessionState === 'closed';
-
     const lastActivityMs = Math.max(isNaN(lastSeenMs) ? 0 : lastSeenMs, lastActionMs);
-    // #4985 (Jeff 11-16: "they start when we log in and end when we log out") — a pane is
-    // never stale: quiet time does not end it, only logout (endedAt) does. A sign-in still goes stale.
-    const isStale = s.channel !== 'pane' && (lastActivityMs === 0 || nowMs - lastActivityMs > THIRTY_MINUTES_MS);
-
-    // #4985 AC4 — a pane whose process died without a logout ends on a fact: the sweep ended
-    // its run (pid gone), so the role has no live run. Keyed on the run, not on reachability:
-    // a live run without a Presence reads 'offline' there and is still logged in (Wren 16:55).
-    const isDead = s.channel === 'pane' && runGone;
-
-    const live = !isClosed && !isExpired && !isStale && !isDead;
+    const live = sessionIsLive(s, nowMs, lastActivityMs, runGone);
     if (live) hasLiveSession = true;
 
     let sessionLastAction: string = s.lastSeenAt;
@@ -514,7 +522,7 @@ function deriveOneActor(
     nowMs,
     lastActionMs,
     actionFact?.lastActionAt,
-    input.liveRun?.[role] === false
+    hasNoLiveRun(input.liveRun, role)
   );
 
   const hasRecentAction30m = lastActionMs > 0 && nowMs - lastActionMs <= THIRTY_MINUTES_MS;
