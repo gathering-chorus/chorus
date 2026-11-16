@@ -18,7 +18,17 @@ setup() {
   [ -x "$LOKI_BIN" ] || { echo "no loki binary at $LOKI_BIN"; return 1; }
 }
 
-free_port() { python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1])'; }
+# a test stopped part-way still stops every scratch Loki it started
+teardown() {
+  local f
+  for f in "$BATS_TEST_TMPDIR"/*/loki.pid; do
+    [ -f "$f" ] && { kill "$(cat "$f")" 2>/dev/null; wait "$(cat "$f")" 2>/dev/null || true; }
+  done
+  return 0
+}
+
+# two distinct free ports, held open together while chosen so they cannot be the same one
+free_ports() { python3 -c 'import socket;a=socket.socket();b=socket.socket();a.bind(("127.0.0.1",0));b.bind(("127.0.0.1",0));print(a.getsockname()[1], b.getsockname()[1])'; }
 
 # the repo config, moved to a scratch home and free ports; compactor and retention off.
 # $1 = new|old: old puts back the four values #4983 changed (queue 100, split 30m, sharding on, no cache)
@@ -50,12 +60,12 @@ PY
 # Runs inside $(...); no RETURN trap: bats runs with functrace, so one would fire in every
 # command substitution below and stop Loki before it answers.
 replay_on() {
-  local http grpc pid rc; http=$(free_port); grpc=$(free_port)
+  local http grpc pid rc; read -r http grpc < <(free_ports)
   scratch_config "$1" "$http" "$grpc" || return 1
   "$LOKI_BIN" -config.file="$BATS_TEST_TMPDIR/$1/loki.yaml" > "$BATS_TEST_TMPDIR/$1/loki.log" 2>&1 &
-  pid=$!
+  pid=$!; echo "$pid" > "$BATS_TEST_TMPDIR/$1/loki.pid"
   replay_against "$1" "$http"; rc=$?
-  kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
+  kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null; rm -f "$BATS_TEST_TMPDIR/$1/loki.pid"
   return "$rc"
 }
 
@@ -78,14 +88,14 @@ PY
 field() { printf '%s\n' "$1" | tr ' ' '\n' | sed -n "s/^$2=//p"; }
 
 @test "the 15:32 replay: the new limits refuse none and answer every read; the old limits refuse" {
-  new="$(replay_on new 2>&1)" || { echo "replay on new failed: $new"; tail -5 "$BATS_TEST_TMPDIR/new/loki.log"; return 1; }
+  new="$(replay_on new)" || { echo "replay on new failed: $new"; tail -5 "$BATS_TEST_TMPDIR/new/loki.log"; return 1; }
   echo "new: $new"
   [ "$(field "$new" refused)" = 0 ] && [ "$(field "$new" failed)" = 0 ] && [ "$(field "$new" answered)" = 28 ] || return 1
   # the slowest read answers well inside the replay's 120 s wait: a queue that never refuses but
   # never answers cannot pass
   python3 -c 'import sys; sys.exit(0 if float(sys.argv[1]) < 30 else 1)' "$(field "$new" slowest)" || return 1
   # NEGATIVE PROOF: the same replay, run after the first Loki has stopped, against the old limits
-  old="$(replay_on old 2>&1)" || { echo "replay on old failed: $old"; tail -5 "$BATS_TEST_TMPDIR/old/loki.log"; return 1; }
+  old="$(replay_on old)" || { echo "replay on old failed: $old"; tail -5 "$BATS_TEST_TMPDIR/old/loki.log"; return 1; }
   echo "old: $old"
   [ "$(field "$old" refused)" -ge 1 ] || return 1
 }

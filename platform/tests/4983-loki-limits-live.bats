@@ -87,7 +87,8 @@ class H(http.server.BaseHTTPRequestHandler):
                 self.send_response(429); self.end_headers(); self.wfile.write(b"too many outstanding requests"); return
             if mode == "slow":
                 time.sleep(1.5)
-            self.send_response(200); self.end_headers(); self.wfile.write(b'{"status":"success","data":{"result":[]}}'); return
+            body = b'{"status":"success","data":{"result":[]}}' if mode == "empty" else b'{"status":"success","data":{"result":[{"stream":{},"values":[["1","x"]]}]}}'
+            self.send_response(200); self.end_headers(); self.wfile.write(body); return
         body = b"ready" if self.path == "/ready" else open(conf, "rb").read()
         self.send_response(200); self.end_headers(); self.wfile.write(body)
     def log_message(self, *a): pass
@@ -144,7 +145,7 @@ PY
 @test "a live replay slower than the allowed wait restores the old plist" {
   new_config; echo slow > "$BATS_TEST_TMPDIR/mode"
   LOKI_SLOWEST_MAX=1 fake_land
-  [ "$status" -eq 1 ] && [[ "$output" == *"refused=0 failed=0 answered=28"* && "$output" == *"slowest allowed 1 s"* && "$output" == *"old plist restored"* ]] || { echo "$output"; return 1; }
+  [ "$status" -eq 1 ] && [[ "$output" == *"refused=0 failed=0 answered=28 empty=0"* && "$output" == *"slowest allowed 1 s"* && "$output" == *"old plist restored"* ]] || { echo "$output"; return 1; }
   [ "$(cat "$BATS_TEST_TMPDIR/agents/com.gathering.loki.plist")" = "OLD PLIST" ] || { echo "old plist not restored"; return 1; }
 }
 
@@ -161,4 +162,44 @@ PY
     run python3 "$ROOT/platform/scripts/land-4983-rows" --apply
   [ "$status" -eq 2 ] && [[ "$output" == *"has uncommitted edits; nothing changed"* ]] || { echo "$output"; return 1; }
   [ ! -s "$T/launchctl.log" ] && [ "$(cat "$T/agents/com.gathering.loki.plist")" = "OLD PLIST" ] || { echo "something switched"; return 1; }
+}
+
+# NEGATIVE PROOF: every read answers but matches nothing on the live store: a hollow pass, restored
+@test "a live replay whose reads match nothing restores the old plist" {
+  new_config; echo empty > "$BATS_TEST_TMPDIR/mode"
+  fake_land
+  [ "$status" -eq 1 ] && [[ "$output" == *"empty=28"* && "$output" == *"old plist restored"* ]] || { echo "$output"; return 1; }
+  [ "$(cat "$BATS_TEST_TMPDIR/agents/com.gathering.loki.plist")" = "OLD PLIST" ] || { echo "old plist not restored"; return 1; }
+}
+
+# NEGATIVE PROOF: an old config file git does not track stops the land before anything switches
+@test "an untracked old config refuses before the switch" {
+  new_config
+  T="$BATS_TEST_TMPDIR"; mkdir -p "$T/obs/config/loki"
+  printf 'live\n' > "$T/obs/config/loki/loki-native.yaml"
+  git -C "$T/obs" init -q && git -C "$T/obs" add -A && git -C "$T/obs" -c user.name=t -c user.email=t@t commit -qm init
+  printf 'dead\n' > "$T/obs/config/loki/loki-config.yaml"
+  mkdir -p "$T/agents"; printf 'OLD PLIST\n' > "$T/agents/com.gathering.loki.plist"
+  CHORUS_HOME="$ROOT" OBS_REPO="$T/obs" LAUNCH_AGENTS_DIR="$T/agents" LAUNCHCTL=/usr/bin/false \
+    run python3 "$ROOT/platform/scripts/land-4983-rows" --apply
+  [ "$status" -eq 2 ] && [[ "$output" == *"loki-config.yaml is untracked or has uncommitted edits; nothing changed"* ]] || { echo "$output"; return 1; }
+  [ "$(cat "$T/agents/com.gathering.loki.plist")" = "OLD PLIST" ] || { echo "plist changed"; return 1; }
+}
+
+# NEGATIVE PROOF: launchd never lets go of the label: no bootstrap over it, the old plist goes back
+@test "a label launchd still holds after bootout is not bootstrapped over" {
+  new_config
+  fake_land_holding() {
+    T="$BATS_TEST_TMPDIR"; mkdir -p "$T/agents" "$T/obs/config/loki"
+    printf 'OLD PLIST\n' > "$T/agents/com.gathering.loki.plist"
+    printf 'live\n' > "$T/obs/config/loki/loki-native.yaml"; printf 'dead\n' > "$T/obs/config/loki/loki-config.yaml"
+    git -C "$T/obs" init -q && git -C "$T/obs" add -A && git -C "$T/obs" -c user.name=t -c user.email=t@t commit -qm init
+    printf '#!/bin/sh\necho "$*" >> "%s/launchctl.log"\nexit 0\n' "$T" > "$T/launchctl"; chmod +x "$T/launchctl"
+    CHORUS_HOME="$ROOT" OBS_REPO="$T/obs" LAUNCH_AGENTS_DIR="$T/agents" LAUNCHCTL="$T/launchctl" LOKI_URL=http://127.0.0.1:9 \
+      LOKI_READY_WAIT=1 LAUNCHD_RELEASE_WAIT=2 run python3 "$ROOT/platform/scripts/land-4983-rows" --apply
+  }
+  fake_land_holding
+  [ "$status" -eq 1 ] && [[ "$output" == *"still holds com.gathering.loki"* && "$output" == *"RESTORE FAILED"* ]] || { echo "$output"; return 1; }
+  [ "$(grep -c '^bootstrap' "$BATS_TEST_TMPDIR/launchctl.log")" -eq 0 ] || { cat "$BATS_TEST_TMPDIR/launchctl.log"; return 1; }
+  [ "$(cat "$BATS_TEST_TMPDIR/agents/com.gathering.loki.plist")" = "OLD PLIST" ] || { echo "old plist not written back"; return 1; }
 }

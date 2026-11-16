@@ -34,6 +34,8 @@ OLD = ["config/loki/loki-native.yaml", "config/loki/loki-config.yaml"]
 AGENTS = os.environ.get("LAUNCH_AGENTS_DIR", os.path.expanduser("~/Library/LaunchAgents"))
 LAUNCHCTL = os.environ.get("LAUNCHCTL", "launchctl")
 READY_WAIT = int(os.environ.get("LOKI_READY_WAIT", "180"))
+# how long launchd may take to let go of the label after bootout before the land stops
+RELEASE_WAIT = int(os.environ.get("LAUNCHD_RELEASE_WAIT", "30"))
 # the slowest the live replay may take: the 15:32 reads waited up to 119 s in the queue; a read
 # still over a minute after #4983 means the limits did not fix the wait, so the land restores
 SLOWEST_MAX = float(os.environ.get("LOKI_SLOWEST_MAX", "60"))
@@ -71,10 +73,12 @@ def reload(installed):
     try:
         subprocess.run([LAUNCHCTL, "bootout", f"gui/{uid}/{LABEL}"], capture_output=True, timeout=60)
         # bootstrap refuses a label still tearing down: wait until launchd no longer knows it
-        for _ in range(30):
+        for _ in range(RELEASE_WAIT):
             if subprocess.run([LAUNCHCTL, "print", f"gui/{uid}/{LABEL}"], capture_output=True, timeout=10).returncode != 0:
                 break
             time.sleep(1)
+        else:
+            return f"launchd still holds {LABEL} {RELEASE_WAIT} s after bootout; not bootstrapping over it"
         r = subprocess.run([LAUNCHCTL, "bootstrap", f"gui/{uid}", installed], capture_output=True, text=True, timeout=60)
     except (OSError, subprocess.TimeoutExpired) as e:
         return f"could not reload {LABEL}: {e}"
@@ -124,11 +128,12 @@ def live_replay():
         return f"the live replay did not run: {e}"
     got = dict(kv.split("=", 1) for kv in r.stdout.split() if "=" in kv)
     try:
-        refused, failed, slowest = int(got["refused"]), int(got["failed"]), float(got["slowest"])
+        refused, failed, empty, slowest = int(got["refused"]), int(got["failed"]), int(got["empty"]), float(got["slowest"])
     except (KeyError, ValueError):
         return f"the live replay printed no verdict: {(r.stdout + r.stderr).strip()[-200:]}"
     print("live replay: " + r.stdout.strip())
-    if refused or failed or slowest > SLOWEST_MAX:
+    # an empty read matched nothing on the live store, so the replay would prove nothing (a hollow pass)
+    if refused or failed or empty or slowest > SLOWEST_MAX:
         return f"the live replay is not clean ({r.stdout.strip()}; slowest allowed {SLOWEST_MAX:g} s)"
     return ""
 

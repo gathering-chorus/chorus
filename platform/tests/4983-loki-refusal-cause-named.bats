@@ -26,8 +26,11 @@ sys.exit(0 if any(all(n in (i.get("text") or "") for n in need) for i in items) 
 @test "the 15:32 reads overflow a queue of 100: 784 sub-queries from one 24h read" {
   run "$ROOT/platform/scripts/loki-fanout" --queue 100 < "$FIX"
   [ "$status" -eq 1 ] && [[ "$output" == *"overflow: 784 sub-queries from one read > queue 100"* ]] || { echo "$output"; return 1; }
-  # the fixture holds both shapes (784 for 24h, 32 for 5m): the verdict must take the largest, not any
   [[ "$output" == *"784 sub-queries  length=24h0m0s"* && "$output" == *"32 sub-queries  length=5m0s"* ]] || { echo "$output"; return 1; }
+  # the fixture holds both shapes (784 for 24h first, 32 for 5m last): fed in reverse order the
+  # verdict is the same, so it takes the largest read, not the first or the last line
+  run "$ROOT/platform/scripts/loki-fanout" --queue 100 < <(tail -r "$FIX")
+  [ "$status" -eq 1 ] && [[ "$output" == *"overflow: 784 sub-queries from one read > queue 100"* ]] || { echo "$output"; return 1; }
 }
 
 # NEGATIVE PROOF: the same reads against a queue that holds them is not an overflow
