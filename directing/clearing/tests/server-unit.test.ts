@@ -851,7 +851,6 @@ describe('restart (destructive shutdown path)', () => {
  * to another machine, or a redirect that leads to one, fails naming the address.
  */
 {
-  /* eslint-disable @typescript-eslint/no-var-requires */
   const http = require('http');
 
   const PUBLIC_LOGOUT = 'https://chorus.lightlifeurbangardens.com/_auth/logout';

@@ -245,7 +245,7 @@ export function sessionGate(
   return (req: Request, res: Response, next: NextFunction): void => {
     const d = gateDecision({
       headers: req.headers as Record<string, unknown>,
-      ip: req.socket?.remoteAddress || '',
+      ip: req.socket.remoteAddress || '',
       method: req.method,
       path: req.path,
       principal: principalOf(req),

@@ -66,7 +66,6 @@ test('negative proof: with no door configured the refusal still names why, and i
  * (probes, pulse, the roles' tools) and /health are let through.
  */
 {
-  /* eslint-disable @typescript-eslint/no-var-requires */
   const crypto = require('crypto');
   const http = require('http');
   const { gateDecision } = require('../src/share-session');

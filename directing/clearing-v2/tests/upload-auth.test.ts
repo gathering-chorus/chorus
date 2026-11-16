@@ -127,7 +127,6 @@ describe('#4866 AC4: upload auth error guidance', () => {
  * #send-error, which style.css hides, and nothing told the open page its sign-in had gone.
  */
 {
-  /* eslint-disable @typescript-eslint/no-var-requires */
   const app = require('../public/app.js');
 
   const SIGN_IN = 'https://chorus.example/_auth/?next=https%3A%2F%2Fexample%2Fclearing-v2%2F';

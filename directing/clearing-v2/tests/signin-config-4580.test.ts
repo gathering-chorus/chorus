@@ -43,7 +43,6 @@ test('negative proof: the old self-pointing link fails the same check', () => {
  * hands the renewed cookie back to his browser.
  */
 {
-  /* eslint-disable @typescript-eslint/no-var-requires */
   const crypto = require('crypto');
   const http = require('http');
   const { createApp } = require('../src/server');
