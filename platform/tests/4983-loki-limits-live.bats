@@ -64,6 +64,8 @@ EOF
   [ "$status" -eq 0 ] && [[ "$output" == plan:* ]] || { echo "$output"; return 1; }
 }
 
+new_config() { printf 'max_outstanding_requests_per_tenant: 1024\nsplit_queries_by_interval: 2h\ncache_results: true\nparallelise_shardable_queries: false\n' > "$BATS_TEST_TMPDIR/config"; }
+
 # the land against a fake launchctl (records its calls) and a fake Loki serving $T/config
 fake_land() {
   T="$BATS_TEST_TMPDIR"
@@ -71,7 +73,7 @@ fake_land() {
   printf 'OLD PLIST\n' > "$T/agents/com.gathering.loki.plist"
   printf 'live\n' > "$T/obs/config/loki/loki-native.yaml"; printf 'dead\n' > "$T/obs/config/loki/loki-config.yaml"
   git -C "$T/obs" init -q && git -C "$T/obs" add -A && git -C "$T/obs" -c user.name=t -c user.email=t@t commit -qm init
-  printf '#!/bin/sh\necho "$*" >> "%s/launchctl.log"\n' "$T" > "$T/launchctl"; chmod +x "$T/launchctl"
+  printf '#!/bin/sh\necho "$*" >> "%s/launchctl.log"\n[ "$1" = print ] && exit 113\nexit 0\n' "$T" > "$T/launchctl"; chmod +x "$T/launchctl"
   PORT=$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1])')
   python3 - "$PORT" "$T/config" <<'PY' &
 import http.server, sys
@@ -100,7 +102,7 @@ PY
 }
 
 @test "on the new limits the land keeps the new plist and removes both old files" {
-  printf 'max_outstanding_requests_per_tenant: 1024\nsplit_queries_by_interval: 2h\ncache_results: true\nparallelise_shardable_queries: false\n' > "$BATS_TEST_TMPDIR/config"
+  new_config
   fake_land
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   cmp -s "$BATS_TEST_TMPDIR/agents/com.gathering.loki.plist" "$ROOT/platform/scripts/launchagents-canonical/com.gathering.loki.plist" || { echo "new plist not installed"; return 1; }
@@ -120,7 +122,7 @@ PY
 
 # NEGATIVE PROOF: a land running as an account that does not own the agent changes nothing
 @test "a land whose account does not own the Loki agent refuses and touches nothing" {
-  printf 'max_outstanding_requests_per_tenant: 1024\nsplit_queries_by_interval: 2h\ncache_results: true\nparallelise_shardable_queries: false\n' > "$BATS_TEST_TMPDIR/config"
+  new_config
   LAND_AS_UID=99999 fake_land
   [ "$status" -eq 2 ] && [[ "$output" == *"this land runs as 99999; nothing changed"* ]] || { echo "$output"; return 1; }
   [ "$(cat "$BATS_TEST_TMPDIR/agents/com.gathering.loki.plist")" = "OLD PLIST" ] || { echo "plist changed"; return 1; }
@@ -128,7 +130,6 @@ PY
   [ -e "$BATS_TEST_TMPDIR/obs/config/loki/loki-native.yaml" ] || { echo "old file removed"; return 1; }
 }
 
-new_config() { printf 'max_outstanding_requests_per_tenant: 1024\nsplit_queries_by_interval: 2h\ncache_results: true\nparallelise_shardable_queries: false\n' > "$BATS_TEST_TMPDIR/config"; }
 
 # NEGATIVE PROOF: on the new limits but the live replay is refused: the old plist goes back
 @test "a refused live replay restores the old plist and keeps the old files" {
@@ -145,4 +146,19 @@ new_config() { printf 'max_outstanding_requests_per_tenant: 1024\nsplit_queries_
   LOKI_SLOWEST_MAX=1 fake_land
   [ "$status" -eq 1 ] && [[ "$output" == *"refused=0 failed=0 answered=28"* && "$output" == *"slowest allowed 1 s"* && "$output" == *"old plist restored"* ]] || { echo "$output"; return 1; }
   [ "$(cat "$BATS_TEST_TMPDIR/agents/com.gathering.loki.plist")" = "OLD PLIST" ] || { echo "old plist not restored"; return 1; }
+}
+
+# NEGATIVE PROOF: an old file with uncommitted edits stops the land before anything switches
+@test "an old config with uncommitted edits refuses before the switch" {
+  new_config
+  T="$BATS_TEST_TMPDIR"; mkdir -p "$T/obs/config/loki"
+  printf 'live\n' > "$T/obs/config/loki/loki-native.yaml"; printf 'dead\n' > "$T/obs/config/loki/loki-config.yaml"
+  git -C "$T/obs" init -q && git -C "$T/obs" add -A && git -C "$T/obs" -c user.name=t -c user.email=t@t commit -qm init
+  printf 'edited\n' >> "$T/obs/config/loki/loki-native.yaml"
+  mkdir -p "$T/agents"; printf 'OLD PLIST\n' > "$T/agents/com.gathering.loki.plist"
+  printf '#!/bin/sh\necho "$*" >> "%s/launchctl.log"\n[ "$1" = print ] && exit 113\nexit 0\n' "$T" > "$T/launchctl"; chmod +x "$T/launchctl"
+  CHORUS_HOME="$ROOT" OBS_REPO="$T/obs" LAUNCH_AGENTS_DIR="$T/agents" LAUNCHCTL="$T/launchctl" \
+    run python3 "$ROOT/platform/scripts/land-4983-rows" --apply
+  [ "$status" -eq 2 ] && [[ "$output" == *"has uncommitted edits; nothing changed"* ]] || { echo "$output"; return 1; }
+  [ ! -s "$T/launchctl.log" ] && [ "$(cat "$T/agents/com.gathering.loki.plist")" = "OLD PLIST" ] || { echo "something switched"; return 1; }
 }

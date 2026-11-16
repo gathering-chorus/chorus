@@ -4,7 +4,7 @@
 <dict>
     <key>Label</key>
     <string>com.gathering.loki</string>
-    <!-- #4983: the config is chorus's platform/config/loki/loki.yaml (lands on Jeff's go); logs where the live agent already wrote them -->
+    <!-- #4983: the config is chorus's platform/config/loki/loki.yaml (lands on Jeff's go) -->
     <key>ProgramArguments</key>
     <array>
         <string>/Users/jeffbridwell/bin/loki</string>
@@ -21,8 +21,8 @@
         <string>1GiB</string>
     </dict>
     <key>StandardOutPath</key>
-    <string>/Users/jeffbridwell/Library/Logs/Gathering/loki.log</string>
+    <string>/tmp/loki.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/jeffbridwell/Library/Logs/Gathering/loki.log</string>
+    <string>/tmp/loki.log</string>
 </dict>
 </plist>

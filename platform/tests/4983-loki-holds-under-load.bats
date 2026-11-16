@@ -18,10 +18,6 @@ setup() {
   [ -x "$LOKI_BIN" ] || { echo "no loki binary at $LOKI_BIN"; return 1; }
 }
 
-teardown() {
-  [ -n "${PID:-}" ] && kill "$PID" 2>/dev/null; wait "$PID" 2>/dev/null || true
-}
-
 free_port() { python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1])'; }
 
 # the repo config, moved to a scratch home and free ports; compactor and retention off.
@@ -50,15 +46,25 @@ PY
   grep -q "$home" "$home/loki.yaml" && ! grep -q "shared-observability/data" "$home/loki.yaml" || { echo "scratch config still names the live store"; return 1; }
 }
 
-# boot one scratch Loki, push a little recent data, replay, stop it; prints the replay line
+# boot one scratch Loki, replay against it, and stop it on every way out; prints the replay line.
+# Runs inside $(...); no RETURN trap: bats runs with functrace, so one would fire in every
+# command substitution below and stop Loki before it answers.
 replay_on() {
-  local http grpc; http=$(free_port); grpc=$(free_port)
+  local http grpc pid rc; http=$(free_port); grpc=$(free_port)
   scratch_config "$1" "$http" "$grpc" || return 1
   "$LOKI_BIN" -config.file="$BATS_TEST_TMPDIR/$1/loki.yaml" > "$BATS_TEST_TMPDIR/$1/loki.log" 2>&1 &
-  PID=$!
-  for _ in $(seq 1 90); do [ "$(curl -s --max-time 1 "http://127.0.0.1:$http/ready")" = ready ] && break; sleep 1; done
-  [ "$(curl -s --max-time 1 "http://127.0.0.1:$http/ready")" = ready ] || { tail -5 "$BATS_TEST_TMPDIR/$1/loki.log"; return 1; }
-  python3 - "$http" <<'PY'
+  pid=$!
+  replay_against "$1" "$http"; rc=$?
+  kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
+  return "$rc"
+}
+
+# wait for the scratch Loki, push a little recent data, replay the 15:32 reads
+replay_against() {
+  local _
+  for _ in $(seq 1 90); do [ "$(curl -s --max-time 1 "http://127.0.0.1:$2/ready")" = ready ] && break; sleep 1; done
+  [ "$(curl -s --max-time 1 "http://127.0.0.1:$2/ready")" = ready ] || { tail -5 "$BATS_TEST_TMPDIR/$1/loki.log"; return 1; }
+  python3 - "$2" <<'PY' || return 1
 import json, sys, time, urllib.request
 now = time.time_ns()
 values = [[str(now - i * 60 * 10**9), '{"event":"card.moved","n":%d}' % i] for i in range(120)]
@@ -66,21 +72,20 @@ body = json.dumps({"streams": [{"stream": {"job": "replay"}, "values": values}]}
 urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{sys.argv[1]}/loki/api/v1/push", body,
                                               {"Content-Type": "application/json"}), timeout=10)
 PY
-  python3 "$ROOT/platform/scripts/loki-replay" --url "http://127.0.0.1:$http" --timeout 120
-  kill "$PID"; wait "$PID" 2>/dev/null || true; PID=
+  python3 "$ROOT/platform/scripts/loki-replay" --url "http://127.0.0.1:$2" --timeout 120
 }
 
 field() { printf '%s\n' "$1" | tr ' ' '\n' | sed -n "s/^$2=//p"; }
 
 @test "the 15:32 replay: the new limits refuse none and answer every read; the old limits refuse" {
-  new="$(replay_on new)" || { echo "$new"; return 1; }
+  new="$(replay_on new 2>&1)" || { echo "replay on new failed: $new"; tail -5 "$BATS_TEST_TMPDIR/new/loki.log"; return 1; }
   echo "new: $new"
   [ "$(field "$new" refused)" = 0 ] && [ "$(field "$new" failed)" = 0 ] && [ "$(field "$new" answered)" = 28 ] || return 1
   # the slowest read answers well inside the replay's 120 s wait: a queue that never refuses but
   # never answers cannot pass
   python3 -c 'import sys; sys.exit(0 if float(sys.argv[1]) < 30 else 1)' "$(field "$new" slowest)" || return 1
   # NEGATIVE PROOF: the same replay, run after the first Loki has stopped, against the old limits
-  old="$(replay_on old)" || { echo "$old"; return 1; }
+  old="$(replay_on old 2>&1)" || { echo "replay on old failed: $old"; tail -5 "$BATS_TEST_TMPDIR/old/loki.log"; return 1; }
   echo "old: $old"
   [ "$(field "$old" refused)" -ge 1 ] || return 1
 }

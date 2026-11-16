@@ -17,14 +17,18 @@ import argparse
 import re
 import sys
 
-LINE = re.compile(r'caller=metrics\.go.*component=frontend.* length=(\S+).* shards=(\d+)')
+FRONTEND = re.compile(r'caller=metrics\.go.*component=frontend')
+STATS = re.compile(r' length=(\S+).* shards=(\d+)')
 
 
 def fanout(lines):
     """[(sub-queries, length)] for every frontend stats line, largest first."""
     out = []
     for line in lines:
-        m = LINE.search(line)
+        if not FRONTEND.search(line):
+            continue
+        # the stats follow the logged query text; never read them from inside it
+        m = STATS.search(line.rsplit(' query_hash=', 1)[-1])
         if m:
             out.append((int(m.group(2)), m.group(1)))
     return sorted(out, reverse=True)

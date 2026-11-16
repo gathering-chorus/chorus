@@ -15,6 +15,7 @@ Order (Wren, 2026-11-15 18:29), so a failure before the proof leaves Loki up on 
 DRY RUN unless --apply. Exit 0 = done (or the plan printed); 1 = Loki is not on the new limits
 (the old files stay); 2 = a step could not run.
 """
+import math
 import os
 import re
 import shutil
@@ -69,6 +70,11 @@ def reload(installed):
     uid = str(RUN_UID)
     try:
         subprocess.run([LAUNCHCTL, "bootout", f"gui/{uid}/{LABEL}"], capture_output=True, timeout=60)
+        # bootstrap refuses a label still tearing down: wait until launchd no longer knows it
+        for _ in range(30):
+            if subprocess.run([LAUNCHCTL, "print", f"gui/{uid}/{LABEL}"], capture_output=True, timeout=10).returncode != 0:
+                break
+            time.sleep(1)
         r = subprocess.run([LAUNCHCTL, "bootstrap", f"gui/{uid}", installed], capture_output=True, text=True, timeout=60)
     except (OSError, subprocess.TimeoutExpired) as e:
         return f"could not reload {LABEL}: {e}"
@@ -112,7 +118,7 @@ def on_new_limits():
 def live_replay():
     """'' when the 15:32 reads, replayed once on the live store, all answer in time, else why."""
     try:
-        r = subprocess.run([sys.executable, REPLAY, "--url", LOKI, "--live", "--timeout", str(int(SLOWEST_MAX) * 2)],
+        r = subprocess.run([sys.executable, REPLAY, "--url", LOKI, "--live", "--timeout", str(max(1, math.ceil(SLOWEST_MAX * 2)))],
                            capture_output=True, text=True, timeout=SLOWEST_MAX * 3)
     except (OSError, subprocess.TimeoutExpired) as e:
         return f"the live replay did not run: {e}"
@@ -149,6 +155,13 @@ def main(argv):
     if not os.path.isfile(NEW_CONFIG):
         print(f"land-4983-rows: {NEW_CONFIG} is not in the canonical checkout; nothing changed", file=sys.stderr)
         return 2
+    # the old files go only after the switch, so make sure now that they can go: tracked and clean
+    for rel in OLD:
+        tracked = subprocess.run(["git", "-C", OBS, "ls-files", "--error-unmatch", "--", rel], capture_output=True)
+        clean = subprocess.run(["git", "-C", OBS, "diff", "--quiet", "HEAD", "--", rel], capture_output=True)
+        if os.path.exists(os.path.join(OBS, rel)) and (tracked.returncode or clean.returncode):
+            print(f"land-4983-rows: {OBS}/{rel} is untracked or has uncommitted edits; nothing changed", file=sys.stderr)
+            return 2
     installed = os.path.join(AGENTS, LABEL + ".plist")
     try:
         # the agent belongs to the account whose LaunchAgents holds it; reloading it from any

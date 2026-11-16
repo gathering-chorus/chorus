@@ -1,8 +1,8 @@
 #!/usr/bin/env bats
-# @test-type: unit — Loki's own frontend stats lines from 15:32 on 2026-11-15 (a fixture), and the card's AC1 note
+# @test-type: integration — reads the card's story from the Chorus API; Loki's own frontend stats lines from 15:32 on 2026-11-15 (a fixture), and the card's AC1 note
 # @domain: logs
 # @card: #4983 · owner: silas
-# Checks platform/scripts/loki-fanout and platform/tests/fixtures/4983/loki-frontend-1532.log.
+# Checks platform/scripts/loki-fanout and platform/tests/fixtures/4983/loki-frontend-1532.txt.
 #
 # #4983 AC1: the cause of the 11-15 refusals is named from Loki's own log lines and metrics, on the
 # card, before any setting changes. The cause: one 24h read fans out to 784 queued sub-queries, and
@@ -11,7 +11,7 @@
 
 setup() {
   ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
-  FIX="$ROOT/platform/tests/fixtures/4983/loki-frontend-1532.log"
+  FIX="$ROOT/platform/tests/fixtures/4983/loki-frontend-1532.txt"
 }
 
 # the AC1 note names the window, the fan-out, the queue and the refusal: true when one card item does
@@ -26,7 +26,8 @@ sys.exit(0 if any(all(n in (i.get("text") or "") for n in need) for i in items) 
 @test "the 15:32 reads overflow a queue of 100: 784 sub-queries from one 24h read" {
   run "$ROOT/platform/scripts/loki-fanout" --queue 100 < "$FIX"
   [ "$status" -eq 1 ] && [[ "$output" == *"overflow: 784 sub-queries from one read > queue 100"* ]] || { echo "$output"; return 1; }
-  [[ "$output" == *"length=24h0m0s"* ]] || { echo "$output"; return 1; }
+  # the fixture holds both shapes (784 for 24h, 32 for 5m): the verdict must take the largest, not any
+  [[ "$output" == *"784 sub-queries  length=24h0m0s"* && "$output" == *"32 sub-queries  length=5m0s"* ]] || { echo "$output"; return 1; }
 }
 
 # NEGATIVE PROOF: the same reads against a queue that holds them is not an overflow

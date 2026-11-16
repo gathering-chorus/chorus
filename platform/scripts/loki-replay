@@ -7,12 +7,12 @@ Sends at once (threads): 17 reads over 24h (the spine card-events read that queu
 one three-day read (the 12:32 read), and 10 instant metric reads (Grafana rule evaluations and
 borg-prove). Prints `refused=<n> failed=<n> answered=<n> slowest=<s>` and exits 0; it judges
 nothing. A 429 is a refusal; any other non-200 or a timeout is a failure.
---live sends the real reads of 15:32 (the platform-chorus card-event read over 24h, a 72h
+--live sends the real reads of 15:32 (the spine-log card-event read over 24h, a 72h
 platform-chorus read, the instant rule read) instead of the scratch job="replay" ones.
 """
 import argparse
 import concurrent.futures
-import json
+import os
 import sys
 import time
 import urllib.error
@@ -22,8 +22,11 @@ import urllib.request
 READ_24H = '{job="replay"} |= "card."'
 READ_3D = '{job="replay"} |= "event"'
 INSTANT = 'sum(count_over_time({job="replay"} |= "card." [5m]))'
+# the reads that queued at 15:32 (Loki's own frontend lines): the spine card-event read on the
+# spine log file, and the platform-chorus reads
+SPINE = os.path.expanduser("~/.chorus/chorus.log")
 LIVE = (
-    '{job="platform-chorus"} |= `"event":"card.`',
+    '{filename="%s"} |= "\\"event\\":\\"card."' % SPINE,
     '{job="platform-chorus"} |= `"event"`',
     'sum(count_over_time({job="platform-chorus"} |= `"event":"card.` [5m]))',
 )
@@ -37,7 +40,7 @@ def one(url, path, params, timeout):
             return ("answered", time.time() - t0)
     except urllib.error.HTTPError as e:
         return ("refused" if e.code == 429 else "failed", time.time() - t0)
-    except OSError:
+    except Exception:  # noqa: BLE001 — any error reading one answer fails that read, never the replay
         return ("failed", time.time() - t0)
 
 

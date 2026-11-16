@@ -25,7 +25,8 @@ common:
 
 query_range:
   # #4983: the cache below was configured but never used (cache_results defaulted to false), so
-  # the same read (/cws, Grafana rules every minute) was recomputed every time.
+  # the same metric read (Grafana rule evaluations, every minute) was recomputed every time; on
+  # schema v11 the results cache holds metric results, not log lines.
   cache_results: true
   # #4983: off. With schema v11 every split was cut into row_shards (16) sub-queries; on one node
   # the 10 workers cannot run them side by side, so sharding only multiplied the queue (x16).
