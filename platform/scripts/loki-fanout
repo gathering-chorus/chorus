@@ -1,0 +1,59 @@
+#!/usr/bin/env python3
+"""#4983: how many sub-queries each Loki read fans out to, against the queue that holds them.
+# @domain: logs
+
+Reads Loki's own query-frontend stats lines (metrics.go, component=frontend) on stdin. Each line
+carries `shards=N`: the sub-queries that one read was cut into (its splits by time, times its
+shards). Loki queues every sub-query; `max_outstanding_requests_per_tenant` is how many it holds
+before it refuses new requests with 429 "too many outstanding requests".
+
+  loki-fanout --queue 100 < frontend.log
+prints one line per read shape (largest first) and a verdict:
+  overflow: <n> sub-queries from one read > queue <q>   (exit 1)
+  fits: the largest read is <n> sub-queries <= queue <q> (exit 0)
+Exit 2 = no stats lines on stdin (nothing measured, never a pass).
+"""
+import argparse
+import re
+import sys
+
+FRONTEND = re.compile(r'caller=metrics\.go.*component=frontend')
+STATS = re.compile(r' length=(\S+).* shards=(\d+)')
+
+
+def fanout(lines):
+    """[(sub-queries, length)] for every frontend stats line, largest first."""
+    out = []
+    for line in lines:
+        if not FRONTEND.search(line):
+            continue
+        # the stats follow the logged query text; never read them from inside it
+        m = STATS.search(line.rsplit(' query_hash=', 1)[-1])
+        if m:
+            out.append((int(m.group(2)), m.group(1)))
+    return sorted(out, reverse=True)
+
+
+def main(argv):
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--queue", type=int, required=True, help="max_outstanding_requests_per_tenant")
+    a = ap.parse_args(argv)
+    reads = fanout(sys.stdin)
+    if not reads:
+        print("loki-fanout: no frontend stats lines on stdin; nothing measured", file=sys.stderr)
+        return 2
+    seen = set()
+    for n, length in reads:
+        if (n, length) not in seen:
+            seen.add((n, length))
+            print(f"{n:6d} sub-queries  length={length}")
+    top = reads[0][0]
+    if top > a.queue:
+        print(f"overflow: {top} sub-queries from one read > queue {a.queue}")
+        return 1
+    print(f"fits: the largest read is {top} sub-queries <= queue {a.queue}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

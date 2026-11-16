@@ -1,0 +1,202 @@
+#!/usr/bin/env python3
+"""#4983: after the land, point the running Loki at chorus's platform/config/loki/loki.yaml, prove
+it runs with the #4983 limits, and only then remove the two old config files.
+# @domain: logs
+
+Order (Wren, 2026-11-15 18:29), so a failure before the proof leaves Loki up on the old file:
+  1. the new file is in the canonical checkout
+  2. install the canonical com.gathering.loki plist and reload the agent (launchctl)
+  3. Loki answers /ready, /config shows every #4983 value, and the 15:32 reads replayed on the live
+     store (loki-replay --live) see no refusal, no failure and no read slower than SLOWEST_MAX s
+  On any failure after step 2 the plist that was installed before is put back and reloaded, so
+  Loki comes back up on the old file (Wren 18:40).
+  4. only then: remove shared-observability/config/loki/{loki-native,loki-config}.yaml and commit
+     just those two paths in that repo (it holds others' uncommitted edits; they are untouched)
+DRY RUN unless --apply. Exit 0 = done (or the plan printed); 1 = Loki is not on the new limits
+(the old files stay); 2 = a step could not run.
+"""
+import math
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+import urllib.request
+
+CHORUS = os.environ.get("CHORUS_HOME", "/Users/jeffbridwell/CascadeProjects/chorus")
+NEW_CONFIG = os.path.join(CHORUS, "platform/config/loki/loki.yaml")
+CANON_PLIST = os.path.join(CHORUS, "platform/scripts/launchagents-canonical/com.gathering.loki.plist")
+LABEL = "com.gathering.loki"
+LOKI = os.environ.get("LOKI_URL", "http://localhost:3102")
+OBS = os.environ.get("OBS_REPO", "/Users/jeffbridwell/CascadeProjects/shared-observability")
+OLD = ["config/loki/loki-native.yaml", "config/loki/loki-config.yaml"]
+AGENTS = os.environ.get("LAUNCH_AGENTS_DIR", os.path.expanduser("~/Library/LaunchAgents"))
+LAUNCHCTL = os.environ.get("LAUNCHCTL", "launchctl")
+READY_WAIT = int(os.environ.get("LOKI_READY_WAIT", "180"))
+# how long launchd may take to let go of the label after bootout before the land stops
+RELEASE_WAIT = int(os.environ.get("LAUNCHD_RELEASE_WAIT", "30"))
+# the slowest the live replay may take: the 15:32 reads waited up to 119 s in the queue; a read
+# still over a minute after #4983 means the limits did not fix the wait, so the land restores
+SLOWEST_MAX = float(os.environ.get("LOKI_SLOWEST_MAX", "60"))
+REPLAY = os.path.join(CHORUS, "platform/scripts/loki-replay")
+# the account this land runs as (a test sets it to prove the wrong-owner refusal)
+RUN_UID = int(os.environ.get("LAND_AS_UID", os.getuid()))
+
+# the #4983 limits, as /config prints them
+WANT = {
+    "max_outstanding_requests_per_tenant": "1024",
+    "split_queries_by_interval": "2h",
+    "cache_results": "true",
+    "parallelise_shardable_queries": "false",
+}
+
+
+def missing(config_text):
+    """The #4983 values /config does not show; [] when Loki runs with all of them."""
+    out = []
+    for key, val in WANT.items():
+        found = re.findall(r"^\s*%s:\s*(\S+)\s*$" % re.escape(key), config_text, re.M)
+        if val not in found:
+            out.append(f"{key}: want {val}, /config has {', '.join(found) or 'nothing'}")
+    return out
+
+
+def get(path, timeout=5):
+    with urllib.request.urlopen(LOKI + path, timeout=timeout) as r:
+        return r.read().decode()
+
+
+def reload(installed):
+    """Reload the agent from the installed plist; '' on success, else why."""
+    uid = str(RUN_UID)
+    try:
+        subprocess.run([LAUNCHCTL, "bootout", f"gui/{uid}/{LABEL}"], capture_output=True, timeout=60)
+        # bootstrap refuses a label still tearing down: wait until launchd no longer knows it
+        for _ in range(RELEASE_WAIT):
+            if subprocess.run([LAUNCHCTL, "print", f"gui/{uid}/{LABEL}"], capture_output=True, timeout=10).returncode != 0:
+                break
+            time.sleep(1)
+        else:
+            return f"launchd still holds {LABEL} {RELEASE_WAIT} s after bootout; not bootstrapping over it"
+        r = subprocess.run([LAUNCHCTL, "bootstrap", f"gui/{uid}", installed], capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return f"could not reload {LABEL}: {e}"
+    return "" if r.returncode == 0 else f"launchctl bootstrap failed: {r.stderr.strip()}"
+
+
+def load(src, installed):
+    try:
+        shutil.copyfile(src, installed)
+    except OSError as e:
+        return f"could not install {src}: {e}"
+    return reload(installed)
+
+
+def ready():
+    deadline = time.time() + READY_WAIT
+    while True:
+        try:
+            if get("/ready").strip() == "ready":
+                return True
+        except OSError:
+            pass
+        if time.time() > deadline:
+            return False
+        time.sleep(1)
+
+
+def on_new_limits():
+    """'' when Loki answers /ready and /config shows every #4983 value, else why."""
+    if not ready():
+        return f"Loki not ready {READY_WAIT} s after the reload"
+    try:
+        left = missing(get("/config"))
+    except OSError as e:
+        return f"/config unreadable: {e}"
+    if left:
+        return "Loki is not on the #4983 limits: " + "; ".join(left)
+    return live_replay()
+
+
+def live_replay():
+    """'' when the 15:32 reads, replayed once on the live store, all answer in time, else why."""
+    try:
+        r = subprocess.run([sys.executable, REPLAY, "--url", LOKI, "--live", "--timeout", str(max(1, math.ceil(SLOWEST_MAX * 2)))],
+                           capture_output=True, text=True, timeout=SLOWEST_MAX * 3)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return f"the live replay did not run: {e}"
+    got = dict(kv.split("=", 1) for kv in r.stdout.split() if "=" in kv)
+    try:
+        refused, failed, empty, slowest = int(got["refused"]), int(got["failed"]), int(got["empty"]), float(got["slowest"])
+    except (KeyError, ValueError):
+        return f"the live replay printed no verdict: {(r.stdout + r.stderr).strip()[-200:]}"
+    print("live replay: " + r.stdout.strip())
+    # an empty read matched nothing on the live store, so the replay would prove nothing (a hollow pass)
+    if refused or failed or empty or slowest > SLOWEST_MAX:
+        return f"the live replay is not clean ({r.stdout.strip()}; slowest allowed {SLOWEST_MAX:g} s)"
+    return ""
+
+
+def restore(before, installed):
+    """Put back the plist that was installed before, reload it, and say whether Loki answers."""
+    try:
+        with open(installed, "wb") as f:
+            f.write(before)
+    except OSError as e:
+        return f"RESTORE FAILED, could not write the old plist back: {e}"
+    why = reload(installed)
+    if why:
+        return f"RESTORE FAILED: {why}"
+    return "old plist restored, Loki ready" if ready() else "old plist restored, Loki NOT ready"
+
+
+def main(argv):
+    if "--apply" not in argv:
+        print("plan: install the canonical com.gathering.loki plist (config " + NEW_CONFIG + "), reload it, "
+              "check /config for " + ", ".join(f"{k}={v}" for k, v in WANT.items()) +
+              ", then remove " + " and ".join(OLD) + " from " + OBS + " (not run in a dry run)")
+        return 0
+    if not os.path.isfile(NEW_CONFIG):
+        print(f"land-4983-rows: {NEW_CONFIG} is not in the canonical checkout; nothing changed", file=sys.stderr)
+        return 2
+    # the old files go only after the switch, so make sure now that they can go: tracked and clean
+    for rel in OLD:
+        tracked = subprocess.run(["git", "-C", OBS, "ls-files", "--error-unmatch", "--", rel], capture_output=True)
+        clean = subprocess.run(["git", "-C", OBS, "diff", "--quiet", "HEAD", "--", rel], capture_output=True)
+        if os.path.exists(os.path.join(OBS, rel)) and (tracked.returncode or clean.returncode):
+            print(f"land-4983-rows: {OBS}/{rel} is untracked or has uncommitted edits; nothing changed", file=sys.stderr)
+            return 2
+    installed = os.path.join(AGENTS, LABEL + ".plist")
+    try:
+        # the agent belongs to the account whose LaunchAgents holds it; reloading it from any
+        # other account would start a second Loki or none (Wren 18:41)
+        if os.stat(installed).st_uid != RUN_UID:
+            print(f"land-4983-rows: {installed} belongs to uid {os.stat(installed).st_uid}, this land runs as "
+                  f"{RUN_UID}; nothing changed", file=sys.stderr)
+            return 2
+        with open(installed, "rb") as f:
+            before = f.read()
+    except OSError as e:
+        print(f"land-4983-rows: cannot read the installed {LABEL} plist: {e}; nothing changed", file=sys.stderr)
+        return 2
+    why = load(CANON_PLIST, installed) or on_new_limits()
+    if why:
+        print(f"land-4983-rows: {why}; {restore(before, installed)}; the old files stay", file=sys.stderr)
+        return 1
+    print("Loki runs " + NEW_CONFIG + " with " + ", ".join(f"{k}={v}" for k, v in WANT.items()))
+    gone = [p for p in OLD if os.path.exists(os.path.join(OBS, p))]
+    if gone:
+        r = subprocess.run(["git", "-C", OBS, "rm", "-q", "--"] + gone, capture_output=True, text=True)
+        c = subprocess.run(["git", "-C", OBS, "commit", "-q", "-m",
+                            "silas: #4983 Loki's config moved to chorus platform/config/loki/loki.yaml", "--"] + gone,
+                           capture_output=True, text=True)
+        if r.returncode or c.returncode:
+            print(f"land-4983-rows: removing the old files failed: {(r.stderr + c.stderr).strip()}", file=sys.stderr)
+            return 2
+    print("removed from " + OBS + ": " + (", ".join(gone) or "nothing (already gone)"))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

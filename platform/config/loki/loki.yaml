@@ -1,0 +1,115 @@
+# Loki's one config (#4983). Moved here from shared-observability/config/loki/loki-native.yaml,
+# which had no test and no go step; com.gathering.loki reads this file in the canonical checkout,
+# so a change here lands only on Jeff's go. Every #4983 change carries its reason beside it.
+# Cause (#4983 AC1, measured 2026-11-15 15:32): one 24h read fanned out to 784 sub-queries
+# (49 splits x 16 shards) against a queue of 100 drained by 10 workers; while one was queued,
+# every other request was refused 429 "too many outstanding requests".
+auth_enabled: false
+
+server:
+  http_listen_port: 3102  # matches port that all consumers expect
+  grpc_listen_port: 9096
+  log_level: info
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /Users/jeffbridwell/CascadeProjects/shared-observability/data/loki
+  storage:
+    filesystem:
+      chunks_directory: /Users/jeffbridwell/CascadeProjects/shared-observability/data/loki/chunks
+      rules_directory: /Users/jeffbridwell/CascadeProjects/shared-observability/data/loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+query_range:
+  # #4983: the cache below was configured but never used (cache_results defaulted to false), so
+  # the same metric read (Grafana rule evaluations, every minute) was recomputed every time; on
+  # schema v11 the results cache holds metric results, not log lines.
+  cache_results: true
+  # #4983: off. With schema v11 every split was cut into row_shards (16) sub-queries; on one node
+  # the 10 workers cannot run them side by side, so sharding only multiplied the queue (x16).
+  parallelise_shardable_queries: false
+  results_cache:
+    cache:
+      embedded_cache:
+        enabled: true
+        max_size_mb: 100
+
+schema_config:
+  configs:
+    - from: 2020-10-24
+      store: boltdb-shipper
+      object_store: filesystem
+      schema: v11
+      index:
+        prefix: index_
+        period: 24h
+
+storage_config:
+  boltdb_shipper:
+    active_index_directory: /Users/jeffbridwell/CascadeProjects/shared-observability/data/loki/boltdb-shipper-active
+    cache_location: /Users/jeffbridwell/CascadeProjects/shared-observability/data/loki/boltdb-shipper-cache
+    cache_ttl: 24h
+    shared_store: filesystem
+  filesystem:
+    directory: /Users/jeffbridwell/CascadeProjects/shared-observability/data/loki/chunks
+
+compactor:
+  working_directory: /Users/jeffbridwell/CascadeProjects/shared-observability/data/loki/compactor
+  shared_store: filesystem
+  compaction_interval: 1m
+  retention_enabled: true
+  retention_delete_delay: 1m
+  retention_delete_worker_count: 150
+
+ingester:
+  # Per-stream "too far behind" window. Default 2h rejects backfill of
+  # historical chorus.log content (Mar 29 entries arriving after today's
+  # entries already established the stream's "latest"). Widened 2026-05-04
+  # for one-time backfill ingest of dead Library log; safe to leave wide
+  # since reject_old_samples_max_age is the outer bound.
+  max_chunk_age: 8784h
+
+limits_config:
+  reject_old_samples: true
+  # 365-day retention — bumped from 2160h/90d (2026-05-04, silas). Backfilling
+  # 36-day-old chorus-events from ~/Library/Logs/Chorus/chorus.log; reject window
+  # had to widen to accept Mar 29 entries. Volume ~60MB/day → ~22GB at 365d.
+  reject_old_samples_max_age: 8760h
+  retention_period: 8760h
+  unordered_writes: true
+  ingestion_rate_mb: 64
+  ingestion_burst_size_mb: 128
+  per_stream_rate_limit: 32MB
+  per_stream_rate_limit_burst: 64MB
+  max_query_series: 5000
+  max_query_parallelism: 32
+  # #4983: 30m (the default) cut a 24h read into 49 splits; 2h makes it 12, each one worker's job.
+  split_queries_by_interval: 2h
+
+chunk_store_config:
+  max_look_back_period: 0s
+
+table_manager:
+  retention_deletes_enabled: true
+  retention_period: 8760h
+
+ruler:
+  storage:
+    type: local
+    local:
+      directory: /Users/jeffbridwell/CascadeProjects/shared-observability/data/loki/rules
+  rule_path: /Users/jeffbridwell/CascadeProjects/shared-observability/data/loki/rules-temp
+  alertmanager_url: ""
+  ring:
+    kvstore:
+      store: inmemory
+  enable_api: true
+
+# #4983: the queue each tenant may hold before Loki refuses with 429. 100 (the default) is less
+# than one 24h read used to fan out to; 1024 holds a burst of long reads plus every rule and
+# probe read, now that a 24h read is about 12 sub-queries.
+query_scheduler:
+  max_outstanding_requests_per_tenant: 1024

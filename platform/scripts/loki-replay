@@ -1,0 +1,76 @@
+#!/usr/bin/env python3
+"""#4983: replay the 2026-11-15 15:32 read load against one Loki and count what it refuses.
+# @domain: logs
+
+  loki-replay --url http://127.0.0.1:<port> [--end <unix s>] [--live]
+Sends at once (threads): 17 reads over 24h (the spine card-events read that queued at 15:32),
+one three-day read (the 12:32 read), and 10 instant metric reads (Grafana rule evaluations and
+borg-prove). Prints `refused=<n> failed=<n> answered=<n> empty=<n> slowest=<s>` and exits 0; it
+judges nothing. A 429 is a refusal; any other non-200 or a timeout is a failure; a 200 whose
+result is empty is `empty` (the read matched nothing, so it put no load on the store).
+--live sends the real reads of 15:32 (the spine-log card-event read over 24h, a 72h
+platform-chorus read, the instant rule read) instead of the scratch job="replay" ones.
+"""
+import argparse
+import concurrent.futures
+import json
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+
+READ_24H = '{job="replay"} |= "card."'
+READ_3D = '{job="replay"} |= "event"'
+INSTANT = 'sum(count_over_time({job="replay"} |= "card." [5m]))'
+# the reads that queued at 15:32 (Loki's own frontend lines): the spine card-event read on the
+# spine log file, and the platform-chorus reads
+# matched by its path tail: the stream's label is the jeffbridwell path, whoever runs the replay
+LIVE = (
+    '{filename=~".+/[.]chorus/chorus[.]log"} |= `"event":"card.`',
+    '{job="platform-chorus"} |= `"event"`',
+    # any event, not card events: a quiet five minutes with no card event is normal (Wren 20:08)
+    'sum(count_over_time({job="platform-chorus"} |= `"event"` [5m]))',
+)
+
+
+def one(url, path, params, timeout):
+    t0 = time.time()
+    try:
+        with urllib.request.urlopen(f"{url}{path}?{urllib.parse.urlencode(params)}", timeout=timeout) as r:
+            body = json.loads(r.read())
+            # a read that matched nothing proves nothing about load: count it as empty
+            if not body.get("data", {}).get("result"):
+                return ("empty", time.time() - t0)
+            return ("answered", time.time() - t0)
+    except urllib.error.HTTPError as e:
+        return ("refused" if e.code == 429 else "failed", time.time() - t0)
+    except Exception:  # noqa: BLE001 — any error reading one answer fails that read, never the replay
+        return ("failed", time.time() - t0)
+
+
+def main(argv):
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--url", required=True)
+    ap.add_argument("--end", type=int, default=int(time.time()))
+    ap.add_argument("--timeout", type=int, default=180)
+    ap.add_argument("--live", action="store_true")
+    a = ap.parse_args(argv)
+    r24, r3d, inst = LIVE if a.live else (READ_24H, READ_3D, INSTANT)
+    end = a.end * 10**9
+    jobs = []
+    for _ in range(17):
+        jobs.append(("/loki/api/v1/query_range", {"query": r24, "start": end - 24 * 3600 * 10**9, "end": end, "limit": 5000}))
+    jobs.append(("/loki/api/v1/query_range", {"query": r3d, "start": end - 72 * 3600 * 10**9, "end": end, "limit": 5000}))
+    for _ in range(10):
+        jobs.append(("/loki/api/v1/query", {"query": inst, "time": end}))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(jobs)) as ex:
+        results = list(ex.map(lambda j: one(a.url, j[0], j[1], a.timeout), jobs))
+    count = {k: sum(1 for r, _ in results if r == k) for k in ("refused", "failed", "answered", "empty")}
+    slowest = max(t for _, t in results)
+    print(f"refused={count['refused']} failed={count['failed']} answered={count['answered']} empty={count['empty']} slowest={slowest:.1f}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
