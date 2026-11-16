@@ -88,3 +88,13 @@ setup() {
   printf '%s\n' "            person_session.close_session(old, now, _http, ATHENA_URL, _refresh, _log)" > "$BATS_TEST_TMPDIR/old.py"
   grep -q 'person_session.close_session(old, now, _http, ATHENA_URL, _refresh, _log)' "$BATS_TEST_TMPDIR/old.py" || return 1
 }
+
+@test "NEGATIVE PROOF: a route that ignores the landing and always shows the sign-in page fails" {
+  work="$BATS_TEST_TMPDIR/scripts"
+  mkdir -p "$work" && cp -R "$ROOT/platform/scripts/lib" "$work/lib"
+  sed 's/            target = signed_in_landing(state, nxt)/            target = None/' "$GUARD" > "$work/chorus-share-guard.py"
+  if cmp -s "$GUARD" "$work/chorus-share-guard.py"; then echo "mutation did not apply"; return 1; fi
+  run python3 "$FIX" "$work/chorus-share-guard.py"
+  [ "$status" -ne 0 ]
+  printf '%s\n' "$output" | grep -q '^FAIL the route sends a good session on' || return 1
+}

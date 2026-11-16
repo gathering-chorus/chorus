@@ -205,6 +205,79 @@ describe('#4866 AC4: upload auth error guidance', () => {
       }
     });
 
+    // Round 3 (gate-code, run 2)
+    test('a lapse empties every part of the page that shows the room, closes the drawers, and empties a non-room page', () => {
+      const { els, doc } = page();
+      for (const id of app.ROOM_CONTENT_IDS) els[id] = el(id, `<b>${id} content</b>`);
+      for (const id of app.ROOM_DRAWER_IDS) { els[id] = el(id, 'open'); els[id].style.display = 'block'; }
+      const other = el('', '<h1>Today</h1> the whole board');
+      const chat = el('', 'the room shell');
+      (doc as any).querySelector = (q: string) => (q === 'main:not(.chat)' ? other : q === 'main.chat' ? chat : null);
+      app.enterSignedOutState(REFUSAL, doc);
+      for (const id of app.ROOM_CONTENT_IDS) expect([id, els[id].innerHTML]).toEqual([id, '']);
+      for (const id of app.ROOM_DRAWER_IDS) expect([id, els[id].style.display]).toEqual([id, 'none']);
+      expect(other.innerHTML).toBe('');
+      // the room's own main holds the notice: it is never emptied
+      expect(chat.innerHTML).toBe('the room shell');
+      expect(app.ROOM_CONTENT_IDS).toEqual(expect.arrayContaining(['messages-stream', 'rooms-people-row', 'tiles-container', 'trust-dots']));
+      expect(app.ROOM_CONTENT_IDS).not.toContain('send-error');
+    });
+
+    test('once signed out, no later status line writes over the notice, and it keeps its sign-in link', () => {
+      const { els, doc } = page();
+      app.enterSignedOutState(REFUSAL, doc);
+      app.showStatus(els['send-error'], 'Uploading…');
+      app.showStatus(els['send-error'], '');
+      expect(els['send-error'].textContent).toMatch(/signed out/i);
+      expect(els['send-error'].style.display).toBe('block');
+      app.refuseWhenSignedOut('attach', doc);
+      expect(els['send-error'].textContent).toMatch(/cannot attach/i);
+      expect(els['send-error'].children[els['send-error'].children.length - 1].href).toBe(SIGN_IN);
+    });
+
+    // NEGATIVE PROOF: signed in, a status line is written and cleared as before
+    test('signed in, a status line shows and hides', () => {
+      const { els } = page();
+      app.showStatus(els['send-error'], 'Uploading…');
+      expect([els['send-error'].textContent, els['send-error'].style.display]).toEqual(['Uploading…', 'block']);
+      app.showStatus(els['send-error'], '');
+      expect(els['send-error'].style.display).toBe('none');
+    });
+
+    describe('through the buttons themselves', () => {
+      const g = global as any;
+      const saved = { document: g.document, navigator: g.navigator };
+      afterEach(() => { g.document = saved.document; g.navigator = saved.navigator; });
+      function wired() {
+        const { els, doc } = page();
+        const handlers: Record<string, (e: any) => any> = {};
+        const listen = (name: string) => ({ addEventListener: (ev: string, fn: (e: any) => any) => { handlers[`${name}:${ev}`] = fn; } });
+        let pickerClicks = 0; let micAsks = 0;
+        const picker: any = { ...listen('picker'), dataset: {}, click: () => { pickerClicks += 1; } };
+        const label: any = listen('label');
+        const mic: any = { ...listen('mic'), dataset: {}, classList: { add() {}, remove() {} }, setAttribute() {} };
+        g.document = { ...doc, getElementById: (id: string) => ({ 'composer-file': picker, 'composer-mic': mic } as any)[id] || els[id] || null, querySelector: (q: string) => (q === '.composer-file' ? label : null) };
+        g.navigator = { mediaDevices: { getUserMedia: async () => { micAsks += 1; throw new Error('refused in test'); } } };
+        app.watchFileButton(); app.watchMicButton();
+        return { els, handlers, picked: () => pickerClicks, asked: () => micAsks };
+      }
+      test('signed out: the attach click is stopped before the picker opens, and the mic click before the microphone is asked', async () => {
+        const w = wired();
+        app.enterSignedOutState(REFUSAL, g.document);
+        let prevented = 0;
+        w.handlers['label:click']({ target: {}, preventDefault: () => { prevented += 1; } });
+        await w.handlers['mic:click']({});
+        expect([prevented, w.picked(), w.asked()]).toEqual([1, 0, 0]);
+        expect(w.els['send-error'].textContent).toMatch(/cannot record/i);
+      });
+      // NEGATIVE PROOF: signed in, the same clicks open the picker and reach for the microphone
+      test('signed in: the attach click opens the picker', () => {
+        const w = wired();
+        w.handlers['label:click']({ target: {}, preventDefault: () => {} });
+        expect(w.picked()).toBe(1);
+      });
+    });
+
     // NEGATIVE PROOF: signed in, attach and record are not refused and no notice appears
     test('signed in, attach and record go ahead', () => {
       const { els, doc } = page();

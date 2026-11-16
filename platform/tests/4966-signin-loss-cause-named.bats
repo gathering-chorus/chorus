@@ -48,6 +48,8 @@ print(json.dumps(d))')"
 @test "the case the logs cannot name is recorded from now on: every refused request logs why and the browser" {
   grep -q 'gate.refused' "$GATE"
   grep -q 'why=\${why}' "$GATE"
+  # and which request and which browser: the line carries the method, the path and the user agent
+  grep -q 'why=\${why} \${method} \${path} ua="' "$GATE"
   # the server tells the gate why: no cookie, or the cookie verdict'"'"'s own reason
   grep -q "if (!raw) return 'no-cookie';" "$SERVER"
   grep -q 'return v.ok ? .unknown. : v.reason;' "$SERVER"
@@ -59,4 +61,14 @@ print(json.dumps(d))')"
   if cmp -s "$GATE" "$work"; then echo "mutation did not apply"; return 1; fi
   run grep -q 'why=\${why}' "$work"
   [ "$status" -ne 0 ]
+}
+
+@test "NEGATIVE PROOF: a gate line with no path or no browser fails" {
+  for drop in ' \${method} \${path}' ' ua="\${ua.replace(\/"\/g, "'"'"'").slice(0, 120)}"'; do
+    work="$BATS_TEST_TMPDIR/share-session.ts"
+    sed "s/$drop//" "$GATE" > "$work"
+    if cmp -s "$GATE" "$work"; then echo "mutation did not apply: $drop"; return 1; fi
+    run grep -q 'why=\${why} \${method} \${path} ua="' "$work"
+    [ "$status" -ne 0 ] || return 1
+  done
 }

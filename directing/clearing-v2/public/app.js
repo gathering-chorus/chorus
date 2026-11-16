@@ -1338,40 +1338,69 @@ async function handleSendMessage(text, options = {}) {
 let signedOut = false;
 let activeEventSource = null;
 function isSignedOut() { return signedOut; }
-function resetSignedOutState() { signedOut = false; activeEventSource = null; }
+function resetSignedOutState() { signedOut = false; activeEventSource = null; signedOutJson = null; }
 function setActiveEventSource(es) { activeEventSource = es; }
 
-/** Show a status line, or hide it when it is empty. style.css hides #send-error by default. */
+/** Show a status line, or hide it when it is empty. style.css hides #send-error by default.
+ *  Once signed out, the signed-out notice owns that line: nothing else writes over it. */
 function showStatus(el, text, html) {
-  if (!el) return;
+  if (!el || signedOut) return;
   if (html && el.innerHTML !== undefined) el.innerHTML = html;
   else el.textContent = text || '';
   if (el.style) el.style.display = (text || html) ? 'block' : 'none';
+}
+
+/** Everything on the page that shows the room. Emptied when the sign-in has gone. */
+const ROOM_CONTENT_IDS = [
+  'messages-stream', 'rooms-people-row', 'tiles-container', 'team-nudges', 'streams-page', 'history-status',
+  'trust-dots', 'stream-drawer-title', 'stream-drawer-status', 'stream-drawer-cards', 'stream-drawer-actions',
+  'drawer-card-title', 'drawer-card-meta', 'drawer-card-domains', 'drawer-card-dates', 'drawer-card-desc',
+  'drawer-card-cws', 'drawer-card-cws-motion', 'drawer-card-comments', 'drawer-card-ac',
+];
+/** Drawers that may be open over the page: emptied above, and closed. */
+const ROOM_DRAWER_IDS = ['stream-drawer', 'card-drawer'];
+let signedOutJson = null;
+
+/** The one line that says the page is signed out, with the sign-in link; `lead` names what was just refused. */
+function renderSignedOutNotice(d, lead) {
+  const status = d ? d.getElementById('send-error') : null;
+  if (!status) return;
+  status.innerHTML = '';
+  status.textContent = (lead ? lead + ' ' : '') + 'Signed out. Nothing is shown until you sign in. ';
+  const url = signedOutJson && signedOutJson.signInUrl;
+  if (url && d.createElement) {
+    const a = d.createElement('a');
+    a.href = url;
+    a.textContent = 'Sign in';
+    status.appendChild(a);
+  }
+  if (status.style) status.style.display = 'block';
 }
 
 /** The page is signed out: nothing of the room stays readable, and the notice says so. */
 function enterSignedOutState(json, doc) {
   const d = doc || (typeof document !== 'undefined' ? document : null);
   signedOut = true;
+  signedOutJson = json || null;
   if (activeEventSource && activeEventSource.close) { activeEventSource.close(); activeEventSource = null; }
   if (!d) return;
-  const stream = d.getElementById('messages-stream');
-  if (stream) stream.innerHTML = '';
+  for (const id of ROOM_CONTENT_IDS) {
+    const el = d.getElementById(id);
+    if (el) el.innerHTML = '';
+  }
+  for (const id of ROOM_DRAWER_IDS) {
+    const el = d.getElementById(id);
+    if (el && el.style) el.style.display = 'none';
+  }
+  // Pages other than a room (today, board, roles, counts, sync, streams) hold everything in a
+  // <main> that is not .chat. A room's main.chat is NOT emptied: the notice lives inside it
+  // (Abby, views.ts: #send-error sits in main.chat's footer).
+  const page = d.querySelector ? d.querySelector('main:not(.chat)') : null;
+  if (page) page.innerHTML = '';
+  if (typeof window !== 'undefined') window.PULSE_ACTORS = [];
   const indicator = d.getElementById('relay-indicator');
   if (indicator) { indicator.textContent = 'Signed out'; indicator.className = 'relay-status'; }
-  const status = d.getElementById('send-error');
-  if (status) {
-    status.innerHTML = '';
-    status.textContent = 'Signed out. Nothing is shown until you sign in. ';
-    const url = json && json.signInUrl;
-    if (url && d.createElement) {
-      const a = d.createElement('a');
-      a.href = url;
-      a.textContent = 'Sign in';
-      status.appendChild(a);
-    }
-    if (status.style) status.style.display = 'block';
-  }
+  renderSignedOutNotice(d, '');
 }
 
 /** Ask of any response: was this the sign-in refusal? If so the page enters the signed-out state. */
@@ -1389,8 +1418,8 @@ async function checkSignedOut(res, doc) {
 function refuseWhenSignedOut(what, doc) {
   if (!signedOut) return false;
   const d = doc || (typeof document !== 'undefined' ? document : null);
-  const status = d ? d.getElementById('send-error') : null;
-  showStatus(status, `Signed out: cannot ${what} until you sign in.`);
+  // the notice keeps its sign-in link; it now also says what was just refused
+  renderSignedOutNotice(d, `Cannot ${what}.`);
   return true;
 }
 
@@ -1493,7 +1522,7 @@ if (typeof window !== 'undefined') {
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
-    isSignedOut, resetSignedOutState, setActiveEventSource, showStatus, enterSignedOutState, checkSignedOut, refuseWhenSignedOut, probeSignIn,
+    isSignedOut, resetSignedOutState, setActiveEventSource, showStatus, enterSignedOutState, checkSignedOut, refuseWhenSignedOut, probeSignIn, ROOM_CONTENT_IDS, ROOM_DRAWER_IDS,
     formatAuthor,
     formatMessageTime,
     appendMessage,

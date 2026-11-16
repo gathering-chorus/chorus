@@ -178,13 +178,17 @@ export interface GateRequest {
   signInUrl: string | undefined;
   /** true when this server cannot read the key sign-ins are signed with */
   keyUnreadable?: boolean;
+  /** true when the request carries a sign-in cookie at all (valid or not) */
+  cookiePresent?: boolean;
+  /** true when this server sent this browser to sign in moments ago (the bounce marker) */
+  bounced?: boolean;
 }
 
 export type GateDecision =
   | { allow: true }
   | { allow: false; kind: 'redirect'; location: string }
   | { allow: false; kind: 'refuse'; status: 401; body: { ok: false; error: 'not-signed-in'; detail: string; signInUrl?: string } }
-  | { allow: false; kind: 'refuse'; status: 503; body: { ok: false; error: 'sign-in-unreadable'; detail: string } };
+  | { allow: false; kind: 'refuse'; status: 503; body: { ok: false; error: 'sign-in-unreadable' | 'sign-in-not-accepted'; detail: string } };
 
 /** Cloudflare sets these on every request it forwards; the tunnel itself connects from 127.0.0.1. */
 export function isTunneled(headers: Record<string, unknown>): boolean {
@@ -217,6 +221,18 @@ export function gateDecision(r: GateRequest): GateDecision {
       body: { ok: false, error: 'sign-in-unreadable', detail: 'This server cannot read the sign-in key, so it cannot tell who is signed in. Nothing is shown until it can.' },
     };
   }
+  // The guard sends a session IT accepts straight back here. If this server still refuses that
+  // cookie (any disagreement between the two: a different key, a different clock), a second
+  // redirect would start a loop. A browser we sent to sign in moments ago that returns with a
+  // cookie we still refuse is told so, and is not redirected again.
+  if (r.bounced && r.cookiePresent && isPage(r.method, r.path)) {
+    return {
+      allow: false,
+      kind: 'refuse',
+      status: 503,
+      body: { ok: false, error: 'sign-in-not-accepted', detail: 'You signed in, and this server does not accept that sign-in. It is a fault here, not something to retry.' },
+    };
+  }
   if (isPage(r.method, r.path) && r.signInUrl) return { allow: false, kind: 'redirect', location: r.signInUrl };
   return {
     allow: false,
@@ -233,6 +249,27 @@ export function refusalLine(status: number, method: string, path: string, why: s
   return `[clearing-v2] gate.refused ${now.toISOString()} status=${status} why=${why} ${method} ${path} ua="${ua.replace(/"/g, "'").slice(0, 120)}"`;
 }
 
+/** The marker this server sets when it sends a browser to sign in; it lasts half a minute. */
+export const BOUNCE_COOKIE = 'cv2_signin_bounce';
+const BOUNCE_SET = `${BOUNCE_COOKIE}=1; Path=/; Max-Age=30; HttpOnly; SameSite=Lax`;
+const BOUNCE_CLEAR = `${BOUNCE_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax`;
+
+/** At most `max` refusal lines a minute reach the log; the rest are counted and said once. This
+ *  endpoint is public: anyone can ask it, and a log line each time would flood the service log. */
+export function refusalLogLimiter(max: number, log: (line: string) => void, now: () => number = Date.now) {
+  let windowStart = 0;
+  let written = 0;
+  let dropped = 0;
+  return (line: string): void => {
+    const t = now();
+    if (t - windowStart >= 60_000) {
+      if (dropped > 0) log(`[clearing-v2] gate.refused.suppressed count=${dropped} (over ${max} a minute)`);
+      windowStart = t; written = 0; dropped = 0;
+    }
+    if (written < max) { written += 1; log(line); } else { dropped += 1; }
+  };
+}
+
 /** The gate as one middleware, in front of every page and API route. */
 export function sessionGate(
   principalOf: (req: Request) => { id: string; name: string; webid: string } | null,
@@ -242,7 +279,9 @@ export function sessionGate(
   whyNot: (req: Request) => string = () => 'unknown',
   log: (line: string) => void = (line) => console.log(line),
 ) {
+  const limited = refusalLogLimiter(60, log);
   return (req: Request, res: Response, next: NextFunction): void => {
+    const cookies = String(req.headers.cookie || '');
     const d = gateDecision({
       headers: req.headers as Record<string, unknown>,
       ip: req.socket.remoteAddress || '',
@@ -251,8 +290,12 @@ export function sessionGate(
       principal: principalOf(req),
       signInUrl,
       keyUnreadable: keyUnreadable(),
+      cookiePresent: shareSessionFromHeader(cookies) !== undefined,
+      bounced: cookies.split(';').some((c) => c.trim() === `${BOUNCE_COOKIE}=1`),
     });
+    const bounced = cookies.split(';').some((c) => c.trim() === `${BOUNCE_COOKIE}=1`);
     if (d.allow) {
+      if (bounced) res.append('Set-Cookie', BOUNCE_CLEAR);
       // a signed-in room must never be kept by the browser or the edge and shown after the sign-in is gone
       if (isTunneled(req.headers as Record<string, unknown>)) res.setHeader('Cache-Control', 'no-store');
       next();
@@ -260,10 +303,12 @@ export function sessionGate(
     }
     // AC1's unnamed case (2026-11-15): the phone arrived with no sign-in 36 minutes after one, and
     // nothing recorded whether it sent no cookie or a cookie this server refused. Now it is recorded.
-    log(refusalLine(d.kind === 'redirect' ? 302 : d.status, req.method, req.path, whyNot(req), String(req.headers['user-agent'] || '')));
+    limited(refusalLine(d.kind === 'redirect' ? 302 : d.status, req.method, req.path, whyNot(req), String(req.headers['user-agent'] || '')));
     // never let a browser or the edge keep a copy of a refusal, or of the room, across a sign-in change
     res.setHeader('Cache-Control', 'no-store');
-    if (d.kind === 'redirect') { res.redirect(302, d.location); return; }
+    if (d.kind === 'redirect') { res.append('Set-Cookie', BOUNCE_SET); res.redirect(302, d.location); return; }
+    // the marker is spent: the next visit is sent to sign in afresh, it is not refused again
+    if (bounced) res.append('Set-Cookie', BOUNCE_CLEAR);
     res.status(d.status).json(d.body);
   };
 }

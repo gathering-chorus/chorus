@@ -77,4 +77,27 @@ case("no refused form puts a control character in the target",
 for nxt in ("/athena/model.html", "/clearing-v2/?room=team&x=1", "/a%20b", ROOM):
     case(f"an ordinary target passes unchanged: {nxt}", safe(nxt), nxt)
 
+# The /_auth/ route itself (gate-quality, run 2: testing only signed_in_landing lets a route that
+# ignores its answer survive). The real handler, with only its session read and its outputs stubbed.
+import urllib.parse as _up
+
+
+def at_auth(state, nxt):
+    h = object.__new__(g["Guard"])
+    h.path = g["AUTH_PREFIX"] + "?next=" + _up.quote(nxt, safe="")
+    out = {}
+    h._session_claims = lambda: {}
+    h._renewal = lambda claims: (state, "renewed=1" if state == "ok" else None)
+    h._redirect = lambda location, cookie=None: out.update(redirect=location, cookie=cookie)
+    h._sign_in_page = lambda n: out.update(page=n) or True
+    h._auth_routes()
+    return out
+
+
+case("the route sends a good session on, with its renewed cookie", at_auth("ok", ROOM), {"redirect": ROOM, "cookie": "renewed=1"})
+case("the route never sends a good session to a line-break target", at_auth("ok", CRLF), {"redirect": HOME, "cookie": "renewed=1"})
+# NEGATIVE PROOF: with no session, or one that has run out, the route shows the sign-in page and redirects nowhere
+for st in ("none", "expired"):
+    case(f"the route shows the sign-in page to a {st} session", at_auth(st, ROOM), {"page": ROOM})
+
 sys.exit(1 if FAILS else 0)

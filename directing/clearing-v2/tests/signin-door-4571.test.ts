@@ -157,6 +157,30 @@ test('negative proof: with no door configured the refusal still names why, and i
     });
   });
 
+  describe('#4966 the refusal log is bounded: this endpoint is public', () => {
+    const { refusalLogLimiter } = require('../src/share-session');
+    test('at most the cap reaches the log in a minute; the rest are counted and said once in the next', () => {
+      const lines: string[] = [];
+      let t = 1_000_000;
+      const limited = refusalLogLimiter(3, (l: string) => lines.push(l), () => t);
+      for (let i = 0; i < 10; i++) limited(`line ${i}`);
+      expect(lines).toEqual(['line 0', 'line 1', 'line 2']);
+      t += 60_000;
+      limited('next minute');
+      expect(lines).toHaveLength(5);
+      expect(lines[3]).toMatch(/gate\.refused\.suppressed count=7/);
+      expect(lines[4]).toBe('next minute');
+    });
+    // NEGATIVE PROOF: under the cap nothing is dropped and nothing is said about dropping
+    test('under the cap every line is written', () => {
+      const lines: string[] = [];
+      let t = 5;
+      const limited = refusalLogLimiter(3, (l: string) => lines.push(l), () => t);
+      limited('a'); limited('b'); t += 60_000; limited('c');
+      expect(lines).toEqual(['a', 'b', 'c']);
+    });
+  });
+
   // The decision is only worth something if the real app asks it on every route.
   describe('#4966 the real app asks the gate on every route', () => {
     const KEY = Buffer.from('test-secret-cookie-key-for-session-32b');
@@ -193,6 +217,37 @@ test('negative proof: with no door configured the refusal still names why, and i
         const res = await fetch(`${s.base}${path}`, { headers: CF });
         expect(res.status).toBe(401);
         expect(await res.json()).toMatchObject({ ok: false, error: 'not-signed-in', signInUrl: SIGN_IN });
+      } finally { await s.close(); }
+    });
+
+    // Round 3 (gate-code, run 2): the guard sends a session IT accepts straight back here. If this
+    // server still refuses that cookie, a second redirect is a loop.
+    test('sent to sign in, back within moments with a cookie this server still refuses: told so, never redirected again', async () => {
+      const s = await up();
+      try {
+        const first = await fetch(`${s.base}/`, { headers: { ...CF, cookie: cookieFor(-60) }, redirect: 'manual' });
+        expect(first.status).toBe(302);
+        const marker = String(first.headers.get('set-cookie')).split(';')[0];
+        expect(marker).toBe('cv2_signin_bounce=1');
+        const second = await fetch(`${s.base}/`, { headers: { ...CF, cookie: `${cookieFor(-60)}; ${marker}` }, redirect: 'manual' });
+        expect(second.status).toBe(503);
+        expect(await second.json()).toMatchObject({ ok: false, error: 'sign-in-not-accepted' });
+        expect(second.headers.get('location')).toBeNull();
+        // the marker is spent, so the next visit is sent to sign in afresh
+        expect(String(second.headers.get('set-cookie'))).toMatch(/cv2_signin_bounce=;.*Max-Age=0/);
+      } finally { await s.close(); }
+    });
+
+    // NEGATIVE PROOF: the marker alone refuses nobody
+    test('the marker with a good sign-in is let in; the marker with no cookie is sent to sign in; an API call still gets 401', async () => {
+      const s = await up();
+      try {
+        const good = await fetch(`${s.base}/`, { headers: { ...CF, cookie: `${cookieFor(600)}; cv2_signin_bounce=1` }, redirect: 'manual' });
+        expect(good.status).toBe(200);
+        const none = await fetch(`${s.base}/`, { headers: { ...CF, cookie: 'cv2_signin_bounce=1' }, redirect: 'manual' });
+        expect(none.status).toBe(302);
+        const api = await fetch(`${s.base}/api/messages`, { headers: { ...CF, cookie: `${cookieFor(-60)}; cv2_signin_bounce=1` } });
+        expect(api.status).toBe(401);
       } finally { await s.close(); }
     });
 
