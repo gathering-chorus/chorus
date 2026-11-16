@@ -244,12 +244,13 @@ test('negative proof: with no door configured the refusal still names why, and i
       } finally { await s.close(); }
     });
 
-    test('the loop breaker counts only a signature or a malformed cookie as a disagreement', () => {
+    test('the loop breaker counts a bad signature, a malformed cookie or an unmapped person as a disagreement', () => {
       const { gateDecision } = require('../src/share-session');
       const at = (cookieReason: string | undefined) => gateDecision({ headers: TUNNELED, ip: '127.0.0.1', method: 'GET', path: '/', principal: null, signInUrl: SIGN_IN, bounced: true, cookieReason });
-      expect(['bad-signature', 'malformed'].map((r) => at(r).kind)).toEqual(['refuse', 'refuse']);
-      // NEGATIVE PROOF: no cookie, expired, unknown, or no reason given: sent to sign in, never refused
-      expect(['no-cookie', 'expired', 'unknown', undefined].map((r) => at(r).kind)).toEqual(['redirect', 'redirect', 'redirect', 'redirect']);
+      expect(['bad-signature', 'malformed', 'unknown'].map((r) => at(r).kind)).toEqual(['refuse', 'refuse', 'refuse']);
+      expect(at('unknown')).toMatchObject({ body: { detail: expect.stringMatching(/does not know who/) } });
+      // NEGATIVE PROOF: no cookie, expired, or no reason given: sent to sign in, never refused
+      expect(['no-cookie', 'expired', undefined].map((r) => at(r).kind)).toEqual(['redirect', 'redirect', 'redirect']);
     });
 
     // NEGATIVE PROOF: the marker alone refuses nobody

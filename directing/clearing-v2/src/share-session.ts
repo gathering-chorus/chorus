@@ -228,15 +228,21 @@ export function gateDecision(r: GateRequest): GateDecision {
   // Only a cookie this server refuses for a reason the guard would not share is a disagreement:
   // an expired cookie the guard refuses too, so a quick repeat visit with one is sent to sign in
   // again, never told "not accepted" (Abby, run 4).
-  // Named, not excluded: only a signature or a cookie this server cannot read. 'unknown' (a sign-in for
-  // someone this server does not map) and a missing reason are not a disagreement (gate-code, run 5).
-  const disagree = r.cookieReason === 'bad-signature' || r.cookieReason === 'malformed';
+  // Named, not excluded: the guard accepts these cookies and this server never will, so a second
+  // redirect is the loop. 'unknown' is a sign-in for someone this server does not map to a person.
+  const disagree = r.cookieReason === 'bad-signature' || r.cookieReason === 'malformed' || r.cookieReason === 'unknown';
   if (r.bounced && disagree && isPage(r.method, r.path)) {
     return {
       allow: false,
       kind: 'refuse',
       status: 503,
-      body: { ok: false, error: 'sign-in-not-accepted', detail: 'This page was sent to sign in moments ago and came back with a sign-in it cannot use. Wait half a minute and open it again; if this repeats right after signing in, the fault is here.' },
+      body: {
+        ok: false,
+        error: 'sign-in-not-accepted',
+        detail: r.cookieReason === 'unknown'
+          ? 'You are signed in, but this room does not know who that sign-in belongs to. Retrying will not change it; the fault is here.'
+          : 'You signed in and came back with a sign-in this room cannot read. Retrying will not change it; the fault is here.',
+      },
     };
   }
   if (isPage(r.method, r.path) && r.signInUrl) return { allow: false, kind: 'redirect', location: r.signInUrl };
