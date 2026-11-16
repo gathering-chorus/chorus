@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- #4984 the current Clearing (v1) at :3470, from one tracked launcher. It replaces the
+     untracked ~/.chorus/bin/clearing-launch.sh (08-11), which the land retires. That wrapper
+     read the room secret from the 600 file and exported BUZZ_ROOM_ENABLED=1 (Silas 08-11/08-16);
+     platform/scripts/clearing-room-env does the same and passes the relay's Host through
+     untouched (#4445 reopen 1). Since the relay's 10-25 cutover it answers only to its public
+     name: BUZZ_RELAY_HOST_HEADER is that name, and BUZZ_AUTH_RELAY_URL is the public address the
+     room's sign-in must name. The bridge room got 404 at the dial every 5 s from 10-25 22:01
+     to 11-16. No credential here; service-run makes start, stop and failure spine events (#4446). -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.chorus.clearing</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/service-run</string>
+    <string>com.chorus.clearing</string>
+    <string>daemon</string>
+    <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/clearing-room-env</string>
+    <string>/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin/node</string>
+    <string>/Users/jeffbridwell/CascadeProjects/chorus/directing/clearing/dist/server.js</string>
+  </array>
+  <key>WorkingDirectory</key><string>/Users/jeffbridwell/.chorus</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>CHORUS_ROOT</key><string>/Users/jeffbridwell/CascadeProjects/chorus</string>
+    <key>CSS_ISSUER</key><string>https://id.lightlifeurbangardens.com</string>
+    <key>CHORUS_SIGNIN_URL</key><string>https://chorus.lightlifeurbangardens.com/_auth/</string>
+    <key>CHORUS_CLEARING_REQUIRE_DPOP</key><string>1</string>
+    <key>PATH</key><string>/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+    <key>BUZZ_RELAY_URL</key><string>ws://127.0.0.1:13000</string>
+    <key>BUZZ_RELAY_HOST_HEADER</key><string>buzz.lightlifeurbangardens.com</string>
+    <key>BUZZ_AUTH_RELAY_URL</key><string>wss://buzz.lightlifeurbangardens.com</string>
+  </dict>
+  <key>KeepAlive</key><true/>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>/Users/jeffbridwell/Library/Logs/Chorus/chorus-bridge.log</string>
+  <key>StandardErrorPath</key><string>/Users/jeffbridwell/Library/Logs/Chorus/chorus-bridge.log</string>
+</dict>
+</plist>

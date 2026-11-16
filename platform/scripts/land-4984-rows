@@ -1,0 +1,179 @@
+#!/usr/bin/env python3
+"""#4984: after the land, start the current Clearing (v1, com.chorus.clearing) from the tracked
+launcher, prove its Buzz room reaches the relay, and only then retire the untracked
+~/.chorus/bin/clearing-launch.sh (08-11).
+# @domain: services
+
+Order (the #4983 shape), so a failure before the proof leaves the Clearing on the old launcher:
+  1. the canonical plist and platform/scripts/clearing-room-env are in the canonical checkout
+  2. install the canonical com.chorus.clearing plist and reload the agent (launchctl)
+  3. :3470 answers /health, and the bridge log in Loki shows the room connected and signed in
+     after the reload, with no 404 at the dial
+  On any failure after step 2 the plist installed before is put back and reloaded.
+  4. only then: remove ~/.chorus/bin/clearing-launch.sh (never read; it is replaced, not edited)
+DRY RUN unless --apply. Exit 0 = done (or the plan printed); 1 = the room did not reach the relay
+(the old launcher stays); 2 = a step could not run.
+"""
+import json
+import os
+import shutil
+import subprocess
+import sys
+import time
+import urllib.parse
+import urllib.request
+
+CHORUS = os.environ.get("CHORUS_HOME", "/Users/jeffbridwell/CascadeProjects/chorus")
+CANON_PLIST = os.path.join(CHORUS, "platform/scripts/launchagents-canonical/com.chorus.clearing.plist")
+ROOM_ENV = os.path.join(CHORUS, "platform/scripts/clearing-room-env")
+LABEL = "com.chorus.clearing"
+OLD_LAUNCHER = os.environ.get("OLD_LAUNCHER", os.path.expanduser("~/.chorus/bin/clearing-launch.sh"))
+CLEARING = os.environ.get("CLEARING_URL", "http://localhost:3470")
+LOKI = os.environ.get("LOKI_URL", "http://localhost:3102")
+AGENTS = os.environ.get("LAUNCH_AGENTS_DIR", os.path.expanduser("~/Library/LaunchAgents"))
+LAUNCHCTL = os.environ.get("LAUNCHCTL", "launchctl")
+READY_WAIT = int(os.environ.get("CLEARING_READY_WAIT", "90"))
+ROOM_WAIT = int(os.environ.get("ROOM_WAIT", "90"))
+RELEASE_WAIT = int(os.environ.get("LAUNCHD_RELEASE_WAIT", "30"))
+RUN_UID = int(os.environ.get("LAND_AS_UID", os.getuid()))
+
+
+def reload(installed):
+    """Reload the agent from the installed plist; '' on success, else why."""
+    uid = str(RUN_UID)
+    try:
+        subprocess.run([LAUNCHCTL, "bootout", f"gui/{uid}/{LABEL}"], capture_output=True, timeout=60)
+        for _ in range(RELEASE_WAIT):
+            if subprocess.run([LAUNCHCTL, "print", f"gui/{uid}/{LABEL}"], capture_output=True, timeout=10).returncode != 0:
+                break
+            time.sleep(1)
+        else:
+            return f"launchd still holds {LABEL} {RELEASE_WAIT} s after bootout; not bootstrapping over it"
+        r = subprocess.run([LAUNCHCTL, "bootstrap", f"gui/{uid}", installed], capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return f"could not reload {LABEL}: {e}"
+    return "" if r.returncode == 0 else f"launchctl bootstrap failed: {r.stderr.strip()}"
+
+
+def healthy():
+    deadline = time.time() + READY_WAIT
+    while True:
+        try:
+            with urllib.request.urlopen(CLEARING + "/health", timeout=5) as r:
+                if r.status == 200:
+                    return True
+        except OSError:
+            pass
+        if time.time() > deadline:
+            return False
+        time.sleep(1)
+
+
+def room_events(since_ns):
+    """The bridge's buzz.room events since since_ns, oldest first, as (event, reason)."""
+    q = urllib.parse.urlencode({
+        "query": '{job="chorus-bridge"} |= "buzz.room."',
+        "start": str(since_ns), "end": str(time.time_ns()), "limit": "500", "direction": "forward"})
+    with urllib.request.urlopen(f"{LOKI}/loki/api/v1/query_range?{q}", timeout=15) as r:
+        body = json.load(r)
+    out = []
+    for stream in body.get("data", {}).get("result", []):
+        for _ts, line in stream.get("values", []):
+            try:
+                ev = json.loads(line)
+            except ValueError:
+                continue
+            # an authenticated event carries the relay's answer: accepted true or false
+            why = str(ev.get("reason", "")) if "accepted" not in ev else f"accepted={str(ev['accepted']).lower()}"
+            out.append((int(_ts), ev.get("event", ""), why))
+    return [(e, why) for _t, e, why in sorted(out)]
+
+
+def verdict(events):
+    """'' when the room connected and its sign-in was accepted with no 404 at the dial, else why."""
+    if any(e == "buzz.room.socket_error" and "404" in why for e, why in events):
+        return "the bridge room still gets 404 at the relay dial"
+    names = [e for e, _ in events]
+    if "buzz.room.connected" not in names:
+        return "the bridge room never connected"
+    # the bridge logs buzz.room.authenticated for every answer to its sign-in, refused ones too
+    if not any(e == "buzz.room.authenticated" and why == "accepted=true" for e, why in events):
+        return "the bridge room connected but its sign-in was not accepted"
+    return ""
+
+
+def room_up(since_ns):
+    deadline = time.time() + ROOM_WAIT
+    why = "no room events read"
+    while time.time() <= deadline:
+        try:
+            why = verdict(room_events(since_ns))
+        except (OSError, ValueError) as e:
+            why = f"Loki unreadable: {e}"
+        if not why or "404" in why:
+            return why
+        time.sleep(3)
+    return why
+
+
+def restore(before, installed):
+    try:
+        with open(installed, "wb") as f:
+            f.write(before)
+    except OSError as e:
+        return f"RESTORE FAILED, could not write the old plist back: {e}"
+    why = reload(installed)
+    if why:
+        return f"RESTORE FAILED: {why}"
+    return "old plist restored, Clearing healthy" if healthy() else "old plist restored, Clearing NOT healthy"
+
+
+def main(argv):
+    if "--apply" not in argv:
+        print(f"plan: install {CANON_PLIST} as {LABEL}, reload it, check {CLEARING}/health and that the "
+              f"bridge room connects and signs in with no 404, then remove {OLD_LAUNCHER} (not run in a dry run)")
+        return 0
+    for need in (CANON_PLIST, ROOM_ENV):
+        if not os.path.isfile(need):
+            print(f"land-4984-rows: {need} is not in the canonical checkout; nothing changed", file=sys.stderr)
+            return 2
+    installed = os.path.join(AGENTS, LABEL + ".plist")
+    try:
+        # the agent belongs to the account whose LaunchAgents holds it (the #4983 rule)
+        if os.stat(installed).st_uid != RUN_UID:
+            print(f"land-4984-rows: {installed} belongs to uid {os.stat(installed).st_uid}, this land runs as "
+                  f"{RUN_UID}; nothing changed", file=sys.stderr)
+            return 2
+        with open(installed, "rb") as f:
+            before = f.read()
+    except OSError as e:
+        print(f"land-4984-rows: cannot read the installed {LABEL} plist: {e}; nothing changed", file=sys.stderr)
+        return 2
+    try:
+        shutil.copyfile(CANON_PLIST, installed)
+        why = reload(installed)
+    except OSError as e:
+        why = f"could not install {CANON_PLIST}: {e}"
+    # read the room only from here: the old process is gone (reload waits for launchd to let go),
+    # so its 404s every 5 s before the reload can never fail the new one
+    since = time.time_ns()
+    if not why:
+        why = "" if healthy() else f"the Clearing did not answer /health {READY_WAIT} s after the reload"
+    if not why:
+        why = room_up(since)
+    if why:
+        print(f"land-4984-rows: {why}; {restore(before, installed)}; the old launcher stays", file=sys.stderr)
+        return 1
+    print(f"{LABEL} runs from the tracked launcher; the bridge room connected and signed in, no 404")
+    if os.path.exists(OLD_LAUNCHER):
+        try:
+            os.remove(OLD_LAUNCHER)
+        except OSError as e:
+            print(f"land-4984-rows: could not remove {OLD_LAUNCHER}: {e}", file=sys.stderr)
+            return 2
+    print(f"removed: {OLD_LAUNCHER}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

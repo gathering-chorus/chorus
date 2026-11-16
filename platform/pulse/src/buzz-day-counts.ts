@@ -47,6 +47,7 @@ export function readNotes(url: string, host: string | undefined, since: number, 
     let page = 0;
     let fresh = 0;
     let authed = false;
+    let authPage = Infinity; // the page in flight when the relay accepted the sign-in
     let stepped = false;
     // this page's size and whether every note on it sat in the edge second;
     // the largest page seen stands in for the relay's cap
@@ -109,12 +110,18 @@ export function readNotes(url: string, host: string | undefined, since: number, 
       }
       req();
     };
+    // #4984 — a refused sign-in (OK false, or a later REQ closed) is an error at once, in the
+    // relay's words, never waited out; a REQ closed before the sign-in is accepted may race it
+    const refuse = (why: string) => { clearTimeout(timer); ws.close(); reject(new Error(why)); };
+    const onOk = (ok: unknown, msg: unknown) => { if (!authed || authPage !== Infinity) return; if (ok === true) authPage = page; else if (ok === false) refuse(`relay refused the sign-in: ${String(msg)}`); };
+    const onClosed = (why: string) => { if (/rate-limited/.test(why)) onRateLimited(why); else if (page > authPage) refuse(`relay refused page ${page}: ${why}`); };
     ws.on('message', (data) => {
       let f: unknown[];
       try { f = JSON.parse(frameText(data)) as unknown[]; } catch { return; }
       const ours = f[1] === `days-${page}`;
       if (f[0] === 'AUTH' && typeof f[1] === 'string' && !authed) onAuth(f[1]);
-      else if (f[0] === 'CLOSED' && ours && /rate-limited/.test(String(f[2]))) onRateLimited(String(f[2]));
+      else if (f[0] === 'OK') onOk(f[2], f[3]);
+      else if (f[0] === 'CLOSED' && ours) onClosed(String(f[2]));
       else if (f[0] === 'EVENT' && ours) onEvent(f[2] as RoomNote & { id?: string });
       else if (f[0] === 'EOSE' && ours) onEose();
     });

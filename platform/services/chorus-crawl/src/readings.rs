@@ -476,6 +476,17 @@ pub fn write_prom(dir: &std::path::Path, sensor: &str, rows: &[ReadingRow]) -> s
     Ok(path)
 }
 
+/// #4984 — the environment the Buzz reader runs with: where to dial, the Host the relay
+/// answers to, and the public address its sign-in must name. Since the 10-25 cutover the
+/// relay refuses a sign-in naming anything else, so all three always go together.
+pub fn reader_env(relay_url: &str, relay_host: &str, auth_relay_url: &str) -> Vec<(&'static str, String)> {
+    vec![
+        ("PULSE_BUZZ_RELAY_URL", relay_url.to_string()),
+        ("PULSE_BUZZ_RELAY_HOST", relay_host.to_string()),
+        ("BUZZ_AUTH_RELAY_URL", auth_relay_url.to_string()),
+    ]
+}
+
 /// The Buzz reader's lines ({"day","sent","kept","doubles"}) as messages-sent,
 /// messages-kept and doubles-<kind> counts. A line it can't read is skipped.
 pub fn buzz_counts(jsonl: &str) -> Counts {
@@ -655,6 +666,14 @@ VALIDATE|tests|Test (declared domain)|tree=1330|graph=1330|missing=0|stale=0|mea
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_buzz_reader_is_given_the_relay_public_address_for_its_sign_in_4984() {
+        let env = reader_env("ws://127.0.0.1:13000", "buzz.example", "wss://buzz.example");
+        assert!(env.contains(&("BUZZ_AUTH_RELAY_URL", "wss://buzz.example".to_string())));
+        assert!(env.contains(&("PULSE_BUZZ_RELAY_HOST", "buzz.example".to_string())));
+        assert!(env.contains(&("PULSE_BUZZ_RELAY_URL", "ws://127.0.0.1:13000".to_string())));
+    }
 
     #[test]
     fn the_spine_check_writes_and_reads_back_as_spine_and_the_day_passes_as_themselves() {
