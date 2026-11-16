@@ -98,6 +98,8 @@ export interface ActorFactInput {
   cardSteps?: Record<number, string>;
   /** #4895 — role → the reachability its delivery Presence carries (presence-target). */
   reachability?: Record<string, string>;
+  /** #4985 — role → whether it has a live run (runEndedAt empty). Absent when not read. */
+  liveRun?: Record<string, boolean>;
   unmeasured?: Array<{ source: string; reason: string }>;
 }
 
@@ -191,7 +193,8 @@ function deriveSessions(
     const isStale = s.channel !== 'pane' && (lastActivityMs === 0 || nowMs - lastActivityMs > THIRTY_MINUTES_MS);
 
     // #4985 AC4 — a pane whose process died without a logout ends on a fact: the sweep ended
-    // its run (pid gone), so the role has no live run and reads 'offline'.
+    // its run (pid gone), so the role has no live run. Keyed on the run, not on reachability:
+    // a live run without a Presence reads 'offline' there and is still logged in (Wren 16:55).
     const isDead = s.channel === 'pane' && runGone;
 
     const live = !isClosed && !isExpired && !isStale && !isDead;
@@ -511,7 +514,7 @@ function deriveOneActor(
     nowMs,
     lastActionMs,
     actionFact?.lastActionAt,
-    input.reachability?.[role] === 'offline'
+    input.liveRun?.[role] === false
   );
 
   const hasRecentAction30m = lastActionMs > 0 && nowMs - lastActionMs <= THIRTY_MINUTES_MS;
@@ -1073,6 +1076,13 @@ export function buildLiveActorFactFetcher(options: {
           return [role, reachabilityFromPresence(presence.presences, presence.runs, role)];
         }))
       : undefined;
+    // #4985 — whether each role has a live run at all (runEndedAt empty), Presence or not
+    const liveRun = presence
+      ? Object.fromEntries(principals.map((p) => {
+          const role = principalToRole(typeof p === 'string' ? p : p.principal);
+          return [role, presence.runs.some((r) => r.name.startsWith(`${role}-run-`) && !r.runEndedAt)];
+        }))
+      : undefined;
 
     const cardSteps = await fetchDaguCardSteps(daguBase, wipCards, unmeasured);
     const activePairs = readActivePairsFromDisk(options.opsDir);
@@ -1110,6 +1120,7 @@ export function buildLiveActorFactFetcher(options: {
       cardSteps,
       owedNudges,
       reachability,
+      liveRun,
       unmeasured: unmeasured.length > 0 ? unmeasured : undefined,
     };
   };
