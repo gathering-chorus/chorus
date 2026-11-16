@@ -10,7 +10,7 @@ import { fetchOpenSessionRows } from './open-sessions';
 import { readdirSync, readFileSync, existsSync } from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { reachabilityFromPresence, type PresenceRow, type RunRow } from './presence-target';
+import { reachabilityFromPresence, hasLiveRun, type PresenceRow, type RunRow } from './presence-target';
 
 export type StateValue =
   | 'building'
@@ -98,6 +98,8 @@ export interface ActorFactInput {
   cardSteps?: Record<number, string>;
   /** #4895 — role → the reachability its delivery Presence carries (presence-target). */
   reachability?: Record<string, string>;
+  /** #4985 — role → whether it has a live run (runEndedAt empty). Absent when not read. */
+  liveRun?: Record<string, boolean>;
   unmeasured?: Array<{ source: string; reason: string }>;
 }
 
@@ -167,27 +169,43 @@ interface DerivedSessionsResult {
   hasLiveSession: boolean;
 }
 
+/** One session's liveness: a sign-in ends at expiry, after 30 quiet minutes, or when closed;
+ *  a pane (an agent's login) ends only at logout or when its role has no live run. */
+function sessionIsLive(s: SessionInfo, nowMs: number, lastActivityMs: number, runGone: boolean): boolean {
+  // #4948 — an agent's (pane) session lasts from login to logout: its expiresAt, written once
+  // at login because the shape requires it, is ignored (Silas, pair 4948). A sign-in still expires.
+  const expiresMs = new Date(s.expiresAt ?? '').getTime();
+  const isExpired = s.channel !== 'pane' && (isNaN(expiresMs) || nowMs > expiresMs);
+  const isClosed = Boolean(s.endedAt) || s.sessionState === 'closed';
+  // #4985 (Jeff 11-16: "they start when we log in and end when we log out") — a pane is
+  // never stale: quiet time does not end it, only logout (endedAt) does. A sign-in still goes stale.
+  const isStale = s.channel !== 'pane' && (lastActivityMs === 0 || nowMs - lastActivityMs > THIRTY_MINUTES_MS);
+  // #4985 AC4 — a pane whose process died without a logout ends on a fact: the sweep ended
+  // its run (pid gone), so the role has no live run. Keyed on the run, not on reachability:
+  // a live run without a Presence reads 'offline' there and is still logged in (Wren 16:55).
+  const isDead = s.channel === 'pane' && runGone;
+  return !isClosed && !isExpired && !isStale && !isDead;
+}
+
+/** #4985 — true only when runs were read and the role has none live; unread says nothing. */
+function hasNoLiveRun(liveRun: Record<string, boolean> | undefined, role: string): boolean {
+  return new Map(Object.entries(liveRun ?? {})).get(role) === false;
+}
+
 function deriveSessions(
   mySessions: SessionInfo[],
   nowMs: number,
   lastActionMs: number,
-  lastActionIso?: string
+  lastActionIso?: string,
+  runGone = false
 ): DerivedSessionsResult {
   const sessionResults: Array<{ id: string; channel: string; live: boolean; lastActionAt?: string }> = [];
   let hasLiveSession = false;
 
   for (const s of mySessions) {
     const lastSeenMs = new Date(s.lastSeenAt).getTime();
-    // #4948 — an agent's (pane) session lasts from login to logout: its expiresAt, written once
-    // at login because the shape requires it, is ignored (Silas, pair 4948). A sign-in still expires.
-    const expiresMs = new Date(s.expiresAt ?? '').getTime();
-    const isExpired = s.channel !== 'pane' && (isNaN(expiresMs) || nowMs > expiresMs);
-    const isClosed = Boolean(s.endedAt) || s.sessionState === 'closed';
-
     const lastActivityMs = Math.max(isNaN(lastSeenMs) ? 0 : lastSeenMs, lastActionMs);
-    const isStale = lastActivityMs === 0 || nowMs - lastActivityMs > THIRTY_MINUTES_MS;
-
-    const live = !isClosed && !isExpired && !isStale;
+    const live = sessionIsLive(s, nowMs, lastActivityMs, runGone);
     if (live) hasLiveSession = true;
 
     let sessionLastAction: string = s.lastSeenAt;
@@ -503,7 +521,8 @@ function deriveOneActor(
     mySessions,
     nowMs,
     lastActionMs,
-    actionFact?.lastActionAt
+    actionFact?.lastActionAt,
+    hasNoLiveRun(input.liveRun, role)
   );
 
   const hasRecentAction30m = lastActionMs > 0 && nowMs - lastActionMs <= THIRTY_MINUTES_MS;
@@ -1065,6 +1084,15 @@ export function buildLiveActorFactFetcher(options: {
           return [role, reachabilityFromPresence(presence.presences, presence.runs, role)];
         }))
       : undefined;
+    // #4985 — whether each agent role has a live run at all (runEndedAt empty), Presence or not
+    const liveRun = presence
+      ? Object.fromEntries(principals
+          .filter((p) => !resolvePrincipalInfo(p).isHuman)
+          .map((p) => {
+            const role = resolvePrincipalInfo(p).role;
+            return [role, hasLiveRun(presence.runs, role)];
+          }))
+      : undefined;
 
     const cardSteps = await fetchDaguCardSteps(daguBase, wipCards, unmeasured);
     const activePairs = readActivePairsFromDisk(options.opsDir);
@@ -1102,6 +1130,7 @@ export function buildLiveActorFactFetcher(options: {
       cardSteps,
       owedNudges,
       reachability,
+      liveRun,
       unmeasured: unmeasured.length > 0 ? unmeasured : undefined,
     };
   };
@@ -1113,14 +1142,16 @@ async function fetchPresenceFact(
   unmeasured: Array<{ source: string; reason: string }>
 ): Promise<{ presences: PresenceRow[]; runs: RunRow[] } | null> {
   try {
+    // #4985 — runs are read open only (runEndedAt absent): presence-target uses no other, and
+    // an ended-run history past the 5000 cap must never hide a live run (gate-code, run 2)
     const get = async (p: string): Promise<unknown[]> => {
-      const r = await fetch(`${athenaBase}/v1/identity/${p}?limit=5000`, { signal: AbortSignal.timeout(2000) });
+      const r = await fetch(`${athenaBase}/v1/identity/${p}`, { signal: AbortSignal.timeout(2000) });
       if (!r.ok) throw new Error(`${p} answered HTTP ${r.status}`);
       const d = ((await r.json()) as { data?: unknown }).data;
       if (!Array.isArray(d)) throw new Error(`${p} answered no data list`);
       return d;
     };
-    const [presences, runs] = await Promise.all([get('presences'), get('sessionruns')]);
+    const [presences, runs] = await Promise.all([get('presences?limit=5000'), get('sessionruns?runEndedAt.absent=true&limit=5000')]);
     return { presences: presences as PresenceRow[], runs: runs as RunRow[] };
   } catch (e: unknown) {
     unmeasured.push({ source: 'athena:identity:presences', reason: e instanceof Error ? e.message : String(e) });

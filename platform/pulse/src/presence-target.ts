@@ -37,8 +37,13 @@ const paneOf = (p: PresenceRow): string => (/^%\d+$/.test(p.pane ?? '') ? (p.pan
 
 /** The role's Presences of live runs, the one delivery would use first: a live run
  *  with a real pane wins; then the newest. Shared by delivery and the roster (#4895). */
+const isLiveRunOf = (r: RunRow, role: string): boolean => r.name.startsWith(`${role}-run-`) && !r.runEndedAt;
+/** #4985 — the role has a live run (runEndedAt empty), whatever its Presence says. */
+export function hasLiveRun(runs: RunRow[], role: string): boolean {
+  return runs.some((r) => isLiveRunOf(r, role));
+}
 function liveCandidates(presences: PresenceRow[], runs: RunRow[], role: string): PresenceRow[] {
-  const live = new Set(runs.filter((r) => r.name.startsWith(`${role}-run-`) && !r.runEndedAt).map((r) => r.name));
+  const live = new Set(runs.filter((r) => isLiveRunOf(r, role)).map((r) => r.name));
   return presences
     .filter((p) => p.name.startsWith(`${role}-presence-`) && ofLiveRun(p.presenceOf ?? '', live))
     .sort((a, b) => Number(!!paneOf(b)) - Number(!!paneOf(a)) || (b.checkedAt ?? '').localeCompare(a.checkedAt ?? ''));
