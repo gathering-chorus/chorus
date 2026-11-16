@@ -404,6 +404,8 @@ async function uploadFile(file, fetchImpl) {
       const err = formatUploadError(body);
       const resObj = { ok: false, reason: err.text };
       if (err.isAuth) resObj.errorInfo = err;
+      // #4966 — the sign-in refusal itself, so the page can enter its signed-out state without asking again
+      if (res.status === 401 && body && body.error === 'not-signed-in') resObj.refusal = body;
       return resObj;
     }
     return { ok: true, path: body.path, name: body.name || name };
@@ -429,6 +431,8 @@ async function uploadPhoto(file, fetchImpl) {
       const err = formatUploadError(body);
       const resObj = { ok: false, reason: err.text };
       if (err.isAuth) resObj.errorInfo = err;
+      // #4966 — the sign-in refusal itself, so the page can enter its signed-out state without asking again
+      if (res.status === 401 && body && body.error === 'not-signed-in') resObj.refusal = body;
       return resObj;
     }
     return { ok: true, path: body.path };
@@ -463,15 +467,15 @@ function watchFileButton() {
       showStatus(status, 'Uploading file ' + (i + 1) + ' of ' + files.length + '…');
       const out = await uploadFile(file);
       if (out.ok && input) input.value = (input.value ? input.value.trimEnd() + ' ' : '') + '📎 ' + out.path + ' ';
-      if (!out.ok) failed.push(out.errorInfo || { text: out.reason });
+      if (!out.ok) failed.push(out);
     }
     if (status) {
       if (failed.length) {
-        const firstFail = failed[0];
+        // #4966 — the upload's own answer says whether the sign-in has gone; then the notice owns the line
+        if (signedOutBy(failed.find((f) => f.refusal), 'Not attached.')) { picker.value = ''; return; }
+        const firstFail = failed[0].errorInfo || { text: failed[0].reason };
         // #4966 — shown, not only written: style.css hides this line unless it is displayed
         const lead = failed.length + ' of ' + files.length + ' files not attached: ';
-        // if the refusal was the sign-in, the tiles call says so and the page enters the signed-out state
-        await probeSignIn();
         if (firstFail && firstFail.html) showStatus(status, '', lead + firstFail.html);
         else showStatus(status, lead + (firstFail && firstFail.text ? firstFail.text : firstFail));
       } else {
@@ -493,6 +497,8 @@ async function transcribeVoice(blob, fetchImpl) {
       const err = formatUploadError(body);
       const resObj = { ok: false, reason: err.text };
       if (err.isAuth) resObj.errorInfo = err;
+      // #4966 — the sign-in refusal itself, so the page can enter its signed-out state without asking again
+      if (res.status === 401 && body && body.error === 'not-signed-in') resObj.refusal = body;
       return resObj;
     }
     return { ok: true, transcript: body.transcript };
@@ -598,9 +604,9 @@ function watchMicButton() {
         }
         say('Turning your voice into words…');
         const out = await transcribeVoice(new Blob(chunks, { type: recorder.mimeType || 'audio/webm' }));
-        say(out.ok ? '' : 'Voice not added: ' + out.reason, out.errorInfo && out.errorInfo.html ? 'Voice not added: ' + out.errorInfo.html : undefined);
         // #4966 — if the refusal was the sign-in, the page enters the signed-out state (as attach does)
-        if (!out.ok) await probeSignIn();
+        if (signedOutBy(out, 'Voice not added.')) return;
+        say(out.ok ? '' : 'Voice not added: ' + out.reason, out.errorInfo && out.errorInfo.html ? 'Voice not added: ' + out.errorInfo.html : undefined);
         const input = document.getElementById('composer-input');
         if (out.ok && input) {
           let text = out.transcript || '';
@@ -1376,6 +1382,16 @@ function renderSignedOutNotice(d, lead) {
   if (status.style) status.style.display = 'block';
 }
 
+/** #4966 — a call's own answer was the sign-in refusal: enter the signed-out state and say what was
+ *  not done. Returns true when it did, so the caller writes nothing over the notice. */
+function signedOutBy(out, lead, doc) {
+  if (!out || !out.refusal) return false;
+  const d = doc || (typeof document !== 'undefined' ? document : null);
+  enterSignedOutState(out.refusal, d);
+  renderSignedOutNotice(d, lead);
+  return true;
+}
+
 /** The page is signed out: nothing of the room stays readable, and the notice says so. */
 function enterSignedOutState(json, doc) {
   const d = doc || (typeof document !== 'undefined' ? document : null);
@@ -1521,7 +1537,7 @@ if (typeof window !== 'undefined') {
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
-    isSignedOut, resetSignedOutState, setActiveEventSource, showStatus, enterSignedOutState, checkSignedOut, refuseWhenSignedOut, probeSignIn, ROOM_CONTENT_IDS, ROOM_DRAWER_IDS,
+    isSignedOut, resetSignedOutState, setActiveEventSource, showStatus, enterSignedOutState, checkSignedOut, refuseWhenSignedOut, probeSignIn, signedOutBy, ROOM_CONTENT_IDS, ROOM_DRAWER_IDS,
     formatAuthor,
     formatMessageTime,
     appendMessage,

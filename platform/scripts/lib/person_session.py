@@ -244,7 +244,7 @@ def close_expired_sessions(principal, id_token, now, keep, http, api, log):
         if not isinstance(exp, str) or len(exp) != 20 or not exp.endswith("Z"):
             unjudged += 1
             continue
-        if not exp or exp > iso(now):
+        if exp > iso(now):
             continue
         try:
             st, _ = http("PATCH", f"{api}/v1/identity/sessions/{urllib.parse.quote(r['name'])}", id_token,

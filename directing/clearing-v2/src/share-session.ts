@@ -228,7 +228,9 @@ export function gateDecision(r: GateRequest): GateDecision {
   // Only a cookie this server refuses for a reason the guard would not share is a disagreement:
   // an expired cookie the guard refuses too, so a quick repeat visit with one is sent to sign in
   // again, never told "not accepted" (Abby, run 4).
-  const disagree = !!r.cookieReason && r.cookieReason !== 'no-cookie' && r.cookieReason !== 'expired';
+  // Named, not excluded: only a signature or a cookie this server cannot read. 'unknown' (a sign-in for
+  // someone this server does not map) and a missing reason are not a disagreement (gate-code, run 5).
+  const disagree = r.cookieReason === 'bad-signature' || r.cookieReason === 'malformed';
   if (r.bounced && disagree && isPage(r.method, r.path)) {
     return {
       allow: false,

@@ -40,7 +40,7 @@ setup() {
 @test "NEGATIVE PROOF: a library that closes sessions that have not expired fails" {
   work="$BATS_TEST_TMPDIR/lib"
   mkdir -p "$work" && cp "$LIB"/*.py "$work/"
-  sed 's/        if not exp or exp > iso(now):/        if not exp:/' "$LIB/person_session.py" > "$work/person_session.py"
+  sed 's/        if exp > iso(now):/        if False:/' "$LIB/person_session.py" > "$work/person_session.py"
   if cmp -s "$LIB/person_session.py" "$work/person_session.py"; then echo "mutation did not apply"; return 1; fi
   run python3 "$FIX" "$work"
   [ "$status" -ne 0 ]
