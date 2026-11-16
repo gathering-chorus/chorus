@@ -194,6 +194,66 @@ def close_session(rec, now, http, api, refresh, log):
     return ok
 
 
+def bare(owner):
+    """'principal-jeff' and 'jeff' name the same person: the door serves the first, the row is written with the second."""
+    o = str(owner or "")
+    return o[len("principal-"):] if o.startswith("principal-") else o
+
+
+def close_expired_sessions(principal, id_token, now, keep, http, api, log):
+    """#4966 — at his sign-in, close his own browser sessions whose expiresAt has passed.
+
+    Measured at the door 2026-11-15: 123 of jeff's browser Session rows were open and expired.
+    The guard used to close an old session with that session's own token, long expired, so the
+    store refused and the row stayed open. Jeff, 2026-11-15 13:34 "yes": the door uses his NEW
+    sign-in, as him; no role writes his rows.
+
+    Closes only rows that are his (ownedBy), browser sessions (never an agent's pane session,
+    #4948), open, with an expiresAt already past, and never `keep` (the session this sign-in
+    just made). Each ends at its own expiresAt, its true end, not now (Silas). The door's
+    empty-string fields are not sent back. Never raises; returns how many it closed.
+    """
+    if not id_token:
+        return 0
+    try:
+        status, listing = http("GET", f"{api}/v1/identity/sessions?endedAt.absent=true&channel=browser&limit=5000", None, None)
+    except Exception as e:
+        log(f"person-session: {principal} expired sessions not listed: {e}")
+        return 0
+    if status != 200:
+        log(f"person-session: {principal} expired sessions not listed (HTTP {status})")
+        return 0
+    items = listing if isinstance(listing, list) else next(
+        (listing.get(k) for k in ("items", "data", "rows") if isinstance(listing, dict) and isinstance(listing.get(k), list)), [])
+    closed, refused = 0, 0
+    for r in items:
+        if not isinstance(r, dict) or not r.get("name") or r["name"] == keep:
+            continue
+        if bare(r.get("ownedBy")) != principal:
+            continue
+        if r.get("channel") != "browser":
+            continue
+        if r.get("sessionState") != "open":
+            continue
+        exp = r.get("expiresAt")
+        if not exp or exp > iso(now):
+            continue
+        row = {k: v for k, v in r.items() if v != ""}
+        row.update(sessionState="closed", endedAt=exp)
+        try:
+            st, _ = http("PUT", f"{api}/v1/identity/sessions/{urllib.parse.quote(row['name'])}", id_token, row)
+        except Exception:
+            st = 0
+        if st in (200, 204):
+            closed += 1
+        else:
+            refused += 1
+    if closed or refused:
+        log(f"person-session: {principal} sign-in closed {closed} expired browser session(s)"
+            + (f", {refused} NOT closed" if refused else ""))
+    return closed
+
+
 def client_document(client_id, redirect_uris, logout_uris):
     """The Solid Client ID Document: the guard's fixed identity as an OIDC client."""
     return {

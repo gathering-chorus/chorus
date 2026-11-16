@@ -722,6 +722,19 @@ def _refresh(refresh_token):
 SESSIONS_LOCK = threading.Lock()
 
 
+def close_expired_person_sessions(rec, now, sid):
+    """#4966 — with this new sign-in, as him, close his earlier browser sessions that have
+    run out. In its own thread: there can be many (123 on 2026-11-15), and a sign-in never
+    waits on it. Test mode (OFFLINE) makes no call: a test never reaches the real door."""
+    if OFFLINE or not rec.get("principal") or not rec.get("id_token"):
+        return None
+    t = threading.Thread(
+        target=lambda: person_session.close_expired_sessions(rec["principal"], rec["id_token"], now, sid, _http, ATHENA_URL, _log),
+        daemon=True)
+    t.start()
+    return t
+
+
 def open_person_session(webid, tok):
     """Never raises and never blocks the sign-in; the record is kept 0600 for sign-out.
 
@@ -748,6 +761,7 @@ def open_person_session(webid, tok):
                 recs = load_state(SESSIONS_FILE)
                 recs[sid] = rec
                 save_state(SESSIONS_FILE, recs)
+            close_expired_person_sessions(rec, now, sid)
         return sid
     except Exception as e:
         _log(f"person-session: sign-in row NOT written: {e}")
