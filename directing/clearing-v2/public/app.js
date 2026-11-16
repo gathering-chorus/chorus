@@ -600,6 +600,8 @@ function watchMicButton() {
         say('Turning your voice into words…');
         const out = await transcribeVoice(new Blob(chunks, { type: recorder.mimeType || 'audio/webm' }));
         say(out.ok ? '' : 'Voice not added: ' + out.reason, out.errorInfo && out.errorInfo.html ? 'Voice not added: ' + out.errorInfo.html : undefined);
+        // #4966 — if the refusal was the sign-in, the page enters the signed-out state (as attach does)
+        if (!out.ok) probeSignIn();
         const input = document.getElementById('composer-input');
         if (out.ok && input) {
           let text = out.transcript || '';
@@ -1395,7 +1397,12 @@ function refuseWhenSignedOut(what, doc) {
 /** One light call that tells the open page whether its sign-in still holds. */
 async function probeSignIn() {
   if (signedOut || typeof fetch === 'undefined') return;
-  try { await checkSignedOut(await fetch(clearingBase() + '/api/tiles')); } catch { /* a network blip is not a sign-out */ }
+  try {
+    await checkSignedOut(await fetch(clearingBase() + '/api/tiles'));
+  } catch {
+    // a network blip is not a sign-out: the page stays as it is and asks again on the next poll
+    return;
+  }
 }
 
 /** #4571 — the 401 names why and where to sign in; render it as text plus a link. */
@@ -1468,7 +1475,10 @@ if (typeof window !== 'undefined') {
       } else {
         await checkSignedOut(res);
       }
-    } catch {}
+    } catch {
+      // the server could not be reached this time; the next poll asks again
+      return;
+    }
   }, 5000);
 
   // #4966 — when he wakes the phone or comes back to the tab, ask at once

@@ -10,5 +10,5 @@ module.exports = {
   },
   transformIgnorePatterns: ['node_modules/(?!@noble)/'],
   // #4966 — tests stay on this machine: one guard on fetch, shared with the v1 package
-  setupFiles: ['<rootDir>/../clearing/tests/stay-local-4966.setup.ts'],
+  setupFiles: ['<rootDir>/../../platform/tests/fixtures/stay-local-4966.setup.ts'],
 };

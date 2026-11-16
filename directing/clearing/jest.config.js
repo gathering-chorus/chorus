@@ -12,7 +12,7 @@ module.exports = {
   maxWorkers: 1,
   // #4363 — temp journal + tailer offsets for every test process (never ~/.chorus/clearing)
   // #4966 — stay-local: no test reaches another machine, directly or by following a redirect
-  setupFiles: ['<rootDir>/tests/env-4363.setup.js', '<rootDir>/tests/room-roles-4432.setup.ts', '<rootDir>/tests/stay-local-4966.setup.ts'],
+  setupFiles: ['<rootDir>/tests/env-4363.setup.js', '<rootDir>/tests/room-roles-4432.setup.ts', '<rootDir>/../../platform/tests/fixtures/stay-local-4966.setup.ts'],
   // #2524 convention: *.integration.test.ts excluded from hermetic default.
   // Run integration tier with RUN_INTEGRATION=true.
   testPathIgnorePatterns: process.env.RUN_INTEGRATION === 'true' ? ['/node_modules/'] : [

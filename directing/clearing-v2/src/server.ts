@@ -14,7 +14,7 @@ import { deliverJeffInput } from './jeff-input';
 import { verifyNostrEvent, resolveRoleByPubkey, resolveSenderIdentity } from './identity';
 import { RegistryKeys, DEFAULT_KEYS_URL } from './key-registry';
 import { decideBind } from './room-bind';
-import { shareSessionFromHeader, verifyShareSession, readCookieKey, relayRenew } from './share-session';
+import { shareSessionFromHeader, verifyShareSession, readCookieKey, relayRenew, sessionGate } from './share-session';
 import { NostrEvent } from './types';
 import { roomOf, kindOf, toClearingMessage } from './converters';
 
@@ -22,7 +22,6 @@ import { renderTodayPage, renderRolesPage, renderRoomsPage, renderBoardPage, ren
 import { byDay, DOUBLE_COLUMNS, fetchReadings, syncByDay } from './sources/readings';
 import { fetchStreams } from './sources/streams';
 import { registerUploadRoutes, DEFAULT_UPLOAD_DIR } from './uploads';
-import { sessionGate } from './session-gate';
 import { registerVoiceRoutes, DEFAULT_VOICE_DIR } from './voice';
 import { fetchBoard } from './sources/board';
 import { DataService, ROOM_PAGE_MESSAGES } from './data-service';
@@ -466,7 +465,7 @@ function registerRoutes(ctx: RouteContext): void {
       .then((cookie) => { if (cookie && !res.headersSent) res.append('Set-Cookie', cookie); })
       .finally(() => next());
   });
-  // #4966 — no sign-in, no room: one gate in front of every page and API route (src/session-gate)
+  // #4966 — no sign-in, no room: one gate in front of every page and API route (src/share-session sessionGate)
   ctx.app.use(sessionGate(
     (req) => sessionPrincipal(req, ctx.cookieKey),
     ctx.signInUrl,
