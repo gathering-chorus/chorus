@@ -1,7 +1,7 @@
 // @test-type: integration — a local server on a free port that redirects off this machine; nothing public is ever reached.
 // @domain: messages
 // @card: #4966
-// @owner: abby-normal
+// @owner: wren
 /**
  * #4966 AC4 — no test run signs out or replaces a real person's session at the public guard.
  *

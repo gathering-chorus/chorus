@@ -401,7 +401,14 @@ def signed_in_landing(state, next_raw):
     logged jeff, with a session 59 minutes old, at /_auth/?next=<the Clearing>, showed him
     the sign-in page anyway, and he signed in again. safe_return keeps the target on this
     door's own domain, so a signed-in caller is never bounced to another site."""
-    return safe_return(next_raw) if state == "ok" else None
+    if state != "ok":
+        return None
+    target = safe_return(next_raw)
+    # Never on to this door's own routes (Silas 2026-11-15): /_auth/logout would sign a
+    # signed-in person out from a crafted link, and /_auth/ would send them round again.
+    if AUTH_PREFIX in urllib.parse.urlparse(target).path + "/":
+        return pub(LANDING)
+    return target
 
 
 def replaced_sid(old_claims, webid):

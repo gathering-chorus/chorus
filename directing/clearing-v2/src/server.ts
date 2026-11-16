@@ -447,7 +447,11 @@ function registerWriteRoutes(ctx: RouteContext): void {
 
 function registerRoutes(ctx: RouteContext): void {
   // #4966 — no sign-in, no room: one gate in front of every page and API route (src/session-gate)
-  ctx.app.use(sessionGate((req) => sessionPrincipal(req, ctx.cookieKey), ctx.signInUrl));
+  ctx.app.use(sessionGate(
+    (req) => sessionPrincipal(req, ctx.cookieKey),
+    ctx.signInUrl,
+    () => (ctx.cookieKey !== undefined ? ctx.cookieKey : readCookieKey()) === null,
+  ));
   registerReadApiRoutes(ctx);
   registerPageRoutes(ctx);
   registerWriteRoutes(ctx);

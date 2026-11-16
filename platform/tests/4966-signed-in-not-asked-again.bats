@@ -30,7 +30,8 @@ setup() {
 @test "NEGATIVE PROOF: a door that sends everyone on, signed in or not, fails" {
   work="$BATS_TEST_TMPDIR/scripts"
   mkdir -p "$work" && cp -R "$ROOT/platform/scripts/lib" "$work/lib"
-  sed 's/return safe_return(next_raw) if state == "ok" else None/return safe_return(next_raw)/' "$GUARD" > "$work/chorus-share-guard.py"
+  # drop the two lines that stop a caller without a good session
+  sed '/    if state != "ok":/{N;d;}' "$GUARD" > "$work/chorus-share-guard.py"
   # the edit must have happened, or this proof proves nothing
   if cmp -s "$GUARD" "$work/chorus-share-guard.py"; then echo "mutation did not apply"; return 1; fi
   run python3 "$FIX" "$work/chorus-share-guard.py"
@@ -41,9 +42,19 @@ setup() {
 @test "NEGATIVE PROOF: a door that still shows the sign-in page to a good session fails" {
   work="$BATS_TEST_TMPDIR/scripts"
   mkdir -p "$work" && cp -R "$ROOT/platform/scripts/lib" "$work/lib"
-  sed 's/return safe_return(next_raw) if state == "ok" else None/return None/' "$GUARD" > "$work/chorus-share-guard.py"
+  sed 's/    target = safe_return(next_raw)/    return None/' "$GUARD" > "$work/chorus-share-guard.py"
   if cmp -s "$GUARD" "$work/chorus-share-guard.py"; then echo "mutation did not apply"; return 1; fi
   run python3 "$FIX" "$work/chorus-share-guard.py"
   [ "$status" -ne 0 ]
   printf '%s\n' "$output" | grep -q '^FAIL a good session is sent on to where it was going'
+}
+
+@test "NEGATIVE PROOF: a door that sends a good session on to its own sign-out fails" {
+  work="$BATS_TEST_TMPDIR/scripts"
+  mkdir -p "$work" && cp -R "$ROOT/platform/scripts/lib" "$work/lib"
+  sed '/    if AUTH_PREFIX in urllib.parse.urlparse(target).path + "\/":/{N;d;}' "$GUARD" > "$work/chorus-share-guard.py"
+  if cmp -s "$GUARD" "$work/chorus-share-guard.py"; then echo "mutation did not apply"; return 1; fi
+  run python3 "$FIX" "$work/chorus-share-guard.py"
+  [ "$status" -ne 0 ]
+  printf '%s\n' "$output" | grep -q "^FAIL a good session with next=/_auth/logout lands on the default"
 }

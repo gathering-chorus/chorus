@@ -82,6 +82,22 @@ describe('#4966 no sign-in, no room', () => {
     expect(d.allow).toBe(false);
   });
 
+  // The guard sends a good session straight back here (#4966). If this server cannot read the
+  // key the sign-in is signed with, it must say so loudly, never redirect: the phone would
+  // bounce between the two for ever.
+  test('a server that cannot read the sign-in key answers 503, for a page too, and never redirects', () => {
+    for (const path of ['/', '/api/messages']) {
+      const d = gateDecision({ headers: TUNNELED, ip: '127.0.0.1', method: 'GET', path, principal: null, signInUrl: SIGN_IN, keyUnreadable: true });
+      expect(d).toMatchObject({ allow: false, kind: 'refuse', status: 503, body: { ok: false, error: 'sign-in-unreadable' } });
+    }
+  });
+
+  // NEGATIVE PROOF: with the key readable, the same request is the ordinary redirect to sign-in
+  test('with the key readable the same page request is the redirect', () => {
+    const d = gateDecision({ headers: TUNNELED, ip: '127.0.0.1', method: 'GET', path: '/', principal: null, signInUrl: SIGN_IN, keyUnreadable: false });
+    expect(d).toMatchObject({ allow: false, kind: 'redirect' });
+  });
+
   test('with no sign-in address configured the page is refused, never served', () => {
     const d = gateDecision({ headers: TUNNELED, ip: '127.0.0.1', method: 'GET', path: '/', principal: null, signInUrl: undefined });
     expect(d).toMatchObject({ allow: false, kind: 'refuse', status: 401 });
@@ -141,8 +157,21 @@ describe('#4966 the real app asks the gate on every route', () => {
     try {
       const res = await fetch(`${s.base}/`, { headers: { ...CF, cookie: cookieFor(3600) }, redirect: 'manual' });
       expect(res.status).toBe(200);
+      // the signed-in room is never kept by the browser or the edge (Abby 2026-11-15)
+      expect(res.headers.get('cache-control')).toBe('no-store');
       expect(await res.text()).toMatch(/<html/i);
     } finally { await s.close(); }
+  });
+
+  test('through the tunnel, a server with no readable key answers 503 and no redirect', async () => {
+    const { app, relay } = createApp({ relayUrl: 'ws://127.0.0.1:1', pulseUrl: 'http://127.0.0.1:9', cookieKey: null, signInUrl: SIGN_IN });
+    const server = http.createServer(app);
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
+    try {
+      const res = await fetch(`http://127.0.0.1:${(server.address() as { port: number }).port}/`, { headers: CF, redirect: 'manual' });
+      expect(res.status).toBe(503);
+      expect(res.headers.get('location')).toBeNull();
+    } finally { relay.close(); await new Promise<void>((r) => server.close(() => r())); }
   });
 
   test("this machine's own callers still read with no sign-in", async () => {

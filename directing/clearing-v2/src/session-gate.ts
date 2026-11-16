@@ -21,12 +21,15 @@ export interface GateRequest {
   path: string;
   principal: { id: string; name: string; webid: string } | null;
   signInUrl: string | undefined;
+  /** true when this server cannot read the key sign-ins are signed with */
+  keyUnreadable?: boolean;
 }
 
 export type GateDecision =
   | { allow: true }
   | { allow: false; kind: 'redirect'; location: string }
-  | { allow: false; kind: 'refuse'; status: 401; body: { ok: false; error: 'not-signed-in'; detail: string; signInUrl?: string } };
+  | { allow: false; kind: 'refuse'; status: 401; body: { ok: false; error: 'not-signed-in'; detail: string; signInUrl?: string } }
+  | { allow: false; kind: 'refuse'; status: 503; body: { ok: false; error: 'sign-in-unreadable'; detail: string } };
 
 /** Cloudflare sets these on every request it forwards; the tunnel itself connects from 127.0.0.1. */
 export function isTunneled(headers: Record<string, unknown>): boolean {
@@ -48,6 +51,17 @@ export function gateDecision(r: GateRequest): GateDecision {
   if (r.path === '/health') return { allow: true };
   if (!isTunneled(r.headers) && isThisMachine(r.ip)) return { allow: true };
   if (r.principal) return { allow: true };
+  // The guard sends a good session straight back here. A server that cannot read the key cannot
+  // tell a good sign-in from none, so it says so and never redirects: the browser would bounce
+  // between this server and the guard for ever.
+  if (r.keyUnreadable) {
+    return {
+      allow: false,
+      kind: 'refuse',
+      status: 503,
+      body: { ok: false, error: 'sign-in-unreadable', detail: 'This server cannot read the sign-in key, so it cannot tell who is signed in. Nothing is shown until it can.' },
+    };
+  }
   if (isPage(r.method, r.path) && r.signInUrl) return { allow: false, kind: 'redirect', location: r.signInUrl };
   return {
     allow: false,
@@ -63,6 +77,7 @@ export function gateDecision(r: GateRequest): GateDecision {
 export function sessionGate(
   principalOf: (req: Request) => { id: string; name: string; webid: string } | null,
   signInUrl: string | undefined,
+  keyUnreadable: () => boolean = () => false,
 ) {
   return (req: Request, res: Response, next: NextFunction): void => {
     const d = gateDecision({
@@ -72,8 +87,14 @@ export function sessionGate(
       path: req.path,
       principal: principalOf(req),
       signInUrl,
+      keyUnreadable: keyUnreadable(),
     });
-    if (d.allow) { next(); return; }
+    if (d.allow) {
+      // a signed-in room must never be kept by the browser or the edge and shown after the sign-in is gone
+      if (isTunneled(req.headers as Record<string, unknown>)) res.setHeader('Cache-Control', 'no-store');
+      next();
+      return;
+    }
     // never let a browser or the edge keep a copy of a refusal, or of the room, across a sign-in change
     res.setHeader('Cache-Control', 'no-store');
     if (d.kind === 'redirect') { res.redirect(302, d.location); return; }

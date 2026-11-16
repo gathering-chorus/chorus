@@ -50,4 +50,13 @@ case("a good session with a foreign next lands on this door's default, not there
      landing("ok", "https://evil.example/clearing-v2/"), g["pub"](g["LANDING"]))
 case("a good session with a //host next lands on the default", landing("ok", "//evil.example/x"), g["pub"](g["LANDING"]))
 
+# Silas 2026-11-15: a crafted link must not sign a signed-in person out, or loop on this page
+HOME = g["pub"](g["LANDING"])
+for nxt in ("/_auth/logout", "/_auth/", "/_auth", "/_auth/login?next=/x",
+            "https://chorus." + g["RETURN_HOST_SUFFIX"] + "/_auth/logout",
+            "https://" + g["RETURN_HOST_SUFFIX"] + "/chorus/_auth/logout"):
+    case(f"a good session with next={nxt} lands on the default, not on the door's own routes", landing("ok", nxt), HOME)
+# NEGATIVE PROOF: a path that only looks like it is still sent on
+case("a good session going to /authors is sent there", landing("ok", "/authors"), "/authors")
+
 sys.exit(1 if FAILS else 0)
