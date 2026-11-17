@@ -1024,8 +1024,9 @@ ${history}
 }
 
 /**
- * #4597 — Jeff 16:25: "i really need a streams menu option too". One column per role,
- * newest command first, refreshed every 5 seconds. An unreadable stream is named.
+ * #4597 — Jeff 16:25: "i really need a streams menu option too". #4986: one stream, every
+ * role interleaved, newest at the bottom like tail -f, refreshed every 5 seconds. An
+ * unreadable stream is named.
  */
 export function renderStreamsPage(streams: Streams, sources: TrustStripSource[]): string {
   const body = !streams.ok

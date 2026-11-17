@@ -3,10 +3,12 @@
 // @owner: wren
 // @domain: messages
 // #4766 (AC3): the Streams tab renders with the old Clearing stopped
+// #4986 (AC1): one stream, every role interleaved, oldest at top, newest at the bottom
 /**
  * #4597 — Jeff 19:11: "i cant scroll up in message history and really need streams tab".
  * Scrolling up loads the page just older than the oldest shown; the Streams tab shows
- * each role's recent commands, newest first, and names an unreadable stream.
+ * every role's recent commands as one stream, newest at the bottom (#4986), and names an
+ * unreadable stream.
  */
 import http from 'http';
 import { createApp } from '../src/server';

@@ -1267,7 +1267,7 @@ tr.you td {
 .presence-awake { color: var(--info); }
 .presence-quiet { color: var(--faint); }
 
-/* #4597 — the Streams tab: one column per role, newest command first */
+/* #4597 — the Streams tab; #4986: one interleaved stream, newest at the bottom */
 .streams-page { padding: 12px; }
 .stream-tail { padding: 4px 10px; min-width: 0; }
 .stream-line b { font-weight: 600; margin-right: 4px; }
