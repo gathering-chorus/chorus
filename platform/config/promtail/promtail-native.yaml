@@ -1,10 +1,15 @@
 server:
   http_listen_port: 9080
   grpc_listen_port: 0
-  log_level: info
+  # #4994 AC2: warn, not info — at info every create in a watched folder (~/.chorus lock and
+  # tmp churn) wrote a "received file watcher event" line; promtail.log reached 1.72 GB
+  log_level: warn
 
 positions:
-  filename: /Users/jeffbridwell/Library/Logs/Gathering/promtail-positions.yaml
+  # #4994 AC2: out of every watched folder. In Library/Logs/Gathering (tailed by the
+  # daemon-logs glob) each 10 s positions write woke promtail's own watcher. ~/.chorus/state
+  # is a subfolder; promtail watches folders one level deep, never their subfolders.
+  filename: /Users/jeffbridwell/.chorus/state/promtail-positions.yaml
 
 clients:
   - url: http://localhost:3102/loki/api/v1/push
@@ -73,20 +78,19 @@ scrape_configs:
       - output:
           source: content
 
-  # Chorus embed worker + session watcher
+  # The live ~/.chorus daemon logs that have no job of their own
+  # #4994 AC2: named files, never *.log — ~/.chorus is runtime state, and a wildcard tailed any
+  # new .log there. chorus.log (the spine, platform-chorus-log job), embed-worker.log and
+  # watcher.log have their own jobs. Note: promtail 2.9.2 still watches ~/.chorus itself (it
+  # watches each tailed file's folder, measured 11-17), so lock/tmp churn still raises watcher
+  # events; log_level warn above keeps them out of promtail.log.
   - job_name: chorus-home-logs
     static_configs:
       - targets:
           - localhost
         labels:
           job: daemon-logs
-          __path__: /Users/jeffbridwell/.chorus/*.log
-          # Exclude chorus.log — it's the spine event journal, owned by the
-          # platform-chorus-log job (job=platform-chorus, appName labels parsed).
-          # Without this exclude, both jobs double-tail and rate-limit each
-          # other. 2026-05-04 backfill receipt.
-          # #4994: each file below has its own job; the glob must not tail it too
-          __path_exclude__: /Users/jeffbridwell/.chorus/{chorus.log,embed-worker.log,watcher.log}
+          __path__: /Users/jeffbridwell/.chorus/{heartbeat-probe.log,heartbeat-probe.stderr.log,reindex-worker.log}
     pipeline_stages:
       - regex:
           expression: '^(?P<content>.+)$'
