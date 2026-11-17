@@ -7,7 +7,7 @@ import http from 'http';
 import os from 'os';
 import path from 'path';
 import request from 'supertest';
-import { deriveActorState, ActorStateService, isTeamRole, buildLiveActorFactFetcher, readActivePairsFromDisk, lokiActionQuery, utcIso, type ActorFactInput } from './actor-state';
+import { deriveActorState, ActorStateService, isTeamRole, buildLiveActorFactFetcher, readActivePairsFromDisk, utcIso, type ActorFactInput } from './actor-state';
 import { createApp } from './service';
 import { MessageStore } from './store';
 
@@ -810,21 +810,18 @@ describe('Actor State - #4566 AC1 & AC2', () => {
     expect(abby?.waitingOn).toBeUndefined();
   });
 
-  test('AC2: jeff.input.delivered counts as Jeff activity; typing to a role never reads away', async () => {
-    const nowIso = new Date().toISOString();
-    const spineLine = JSON.stringify({
-      timestamp: nowIso,
-      event: 'jeff.input.delivered',
-      role: 'bridge',
-      to: 'wren',
-      chars: '42',
+  test('AC2: what Jeff sent counts as Jeff activity (#4991: read from the messages route); typing to a role never reads away', async () => {
+    const srv = http.createServer((req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ data: req.url?.startsWith('/pulse/messages/messages') ? [{ name: 'm1', senderName: 'jeff', sentAt: new Date().toISOString() }] : [] }));
     });
+    await new Promise<void>((r) => srv.listen(0, '127.0.0.1', () => r()));
+    const pulseApi = `http://127.0.0.1:${(srv.address() as { port: number }).port}`;
     const fetcher = buildLiveActorFactFetcher({
       store: { getOwedNudges: () => [] },
-      readTail: () => Promise.resolve(spineLine),
       athenaBaseUrl: UNREACHABLE_URL,
       chorusApiBaseUrl: UNREACHABLE_URL,
-      lokiBaseUrl: UNREACHABLE_URL,
+      pulseApiBaseUrl: pulseApi,
     });
     const fetched = await fetcher();
     const states = deriveActorState({
@@ -844,6 +841,7 @@ describe('Actor State - #4566 AC1 & AC2', () => {
     const jeff = states.find((s) => s.aboutPrincipal === P_JEFF);
     expect(jeff?.activity).toBe(ACT_ACTING);
     expect(jeff?.stateValue).toBe(STATE_AVAILABLE);
+    await new Promise<void>((r) => srv.close(() => r()));
   });
 });
 
@@ -904,30 +902,6 @@ describe('Actor State - #4566 AC3 & AC4', () => {
       what: 'reply',
       since: SENT_1215,
     });
-  });
-});
-
-// #4566 — LogQL double-quoted strings take Go escapes only; `\.` there is a parse error (Loki 400).
-// Backtick strings are raw, so they are set aside before the check.
-function logqlQuotedEscapesValid(q: string): boolean {
-  const quoted = q.replace(/`[^`]*`/g, '``').match(/"(?:[^"\\]|\\.)*"/g) ?? [];
-  return quoted.every((s) => !s.match(/\\[^abfnrtv\\"0-7xuU]/));
-}
-
-describe('Actor State - Loki activity query', () => {
-  it('sends a query Loki can parse for both windows', () => {
-    for (const w of ['5m', '30m']) {
-      const q = lokiActionQuery(w);
-      expect(logqlQuotedEscapesValid(q)).toBe(true);
-      expect(q).toContain('agent\\.action');
-      expect(q).toContain('jeff\\.input\\.delivered');
-      expect(q).toContain(`[${w}]`);
-    }
-  });
-
-  it('negative proof: the regex in a double-quoted string is caught as invalid', () => {
-    const broken = 'sum by (role) (count_over_time({job="platform-chorus"}[5m] |~ "agent\\.action|\\"event\\":\\"jeff\\.input\\.delivered\\""))';
-    expect(logqlQuotedEscapesValid(broken)).toBe(false);
   });
 });
 
@@ -998,14 +972,18 @@ function createStubActorServer(getFailMode: () => boolean): http.Server {
       res.end(JSON.stringify({ data: [{ name: 's-wren', ownedBy: P_WREN, channel: CH_PANE, expiresAt: EXP_1300, lastSeenAt: SEEN_1219 }] }));
     } else if (req.url?.startsWith('/api/chorus/context/board/wip')) {
       res.end(JSON.stringify({ data: { cards: [{ id: 4571, title: 'Clearing v2', owner: 'Wren' }] } }));
+    } else if (req.url?.startsWith('/pulse/streams/events')) {
+      res.end(JSON.stringify({ data: [{ name: 'c1', label: 'cargo test', streamRole: 'wren', streamPhase: 'done', streamTs: new Date().toISOString() }] }));
+    } else if (req.url?.startsWith('/pulse/messages/messages')) {
+      res.end(JSON.stringify({ data: [{ name: 'm1', senderName: 'jeff', sentAt: new Date().toISOString() }] }));
     } else {
-      res.end(JSON.stringify({ data: { result: [{ metric: { role: 'wren' }, value: [1700000000, '4'] }, { metric: { role: 'bridge' }, value: [1700000000, '1'] }] } }));
+      res.end(JSON.stringify({ data: [] }));
     }
   });
 }
 
 describe('Actor State - Live Fact Fetcher', () => {
-  test('buildLiveActorFactFetcher gathers roles, sessions, wip, loki, spine tail, and owed-nudge replies', async () => {
+  test('buildLiveActorFactFetcher gathers roles, sessions, wip, activity from the streams and messages routes, and owed-nudge replies', async () => {
     let failMode = false;
     const srv = createStubActorServer(() => failMode);
     await new Promise<void>((r) => srv.listen(0, '127.0.0.1', () => r()));
@@ -1014,22 +992,14 @@ describe('Actor State - Live Fact Fetcher', () => {
     const tmpOps = fs.mkdtempSync(path.join(os.tmpdir(), 'pulse-ops-'));
 
     try {
-      const nowIso = new Date().toISOString();
-      const tailLines = [
-        JSON.stringify({ role: 'wren', event: 'agent.action', timestamp: nowIso }),
-        JSON.stringify({ role: 'system', event: 'ignored', timestamp: nowIso }),
-        'not-valid-json',
-      ].join('\n');
-
       const fetcher = buildLiveActorFactFetcher({
         store: {
           getOwedNudges: () => [{ from: 'wren', to: ROLE_ABBY_NAME, expects: 'reply', sentAt: '2026-10-16T12:00:00Z' }],
           queryMessages: () => [{ from: ROLE_ABBY_NAME, to: 'wren', createdAt: '2026-10-16T12:05:00Z' }],
         },
-        readTail: () => Promise.resolve(tailLines),
         athenaBaseUrl: base,
         chorusApiBaseUrl: base,
-        lokiBaseUrl: base,
+        pulseApiBaseUrl: base,
         opsDir: tmpOps,
       });
 

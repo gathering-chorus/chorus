@@ -3,6 +3,7 @@
 // @card: #4595
 // @owner: abby-normal
 // #4766 (AC2): the Streams tab reads the generated streams route, never :3470
+// #4991 (AC2): a reply is its own line, marked reply, never a call
 
 import { renderRoomsPage, renderBoardPage, renderRolesPage, roleAndonLight, ownerPresence } from '../src/views';
 import { toActorRow } from '../src/sources/pulse';
@@ -346,5 +347,28 @@ describe('#4766 Streams read the generated route, never :3470', () => {
   test('NEGATIVE PROOF: a source that still reads :3470 is caught', () => {
     expect(readsOldClearing("const STREAM_URL = 'http://127.0.0.1:3470/api/stream';")).toBe(true);
     expect(readsOldClearing('// the old Clearing (:3470) is retired')).toBe(false);
+  });
+});
+
+// #4991 (AC2) — Jeff 11-17 07:34: "why dont i see your messages tool calls in streams".
+// A role's reply is a row (phase reply): shown, marked, and never read as a call.
+describe('#4991 replies in the stream', () => {
+  const { toStreamLine } = require('../src/sources/streams') as typeof import('../src/sources/streams');
+  const { renderStreamsPage } = require('../src/views') as typeof import('../src/views');
+  const now = new Date('2026-11-17T12:40:00Z');
+  const reply = { name: 'r1', label: 'replied (95 words)', streamRole: 'wren', streamPhase: 'reply', streamTs: '2026-11-17T12:39:00Z' };
+  const call = { name: 'c1', label: 'cargo test', streamRole: 'wren', streamPhase: 'done', streamTs: '2026-11-17T12:38:00Z' };
+
+  test('a reply reads as a reply line, a call as a call', () => {
+    expect(toStreamLine(reply, now)).toEqual({ ts: '07:39', role: 'wren', text: '\u21a9 replied (95 words)', type: 'reply' });
+    expect(toStreamLine(call, now).type).toBe('call');
+    const html = renderStreamsPage({ ok: true, lines: [toStreamLine(call, now), toStreamLine(reply, now)] }, []);
+    expect(html).toMatch(/<div class="stream-line reply">[^]*replied \(95 words\)/);
+    expect(html).toMatch(/<div class="stream-line"><span class="tm">07:38<\/span>[^<]*<b[^>]*>wren<\/b> cargo test/);
+  });
+
+  test('NEGATIVE PROOF: a reply rendered like a call (no reply mark) is caught', () => {
+    const asCall = renderStreamsPage({ ok: true, lines: [{ ...toStreamLine(reply, now), type: 'call' }] }, []);
+    expect(asCall).not.toMatch(/stream-line reply/);
   });
 });

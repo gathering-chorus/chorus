@@ -148,11 +148,11 @@ export function isTeamRole(r: { name?: string; roleKind?: string }): boolean {
 function deriveActivity(
   actionFact: ActionFact | undefined,
   nowMs: number,
-  lokiUnmeasured: boolean,
+  activityUnmeasured: boolean,
   hasSessions: boolean,
   hasUnmeasured: boolean
 ): ActivityValue {
-  if (lokiUnmeasured) return 'unmeasured';
+  if (activityUnmeasured) return 'unmeasured';
   if (!actionFact) return hasSessions ? 'idle' : (hasUnmeasured ? 'unmeasured' : 'idle');
 
   const lastActionMs = actionFact.lastActionAt ? new Date(actionFact.lastActionAt).getTime() : 0;
@@ -500,7 +500,7 @@ function deriveOneActor(
   input: ActorFactInput,
   actionMap: Map<string, ActionFact>,
   nowMs: number,
-  lokiUnmeasured: boolean,
+  activityUnmeasured: boolean,
   unmeasured: Array<{ source: string; reason: string }> | undefined,
   observedAt: string
 ): RoleStateResult {
@@ -512,7 +512,7 @@ function deriveOneActor(
   const activity = deriveActivity(
     actionFact,
     nowMs,
-    lokiUnmeasured,
+    activityUnmeasured,
     mySessions.length > 0,
     Boolean(unmeasured)
   );
@@ -581,10 +581,11 @@ export function deriveActorState(input: ActorFactInput): RoleStateResult[] {
   const observedAt = now.toISOString();
   const actionMap = new Map<string, ActionFact>(Object.entries(input.actions ?? {}));
   const unmeasured = input.unmeasured && input.unmeasured.length > 0 ? input.unmeasured : undefined;
-  const lokiUnmeasured = Boolean(unmeasured?.some((u) => u.source.includes('loki')));
+  // #4991 — activity comes from the domain routes (pulse:*); an unread route is unmeasured, never idle
+  const activityUnmeasured = Boolean(unmeasured?.some((u) => u.source.includes('loki') || u.source === 'pulse:streams'));
 
   return input.principals.map((p) =>
-    deriveOneActor(p, input, actionMap, nowMs, lokiUnmeasured, unmeasured, observedAt)
+    deriveOneActor(p, input, actionMap, nowMs, activityUnmeasured, unmeasured, observedAt)
   );
 }
 
@@ -814,107 +815,6 @@ export async function fetchWipCardsFact(
   }
 }
 
-interface LokiQueryResult {
-  data?: {
-    result?: Array<{
-      metric?: { role?: string };
-      value?: [number, string];
-    }>;
-  };
-}
-
-function normalizeLokiRole(rawRole?: string): string {
-  const r = rawRole ? String(rawRole).toLowerCase() : '';
-  return r === 'bridge' ? 'jeff' : r;
-}
-
-function populateLoki5m(targetMap: Map<string, ActionFact>, json5m: LokiQueryResult): void {
-  for (const item of json5m.data?.result || []) {
-    const role = normalizeLokiRole(item.metric?.role);
-    if (!role) continue;
-    const existing = targetMap.get(role) || {};
-    const count = parseInt(item.value?.[1] || '0', 10);
-    existing.recent5mCount = (existing.recent5mCount ?? 0) + count;
-    targetMap.set(role, existing);
-  }
-}
-
-function populateLoki30m(
-  targetMap: Map<string, ActionFact>,
-  json30m: LokiQueryResult
-): void {
-  for (const item of json30m.data?.result || []) {
-    const role = normalizeLokiRole(item.metric?.role);
-    if (!role) continue;
-    const existing = targetMap.get(role) || {};
-    const count30m = parseInt(item.value?.[1] || '0', 10);
-    existing.recent30mCount = (existing.recent30mCount ?? 0) + count30m;
-    targetMap.set(role, existing);
-  }
-}
-
-// #4566 — the regex rides a backtick LogQL string: inside a double-quoted LogQL string
-// `\.` is an invalid escape and Loki answers 400, which read every actor's activity as unmeasured.
-export function lokiActionQuery(window: string): string {
-  return `sum by (role) (count_over_time({job="platform-chorus"}[${window}] |~ \`agent\\.action|"event":"jeff\\.input\\.delivered"\`))`;
-}
-
-/** #4623 — the 30-minute count is read at most this often; between reads the
- *  last one is reused. The 5-minute count is read on every tick. */
-export const ACTION_30M_REFRESH_MS = 2 * 60_000;
-
-interface Action30mCache {
-  readAtMs: number;
-  json: LokiQueryResult;
-}
-
-async function fetchLokiActionFacts(
-  lokiBase: string,
-  cache: { current?: Action30mCache },
-  unmeasured: Array<{ source: string; reason: string }>
-): Promise<Map<string, ActionFact>> {
-  const result = new Map<string, ActionFact>();
-  if (lokiBase === 'off') {
-    unmeasured.push({ source: 'loki:activity', reason: 'loki off in this environment' });
-    return result;
-  }
-  const q5m = encodeURIComponent(lokiActionQuery('5m'));
-  const q30m = encodeURIComponent(lokiActionQuery('30m'));
-  const cached30m = cache.current && Date.now() - cache.current.readAtMs < ACTION_30M_REFRESH_MS
-    ? cache.current.json
-    : undefined;
-
-  try {
-    const [res5m, res30m] = await Promise.all([
-      fetch(`${lokiBase}/loki/api/v1/query?query=${q5m}`, { signal: AbortSignal.timeout(3000) }),
-      cached30m ? undefined : fetch(`${lokiBase}/loki/api/v1/query?query=${q30m}`, { signal: AbortSignal.timeout(3500) }),
-    ]);
-
-    if (res5m.ok && (!res30m || res30m.ok)) {
-      const json5m = (await res5m.json()) as LokiQueryResult;
-      const json30m = cached30m ?? ((await res30m!.json()) as LokiQueryResult);
-      if (!cached30m) cache.current = { readAtMs: Date.now(), json: json30m };
-      populateLoki5m(result, json5m);
-      populateLoki30m(result, json30m);
-    } else {
-      unmeasured.push({ source: 'loki:activity', reason: `HTTP ${res5m.status || res30m?.status}` });
-    }
-  } catch (e: unknown) {
-    unmeasured.push({ source: 'loki:activity', reason: e instanceof Error ? e.message : String(e) });
-  }
-
-  return result;
-}
-
-function resolveSpineEventRole(ev: { role?: string; event?: string }): string {
-  if (ev.event === 'jeff.input.delivered' || ev.event === 'jeff.input.surfaced') {
-    return 'jeff';
-  }
-  const role = ev.role ? String(ev.role).toLowerCase() : '';
-  if (!role || role === 'system' || role === 'pulse' || role === 'bridge') return '';
-  return role;
-}
-
 function recordRecentAction(existing: ActionFact, timestamp: string, actionDesc: string): void {
   const recent = existing.recentActions || [];
   if (!recent.some((r) => r.timestamp === timestamp && r.action === actionDesc)) {
@@ -924,48 +824,88 @@ function recordRecentAction(existing: ActionFact, timestamp: string, actionDesc:
   }
 }
 
-function processSpineTailLine(line: string, targetMap: Map<string, ActionFact>): void {
-  try {
-    const ev = JSON.parse(line) as { role?: string; event?: string; timestamp?: string; action?: string };
-    const role = resolveSpineEventRole(ev);
-    if (!role) return;
-    const tsMs = ev.timestamp ? new Date(ev.timestamp).getTime() : 0;
-    if (tsMs <= 0 || !ev.timestamp) return;
+/** One thing a principal did, from a domain route: who, when, what. */
+export interface ActivityRow { role: string; ts: string; what: string }
 
-    const existing = targetMap.get(role) || {};
-    const cur = existing.lastActionAt ? new Date(existing.lastActionAt).getTime() : 0;
-    if (tsMs > cur) {
-      existing.lastActionAt = ev.timestamp;
-    }
-    const ageMs = Date.now() - tsMs;
-    if (ageMs <= FIVE_MINUTES_MS) {
-      existing.recent5mCount = (existing.recent5mCount ?? 0) + 1;
-    }
-    if (ageMs <= THIRTY_MINUTES_MS) {
-      existing.recent30mCount = (existing.recent30mCount ?? 0) + 1;
-    }
-
-    recordRecentAction(existing, ev.timestamp, ev.action || ev.event || 'action');
-
-    targetMap.set(role, existing);
-  } catch (jsonErr: unknown) {
-    void jsonErr;
+/** #4991 — fold activity rows into the per-role action facts: last action, 5- and 30-minute
+ *  counts, the five most recent. Pure. */
+export function actionFactsFrom(rows: ActivityRow[], nowMs: number): Map<string, ActionFact> {
+  const out = new Map<string, ActionFact>();
+  for (const r of rows) {
+    const role = principalToRole(r.role).toLowerCase();
+    const tsMs = parseTimestampMs(r.ts);
+    if (!role || !(tsMs > 0)) continue;
+    const f = out.get(role) || {};
+    if (!f.lastActionAt || tsMs > parseTimestampMs(f.lastActionAt)) f.lastActionAt = new Date(tsMs).toISOString();
+    const age = nowMs - tsMs;
+    if (age <= FIVE_MINUTES_MS) f.recent5mCount = (f.recent5mCount ?? 0) + 1;
+    if (age <= THIRTY_MINUTES_MS) f.recent30mCount = (f.recent30mCount ?? 0) + 1;
+    recordRecentAction(f, new Date(tsMs).toISOString(), r.what);
+    out.set(role, f);
   }
+  return out;
 }
 
-async function appendSpineTailActions(
-  targetMap: Map<string, ActionFact>,
-  readTail: () => Promise<string>
-): Promise<void> {
-  try {
-    const rawTail = await readTail();
-    const lines = rawTail.split('\n').filter(Boolean);
-    for (const line of lines) {
-      processSpineTailLine(line, targetMap);
-    }
-  } catch (tailErr: unknown) {
-    void tailErr;
+const text = (v: unknown): string => (typeof v === 'string' ? v : '');
+
+/** #4991 — one stream row as activity: a reply is not work (#4766), and a call still
+ *  running counts as now while it started within the last 30 minutes. */
+export function streamActivity(r: Record<string, unknown>, nowIso = new Date().toISOString()): ActivityRow | null {
+  if (text(r.streamPhase) === 'reply') return null;
+  const start = text(r.streamTs);
+  // a call left running by a dead session must not read acting forever: running counts as
+  // now only while its start is inside the 30-minute window (demo review, round 2)
+  const fresh = Date.parse(nowIso) - Date.parse(start) < THIRTY_MINUTES_MS;
+  const ts = text(r.streamPhase) === 'running' && fresh ? nowIso : start;
+  return { role: text(r.streamRole), ts, what: text(r.label) || text(r.streamTool) };
+}
+
+/** #4991 — a message as its sender's activity, or null. An alert to a role is stored with the
+ *  role as both sender and recipient (11-17: 12 of the last 100 rows, every one an alert), so a
+ *  message whose sender is also a recipient is not the sender acting: an alert to a sleeping
+ *  role must never make it read "acting". Pure. */
+export function messageActivity(r: Record<string, unknown>): ActivityRow | null {
+  const by = text(r.sentBy).toLowerCase();
+  const to = (Array.isArray(r.sentTo) ? r.sentTo.map(text) : [text(r.sentTo)]).map((t) => t.toLowerCase());
+  if (by && to.includes(by)) return null;
+  const sender = text(r.senderName).toLowerCase();
+  // the system's own senders are no principal (Abby, 11-17 07:57)
+  if (['system', 'pulse', 'bridge', ''].includes(sender)) return null;
+  return { role: sender, ts: text(r.sentAt), what: 'message' };
+}
+
+/** #4991 — Jeff 11-17 07:45: "we need to use domain apis to get data here". What a principal
+ *  did is read from the domain routes, never the raw log: the streams route (each session's
+ *  tool calls and replies) and the messages route (what each one sent, Jeff's included). A job
+ *  that writes the model under a role's name is in neither, so it never reads as that role
+ *  acting (11-17 07:21: Kade and Silas "acting" from crawler, deploy and sensor writes). This
+ *  replaces pulse's own spine tail and its Loki count. A route that cannot be read is named
+ *  unmeasured, never an empty "idle". */
+export async function fetchActivityFacts(
+  pulseApiBase: string,
+  unmeasured: Array<{ source: string; reason: string }>
+): Promise<Map<string, ActionFact>> {
+  if (pulseApiBase === 'off') {
+    unmeasured.push({ source: 'pulse:streams', reason: 'PULSE_API_URL=off (a demo pulse never reads prod)' });
+    return new Map();
   }
+  const rows: ActivityRow[] = [];
+  const read = async (source: string, path: string, map: (r: Record<string, unknown>) => ActivityRow | null) => {
+    try {
+      const res = await fetch(`${pulseApiBase}${path}`, { signal: AbortSignal.timeout(3000) });
+      if (!res.ok) { unmeasured.push({ source, reason: `HTTP ${res.status}` }); return; }
+      const body = (await res.json()) as { data?: Array<Record<string, unknown>> };
+      if (!Array.isArray(body.data)) { unmeasured.push({ source, reason: 'no data list' }); return; }
+      for (const r of body.data) { const row = map(r); if (row) rows.push(row); }
+    } catch (e: unknown) {
+      unmeasured.push({ source, reason: e instanceof Error ? e.message : String(e) });
+    }
+  };
+  await Promise.all([
+    read('pulse:streams', '/pulse/streams/events?limit=500', streamActivity),
+    read('pulse:messages', '/pulse/messages/messages?limit=200&sort=-sentAt', messageActivity),
+  ]);
+  return actionFactsFrom(rows, Date.now());
 }
 
 function resolveNodeStep(
@@ -1054,18 +994,18 @@ export function buildLiveActorFactFetcher(options: {
     getOwedNudges: () => Array<{ from: string; to: string; expects: 'reply' | 'decision' | 'action'; sentAt: string }>;
     queryMessages?: (opts: { type?: string; limit?: number }) => Array<{ from: string; to: string; createdAt?: string; created_at?: string }>;
   };
-  readTail: () => Promise<string>;
   athenaBaseUrl?: string;
   chorusApiBaseUrl?: string;
-  lokiBaseUrl?: string;
+  /** #4991 — the pulse API (streams and messages routes) */
+  pulseApiBaseUrl?: string;
   daguBaseUrl?: string;
   opsDir?: string;
 }): () => Promise<ActorFactInput> {
   const athenaBase = options.athenaBaseUrl || process.env.ATHENA_MAKE_URL || 'http://localhost:3360';
   const apiBase = options.chorusApiBaseUrl || process.env.CHORUS_API_URL || 'http://localhost:3340';
-  const lokiBase = options.lokiBaseUrl || process.env.LOKI_URL || 'http://localhost:3102';
+  const pulseApiBase = options.pulseApiBaseUrl || process.env.PULSE_API_URL || 'http://127.0.0.1:3392';
+  // #4991 — a demo pulse runs with PULSE_API_URL=off: it never reads prod's routes (activity reads unmeasured)
   const daguBase = options.daguBaseUrl || process.env.DAGU_URL || 'http://127.0.0.1:8526';
-  const action30mCache: { current?: Action30mCache } = {};
 
   return async (): Promise<ActorFactInput> => {
     const unmeasured: Array<{ source: string; reason: string }> = [];
@@ -1075,7 +1015,7 @@ export function buildLiveActorFactFetcher(options: {
       fetchRolesFact(athenaBase, unmeasured),
       fetchSessionsFact(athenaBase, unmeasured),
       fetchWipCardsFact(apiBase, unmeasured),
-      fetchLokiActionFacts(lokiBase, action30mCache, unmeasured),
+      fetchActivityFacts(pulseApiBase, unmeasured),
       fetchPresenceFact(athenaBase, unmeasured),
     ]);
     const reachability = presence
@@ -1096,7 +1036,6 @@ export function buildLiveActorFactFetcher(options: {
 
     const cardSteps = await fetchDaguCardSteps(daguBase, wipCards, unmeasured);
     const activePairs = readActivePairsFromDisk(options.opsDir);
-    await appendSpineTailActions(actionMap, options.readTail);
 
     const actionsRecord: Record<string, ActionFact> = Object.fromEntries(actionMap.entries());
     const rawOwed = options.store.getOwedNudges();

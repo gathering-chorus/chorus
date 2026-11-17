@@ -1029,20 +1029,24 @@ function roleClass(role: string): string {
 }
 
 /** #4986 — tail -f on the phone. Every 5 s the page is re-read and only the stream is swapped in
- *  place; the view follows the newest line only if the reader is at the bottom when the new lines
+ *  place; the stream box (not the page, so the menu stays put, #4991) follows the newest line only if
+ *  the reader is at the bottom when the new lines
  *  land, so a reader scrolled up to read back keeps their place. One read at a time, and a read
  *  that takes over 8 s is abandoned, so a hung request never stops the tail. A 200 page without a
  *  stream (it became unreadable or empty) reloads so the reason is named. Anything else (an error
  *  status such as a 502 during a restart, a network failure, a timeout) keeps the lines, marks them
  *  "Not refreshed: <reason>" under the newest line, and the next tick tries again. */
 export const STREAM_TAIL_SCRIPT = `(function () {
-  function atBottom() { return window.innerHeight + window.scrollY >= document.body.scrollHeight - 40; }
+  // #4991 — the stream scrolls inside its own box, so the page and its menu never move
+  function atBottom(t) { return t.scrollTop + t.clientHeight >= t.scrollHeight - 40; }
+  function toBottom(t) { t.scrollTop = t.scrollHeight; }
   function stale(why) {
     var s = document.getElementById('stream-stale');
     if (!s) { s = document.createElement('div'); s.id = 'stream-stale'; s.className = 'meta fail'; document.getElementById('stream-tail').after(s); }
     s.textContent = 'Not refreshed: ' + why;
   }
-  if (document.getElementById('stream-tail')) window.scrollTo(0, document.body.scrollHeight);
+  var first = document.getElementById('stream-tail');
+  if (first) toBottom(first);
   var busy = false;
   setInterval(function () {
     var cur = document.getElementById('stream-tail');
@@ -1057,11 +1061,11 @@ export const STREAM_TAIL_SCRIPT = `(function () {
     }).then(function (h) {
       var next = new DOMParser().parseFromString(h, 'text/html').getElementById('stream-tail');
       if (!next) { window.location.reload(); return; }
-      var stick = atBottom();
+      var stick = atBottom(cur);
       cur.innerHTML = next.innerHTML;
       var s = document.getElementById('stream-stale');
       if (s) s.remove();
-      if (stick) window.scrollTo(0, document.body.scrollHeight);
+      if (stick) toBottom(cur);
     }).catch(function (e) {
       stale(e && e.name === 'AbortError' ? 'no answer in 8 s' : e && e.message ? e.message : 'unreachable');
     }).then(function () { clearTimeout(timer); busy = false; });
@@ -1078,7 +1082,7 @@ export function renderStreamsPage(streams: Streams, sources: TrustStripSource[])
     ? `<div class="meta fail" style="padding:16px">Streams could not be read: ${escapeHtml(streams.reason)}</div>`
     : streams.lines.length === 0
       ? `<div class="meta" style="padding:16px">No commands in the stream yet.</div>`
-      : `<div class="stream-tail" id="stream-tail">${streams.lines.map((l) => `<div class="stream-line"><span class="tm">${escapeHtml(l.ts)}</span> <b class="who-${roleClass(l.role)}">${escapeHtml(l.role)}</b> ${escapeHtml(l.text)}</div>`).join('')}
+      : `<div class="stream-tail" id="stream-tail">${streams.lines.map((l) => `<div class="stream-line${l.type === 'reply' ? ' reply' : ''}"><span class="tm">${escapeHtml(l.ts)}</span> <b class="who-${roleClass(l.role)}">${escapeHtml(l.role)}</b> ${escapeHtml(l.text)}</div>`).join('')}
     </div>`;
   const content = `<main class="page streams-page" id="streams-page">
     ${body}

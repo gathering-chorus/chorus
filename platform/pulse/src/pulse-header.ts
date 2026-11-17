@@ -135,6 +135,8 @@ export async function readAlerts(base = process.env.GRAFANA_ALERTS_URL || 'http:
 
 /** #4761 — the newest messages, from the generated route (the hand-written /api/messages is retired). */
 export async function readMessages(base = process.env.PULSE_API_URL || 'http://127.0.0.1:3392'): Promise<Array<{ senderName: string; messageBody: string; sentAt: string }>> {
+  // #4991 — a demo pulse runs with PULSE_API_URL=off: it never reads prod's messages
+  if (base === 'off') throw new Error('messages: PULSE_API_URL=off (a demo pulse never reads prod)');
   const res = await fetch(`${base}/pulse/messages/messages?sort=-sentAt&limit=5`, { signal: AbortSignal.timeout(4000) });
   if (!res.ok) throw new Error(`messages: HTTP ${res.status}`);
   const body = await res.json() as { data?: Array<{ senderName?: unknown; messageBody?: unknown; sentAt?: unknown }> };

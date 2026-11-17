@@ -904,7 +904,7 @@ if (require.main === module) {
 
     // #4560 — ActorStateService: derives actor state on 15s timer into cache
     const actorStateService = new ActorStateService(
-      buildLiveActorFactFetcher({ store, readTail })
+      buildLiveActorFactFetcher({ store })
     );
     actorStateService.start();
 

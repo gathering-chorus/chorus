@@ -186,8 +186,7 @@ describe('#4965 one live read over every door', () => {
     try {
       const fetcher = buildLiveActorFactFetcher({
         store: { getOwedNudges: () => [] },
-        readTail: () => Promise.reject(new Error('spine unreadable')),
-        athenaBaseUrl: d.url, chorusApiBaseUrl: d.url, lokiBaseUrl: 'off', daguBaseUrl: d.url,
+        athenaBaseUrl: d.url, chorusApiBaseUrl: d.url, pulseApiBaseUrl: d.url, daguBaseUrl: d.url,
         opsDir: path.join(os.tmpdir(), 'no-such-pairs-4965'),
       });
       const input = await fetcher();
@@ -197,10 +196,10 @@ describe('#4965 one live read over every door', () => {
       expect(input.cardSteps).toEqual({ 4965: 'unmeasured' });
       // presences read with no live presence for kade: offline, said as a fact
       expect(input.reachability).toEqual({ kade: 'offline' });
-      // a spine tail that cannot be read adds no actions and does not fail the read
+      // #4991 — activity routes the door does not serve add no actions and are named unmeasured
       expect(input.actions).toEqual({});
       expect(input.activePairs).toEqual([]);
-      expect(input.unmeasured).toEqual([{ source: 'loki:activity', reason: 'loki off in this environment' }]);
+      expect(input.unmeasured).toEqual(expect.arrayContaining([expect.objectContaining({ source: 'pulse:streams' }), expect.objectContaining({ source: 'pulse:messages' })]));
     } finally { await d.close(); }
   });
 
@@ -214,8 +213,8 @@ describe('#4965 one live read over every door', () => {
     });
     try {
       const input = await buildLiveActorFactFetcher({
-        store: { getOwedNudges: () => [] }, readTail: () => Promise.resolve(''),
-        athenaBaseUrl: d.url, chorusApiBaseUrl: d.url, lokiBaseUrl: 'off', daguBaseUrl: d.url,
+        store: { getOwedNudges: () => [] },
+        athenaBaseUrl: d.url, chorusApiBaseUrl: d.url, pulseApiBaseUrl: d.url, daguBaseUrl: d.url,
         opsDir: path.join(os.tmpdir(), 'no-such-pairs-4965'),
       })();
       expect(input.reachability).toBeUndefined();

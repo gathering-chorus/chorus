@@ -1272,8 +1272,11 @@ tr.you td {
 
 /* #4597 — the Streams tab; #4986: one interleaved stream, newest at the bottom */
 .streams-page { padding: 12px; }
-.stream-tail { padding: 4px 10px; min-width: 0; }
+/* #4991 — the stream scrolls in its own box; the page, and its menu, stay where they are */
+.stream-tail { padding: 4px 10px; min-width: 0; max-height: calc(100dvh - 220px); overflow-y: auto; overscroll-behavior: contain; }
 .stream-line b { font-weight: 600; margin-right: 4px; }
+/* #4991 — a reply is not work: quieter than a call */
+.stream-line.reply { color: var(--meta); font-style: italic; }
 .stream-line { font-size: 12.5px; line-height: 1.4; padding: 3px 0; border-top: 1px solid var(--line2); overflow-wrap: anywhere; }
 .stream-line .tm { color: var(--meta); margin-right: 4px; }
 /* #4634 — the by-day counts: a day where Buzz kept fewer than were sent reads red */

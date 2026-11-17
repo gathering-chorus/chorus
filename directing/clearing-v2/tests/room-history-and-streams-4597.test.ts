@@ -4,12 +4,15 @@
 // @domain: messages
 // #4766 (AC3): the Streams tab renders with the old Clearing stopped
 // #4986 (AC1): one stream, every role interleaved, oldest at top, newest at the bottom
+// #4991 (AC6): the stream scrolls in its own box; the page, and its menu, never move
 /**
  * #4597 — Jeff 19:11: "i cant scroll up in message history and really need streams tab".
  * Scrolling up loads the page just older than the oldest shown; the Streams tab shows
  * every role's recent commands as one stream, newest at the bottom (#4986), and names an
  * unreadable stream.
  */
+import fs from 'fs';
+import path from 'path';
 import http from 'http';
 import { createApp } from '../src/server';
 import { ROOM_PAGE_MESSAGES } from '../src/data-service';
@@ -90,13 +93,20 @@ describe('#4597 the Streams tab', () => {
   type Resp = { ok: boolean; status?: number; body: string } | Error | 'hang';
   function runTail(scrollY: number, resp: Resp = { ok: true, body: 'new' }, hasTail = true) {
     const scrolls: number[] = [];
+    let pageScrolls = 0;
     let reloads = 0;
     let fetches = 0;
     let tick: () => void = () => undefined;
     const timers: Array<() => void> = [];
     const stale: Array<{ textContent: string }> = [];
-    const cur = { innerHTML: 'old', after: (n: { textContent: string }) => { stale.push(n); } };
-    const win = { innerHeight: 800, scrollY, location: { href: 'http://x/streams', reload: () => { reloads++; } }, scrollTo: (_x: number, y: number) => { scrolls.push(y); } };
+    // #4991 — the stream box scrolls; scrollY here is the box's scrollTop (box 800 tall, content 2000)
+    let top = scrollY;
+    const cur = {
+      innerHTML: 'old', clientHeight: 800, scrollHeight: 2000,
+      get scrollTop() { return top; }, set scrollTop(v: number) { top = v; scrolls.push(v); },
+      after: (n: { textContent: string }) => { stale.push(n); },
+    };
+    const win = { innerHeight: 800, scrollY: 0, location: { href: 'http://x/streams', reload: () => { reloads++; } }, scrollTo: () => { pageScrolls++; } };
     const doc = {
       body: { scrollHeight: 2000 },
       getElementById: (id: string) => (id === 'stream-tail' && hasTail ? cur : id === 'stream-stale' ? stale[0] ?? null : null),
@@ -114,17 +124,33 @@ describe('#4597 the Streams tab', () => {
     };
     new Function('window', 'document', 'fetch', 'DOMParser', 'setInterval', 'setTimeout', 'clearTimeout', 'AbortController', STREAM_TAIL_SCRIPT)(
       win, doc, fetchStub, parser, (fn: () => void) => { tick = fn; }, (fn: () => void) => { timers.push(fn); return timers.length; }, () => undefined, Ctl);
-    scrolls.length = 0; // the first load always opens at the bottom
+    scrolls.length = 0; // the first load always opens the box at the bottom
+    top = scrollY;
     tick();
-    return { scrolls, tick: () => tick(), fireTimers: () => timers.splice(0).forEach((f) => f()), swapped: () => cur.innerHTML, reloads: () => reloads, fetches: () => fetches, stale: () => stale.map((x) => x.textContent) };
+    return { scrolls, pageScrolls: () => pageScrolls, tick: () => tick(), fireTimers: () => timers.splice(0).forEach((f) => f()), swapped: () => cur.innerHTML, reloads: () => reloads, fetches: () => fetches, stale: () => stale.map((x) => x.textContent) };
   }
   const settle = () => new Promise((r) => setImmediate(r));
 
   test('at the bottom, a refresh swaps the stream in place and follows the newest line', async () => {
-    const t = runTail(1200); // 800 + 1200 = bottom of 2000
+    const t = runTail(1200); // box: 1200 + 800 = bottom of 2000
     await settle();
     expect(t.swapped()).toBe('new');
     expect(t.scrolls).toEqual([2000]);
+  });
+
+  // #4991 — Jeff 11-17 08:20: "when i go to streams i lose the menu"
+  test('NEGATIVE PROOF (#4991): opening and refreshing never scroll the page, so the menu stays in view', async () => {
+    const t = runTail(1200);
+    await settle();
+    expect(t.pageScrolls()).toBe(0);
+  });
+
+  // #4991 (AC6) — without the CSS rule a real browser's box never scrolls, and the page grows instead
+  test('the served stylesheet makes the stream box scroll on its own: a max-height and overflow-y auto', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'style.css'), 'utf8');
+    const rule = /\.stream-tail\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';
+    expect(rule).toMatch(/max-height\s*:/);
+    expect(rule).toMatch(/overflow-y\s*:\s*auto/);
   });
 
   test('NEGATIVE PROOF: scrolled up, a refresh swaps the stream but never moves the reader', async () => {
@@ -202,7 +228,7 @@ describe('#4766 Streams without the old Clearing', () => {
       expect(got.ok).toBe(true);
       if (!got.ok) return;
       expect(got.lines.map((l) => `${l.role} ${l.text}`)).toEqual(['wren read card', 'kade git status \u2717', 'wren \u23f3 cargo test']);
-      expect(got.lines[2].ts).toBe('20:00'); // 01:00 UTC as Boston time
+      expect(got.lines[2].ts).toBe('Nov 16 20:00'); // 11-17 01:00 UTC is 11-16 20:00 Boston, so the date shows (#4991)
     } finally { await r.close(); }
   });
 
