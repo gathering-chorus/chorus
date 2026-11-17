@@ -10,6 +10,7 @@
 # both, and Kade's session started Silas.
 #
 # Asserts are simple commands, never `[[ ]]` (bash 3.2 hollow-assert, 2026-09-16).
+# #4414 (AC1): a role running outside tmux is moved into its pane by one login, never blessed "already awake"
 
 setup() {
   ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
@@ -74,6 +75,70 @@ state_is() { grep -q "\"state\":\"$2\"" "$T/identity/$1/login.json"; }
   test -z "$(grep "token kade" "$T/token.log" || true)"
   grep -q '"pid":46809' "$T/identity/kade/login.json"
   state_is kade pending
+}
+
+# #4414 AC1 — Jeff 09-30 15:48: login found a Silas in a plain window (ttys007, host unknown,
+# no tmux pane), said "already awake", and started nothing in tmux; nudges could not reach it.
+stray() {
+  printf '{"role":"%s","pid":%s,"tty":"/dev/ttys007","host":"unknown","tmux":""}' "$1" "$2" > "$T/sessions/$1-$2.json"
+  echo "$2" >> "$T/alive-pids"
+  printf '{"role":"%s","event":"reply.published","timestamp":"%s"}\n' "$1" "$(date '+%Y-%m-%dT%H:%M:%S')" >> "$T/spine-read.log"
+}
+
+@test "#4414 AC1: a role running outside tmux is moved into its tmux pane, and the line says so" {
+  # the stray's own establish opened a run (as the role does on its first turn)
+  "$SCRIPT" establish silas --run 1a2b >/dev/null 2>&1
+  stray silas 10263
+  printf '{"state":"recorded","session":"silas-x-1","pid":10263}' > "$T/identity/silas/login.json"
+  : > "$T/claude.log"; : > "$T/tmux.log"
+  run "$SCRIPT" on silas
+  test "$status" -eq 0
+  out_has "moving silas into tmux"
+  grep -q "claude stop 10263" "$T/claude.log"
+  test ! -f "$T/sessions/silas-10263.json"
+  grep -q "new-session" "$T/tmux.log"
+  # Silas 14:12 — the stray's open run row is closed (the start ends it as a restart), not left for the sweep to call a crash
+  r=$(cat "$T"/bodies/*PATCH-identity_sessionruns_* 2>/dev/null | tail -1); printf '%s' "$r" | grep -q '"endReason":"restart"'
+  # and the role resumes its conversation in the pane, not a fresh one
+  out_has "via claude -c"
+}
+
+@test "#4414 AC1 NEGATIVE PROOF: a role outside tmux is never blessed already awake" {
+  stray silas 10263
+  printf '{"state":"recorded","session":"silas-x-1","pid":10263}' > "$T/identity/silas/login.json"
+  run "$SCRIPT" on silas
+  out_lacks "via already awake"
+}
+
+@test "#4414 AC1 NEGATIVE PROOF: a role registered without a pane whose tty a tmux pane owns is left alone (the live case)" {
+  stray silas 10263
+  echo /dev/ttys007 > "$T/pane-ttys"
+  printf '{"state":"recorded","session":"silas-x-1","pid":10263}' > "$T/identity/silas/login.json"
+  : > "$T/claude.log"
+  run "$SCRIPT" on silas
+  test "$status" -eq 0
+  out_lacks "moving silas into tmux"
+  out_has "via already awake"
+  test -z "$(grep "claude stop 10263" "$T/claude.log" || true)"
+}
+
+@test "#4414 AC1 NEGATIVE PROOF: tmux that cannot be read never ends a session, and says it cannot tell" {
+  stray silas 10263
+  touch "$T/tmux-unreadable"
+  printf '{"state":"recorded","session":"silas-x-1","pid":10263}' > "$T/identity/silas/login.json"
+  : > "$T/claude.log"
+  run "$SCRIPT" on silas
+  out_has "cannot tell if silas is in tmux"
+  test -z "$(grep "claude stop 10263" "$T/claude.log" || true)"
+}
+
+@test "#4414 AC1: a registry tty without /dev/ still matches tmux's pane tty" {
+  printf '{"role":"silas","pid":10263,"tty":"ttys007","host":"unknown","tmux":""}' > "$T/sessions/silas-10263.json"
+  echo 10263 >> "$T/alive-pids"
+  echo /dev/ttys007 > "$T/pane-ttys"
+  printf '{"state":"recorded","session":"silas-x-1","pid":10263}' > "$T/identity/silas/login.json"
+  run "$SCRIPT" on silas
+  out_lacks "moving silas into tmux"
 }
 
 @test "on: a running role whose login is on file for this pid is left alone" {

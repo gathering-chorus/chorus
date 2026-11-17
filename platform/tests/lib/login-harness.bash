@@ -53,6 +53,7 @@ case "\$1" in
   new-session) touch "$T/tmux-\$4" ;;
   kill-session) rm -f "$T/tmux-\$3" ;;
   list-clients) cat "$T/clients-\$3" 2>/dev/null ;;
+  list-panes) [ -f "$T/tmux-unreadable" ] && exit 1; cat "$T/pane-ttys" 2>/dev/null ;;   # #4414 — the ttys tmux panes own
   send-keys) register "\$3" ;;
 esac
 exit 0

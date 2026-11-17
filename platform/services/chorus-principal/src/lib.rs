@@ -68,6 +68,21 @@ pub struct Live {
     pub pane: String,
 }
 
+/// #4414 — a live session is outside tmux only when its registry entry names no pane AND
+/// no tmux pane owns its tty. `pane_ttys` is `tmux list-panes -a -F '#{pane_tty}'`; when
+/// tmux could not be read (None) nothing is judged outside, so a healthy role is never ended.
+fn norm_tty(t: &str) -> &str { t.trim().trim_start_matches("/dev/") }
+
+pub fn outside_tmux(l: &Live, pane_ttys: Option<&str>) -> bool {
+    let named_pane = l.pane.starts_with('%') && l.pane.len() > 1 && l.pane[1..].chars().all(|c| c.is_ascii_digit());
+    match pane_ttys {
+        _ if named_pane => false,
+        None => false,
+        // Silas 14:21 — compare normalized ttys: the registry may hold `ttys007`, tmux `/dev/ttys007`
+        Some(list) => { let mine = norm_tty(&l.tty); !list.lines().any(|t| !mine.is_empty() && norm_tty(t) == mine) }
+    }
+}
+
 /// What to launch, decided from claude's own session list + the newest
 /// conversation file. Pure; unit-tested.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1241,7 +1256,22 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
         eprintln!("  run `chorus-principal logout {}` to end both, then `chorus-principal login {}`.", role, role);
         return Err((1, format!("{} live sessions", live.len())));
     }
-    if let Some(l) = live.first() {
+    // #4414 — the registry often holds no pane for a Claude role (host "unknown"), so a stray
+    // is a session whose tty no tmux pane owns; a tmux that cannot be read decides nothing.
+    let pane_ttys = sh(&ctx.tmux, &["list-panes", "-a", "-F", "#{pane_tty}"]).ok();
+    if pane_ttys.is_none() && live.first().is_some_and(|l| !l.pane.starts_with('%')) {
+        println!("cannot tell if {} is in tmux (tmux could not be read); leaving its session alone", role);
+    }
+    if let Some(l) = live.first().filter(|l| outside_tmux(l, pane_ttys.as_deref())) {
+        // #4414 AC1 — Jeff 09-30 15:48: a Silas in a plain window (no tmux pane) was blessed
+        // "already awake" and nothing started in tmux; nudges cannot reach a role outside
+        // its pane. One login ends it and starts the role in its pane, and says so.
+        println!("moving {} into tmux: pid {} on {} is outside its pane, so nudges cannot reach it", role, l.pid, l.tty);
+        let _ = sh(&ctx.claude, &["stop", &l.pid.to_string()]);
+        let _ = fs::remove_file(ctx.sessions_dir.join(format!("{}-{}.json", role, l.pid)));
+        // Silas 14:12 — its open run row is closed by the start below (end_run "restart"), so the
+        // sweep never reads the stray as a crash; the 4295 test asserts that close.
+    } else if let Some(l) = live.first() {
         let liveness_on = envd("AWAKE_LIVENESS", "1") != "0";
         let mute_window: u64 = envd("AWAKE_MUTE_SECS", "900").parse().unwrap_or(900);
         let age = sh(&ctx.ps, &["-o", "etime=", "-p", &l.pid.to_string()]).ok().and_then(|e| parse_etime(&e));
