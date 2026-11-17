@@ -11,7 +11,7 @@
 import http from 'http';
 import { createApp } from '../src/server';
 import { ROOM_PAGE_MESSAGES } from '../src/data-service';
-import { groupByRole, fetchStreams } from '../src/sources/streams';
+import { fetchStreams } from '../src/sources/streams';
 import { renderStreamsPage } from '../src/views';
 const { loadOlderMessages } = require('../public/app.js');
 
@@ -63,17 +63,22 @@ describe('#4597 scrolling up loads older messages', () => {
 });
 
 describe('#4597 the Streams tab', () => {
-  test('commands are grouped one column per role, newest first', () => {
-    const roles = groupByRole([
+  // #4986 (AC1) — Jeff 11-17: "interleaved across all of u most recent at bottom", like tail -f
+  test('every role in one stream, oldest at top, newest at the bottom, each line naming its role', () => {
+    const lines = [
       { ts: '7:10 PM', role: 'kade', text: 'bash: one' },
       { ts: '7:11 PM', role: 'wren', text: 'bash: two' },
       { ts: '7:12 PM', role: 'kade', text: 'bash: three' },
-    ]);
-    expect(roles.map((r) => r.role)).toEqual(['kade', 'wren']);
-    expect(roles[0].lines.map((l) => l.text)).toEqual(['bash: three', 'bash: one']);
-    const html = renderStreamsPage({ ok: true, roles }, []);
+    ];
+    const html = renderStreamsPage({ ok: true, lines }, []);
     expect(html).toContain('href="/streams" class="on"');
-    expect(html.indexOf('bash: three')).toBeLessThan(html.indexOf('bash: one'));
+    const at = (t: string) => html.indexOf(t);
+    expect(at('bash: one')).toBeLessThan(at('bash: two'));
+    expect(at('bash: two')).toBeLessThan(at('bash: three'));
+    expect(html).toMatch(/<b class="who-wren">wren<\/b> bash: two/);
+    // NEGATIVE PROOF: a per-role grouped render puts kade's two calls together (one, three, two)
+    // and fails the order above; newest-first fails it too. Both mutations were run red.
+    expect(html).not.toContain('stream-col');
   });
 
   test('NEGATIVE PROOF: an unreachable stream is named, never an empty page', async () => {
@@ -101,17 +106,15 @@ describe('#4766 Streams without the old Clearing', () => {
     ],
   };
 
-  test('each role shows its calls newest first, read with ?limit=200', async () => {
+  test('calls come back as one stream, newest last, read with ?limit=200', async () => {
     const r = await stubRoute(rows);
     try {
       const got = await fetchStreams(r.url);
       expect(r.seen).toEqual(['/pulse/streams/events?limit=200']);
       expect(got.ok).toBe(true);
       if (!got.ok) return;
-      expect(got.roles.map((x) => x.role)).toEqual(['kade', 'wren']);
-      expect(got.roles[1].lines.map((l) => l.text)).toEqual(['\u23f3 cargo test', 'read card']);
-      expect(got.roles[0].lines[0].text).toBe('git status \u2717');
-      expect(got.roles[1].lines[0].ts).toBe('20:00'); // 01:00 UTC as Boston time
+      expect(got.lines.map((l) => `${l.role} ${l.text}`)).toEqual(['wren read card', 'kade git status \u2717', 'wren \u23f3 cargo test']);
+      expect(got.lines[2].ts).toBe('20:00'); // 01:00 UTC as Boston time
     } finally { await r.close(); }
   });
 

@@ -1030,18 +1030,14 @@ ${history}
 export function renderStreamsPage(streams: Streams, sources: TrustStripSource[]): string {
   const body = !streams.ok
     ? `<div class="meta fail" style="padding:16px">Streams could not be read: ${escapeHtml(streams.reason)}</div>`
-    : streams.roles.length === 0
+    : streams.lines.length === 0
       ? `<div class="meta" style="padding:16px">No commands in the stream yet.</div>`
-      : `<div class="streams-grid">${streams.roles.map((r) => `
-      <section class="stream-col">
-        <h3 class="who-${escapeHtml(r.role)}">${escapeHtml(r.role)}</h3>
-        ${r.lines.map((l) => `<div class="stream-line"><span class="tm">${escapeHtml(l.ts)}</span> ${escapeHtml(l.text)}</div>`).join('')}
-      </section>`).join('')}
+      : `<div class="stream-tail" id="stream-tail">${streams.lines.map((l) => `<div class="stream-line"><span class="tm">${escapeHtml(l.ts)}</span> <b class="who-${escapeHtml(l.role)}">${escapeHtml(l.role)}</b> ${escapeHtml(l.text)}</div>`).join('')}
     </div>`;
   const content = `<main class="page streams-page" id="streams-page">
     ${body}
   </main>
-  <script>setTimeout(function () { window.location.reload(); }, 5000);</script>`;
+  <script>(function () { var t = document.getElementById('stream-tail'); if (t) window.scrollTo(0, document.body.scrollHeight); })(); setTimeout(function () { window.location.reload(); }, 5000);</script>`;
   return renderPageShell('Streams', 'streams', content, sources);
 }
 
