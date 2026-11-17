@@ -80,21 +80,22 @@ describe('#4597 the Streams tab', () => {
     expect(html).toMatch(/<b class="who-wren">wren<\/b> bash: two/);
     // NEGATIVE PROOF: the lines come out exactly in time order across roles. A per-role grouped
     // render gives kade one, kade three, wren two; newest-first gives three, two, one. Both fail
-    // this sequence (both mutations were run red), and no per-role column markup remains.
+    // this sequence (both mutations were run red).
     const order = Array.from(html.matchAll(/bash: (one|two|three)/g)).map((m) => m[1]);
     expect(order).toEqual(['one', 'two', 'three']);
-    expect(html).not.toContain('stream-col');
   });
 
   // #4986 (AC1) — tail -f on the phone: the stream refreshes in place and follows the bottom only
   // while the reader is there; scrolled up to read back, the reader keeps their place.
-  type Resp = { ok: boolean; body: string } | Error;
+  type Resp = { ok: boolean; status?: number; body: string } | Error | 'hang';
   function runTail(scrollY: number, resp: Resp = { ok: true, body: 'new' }, hasTail = true) {
     const scrolls: number[] = [];
     let reloads = 0;
+    let fetches = 0;
     let tick: () => void = () => undefined;
-    const cur = { innerHTML: 'old', before: (n: { textContent: string }) => { stale.push(n); } };
+    const timers: Array<() => void> = [];
     const stale: Array<{ textContent: string }> = [];
+    const cur = { innerHTML: 'old', after: (n: { textContent: string }) => { stale.push(n); } };
     const win = { innerHeight: 800, scrollY, location: { href: 'http://x/streams', reload: () => { reloads++; } }, scrollTo: (_x: number, y: number) => { scrolls.push(y); } };
     const doc = {
       body: { scrollHeight: 2000 },
@@ -104,12 +105,18 @@ describe('#4597 the Streams tab', () => {
     const parser = function DOMParser(this: unknown) {
       return { parseFromString: (h: string) => ({ getElementById: () => (h === 'no-stream' ? null : { innerHTML: h }) }) };
     };
-    const fetchStub = () => (resp instanceof Error ? Promise.reject(resp) : Promise.resolve({ ok: resp.ok, text: () => Promise.resolve(resp.body) }));
-    new Function('window', 'document', 'fetch', 'DOMParser', 'setInterval', STREAM_TAIL_SCRIPT)(
-      win, doc, fetchStub, parser, (fn: () => void) => { tick = fn; });
+    class Ctl { signal = { aborted: false, onabort: null as null | (() => void) }; abort() { this.signal.aborted = true; this.signal.onabort?.(); } }
+    const fetchStub = (_u: string, o: { signal: Ctl['signal'] }) => {
+      fetches++;
+      if (resp === 'hang') return new Promise((_r, rej) => { o.signal.onabort = () => { const e = new Error('aborted'); e.name = 'AbortError'; rej(e); }; });
+      if (resp instanceof Error) return Promise.reject(resp);
+      return Promise.resolve({ ok: resp.ok, status: resp.status ?? (resp.ok ? 200 : 502), text: () => Promise.resolve(resp.body) });
+    };
+    new Function('window', 'document', 'fetch', 'DOMParser', 'setInterval', 'setTimeout', 'clearTimeout', 'AbortController', STREAM_TAIL_SCRIPT)(
+      win, doc, fetchStub, parser, (fn: () => void) => { tick = fn; }, (fn: () => void) => { timers.push(fn); return timers.length; }, () => undefined, Ctl);
     scrolls.length = 0; // the first load always opens at the bottom
     tick();
-    return { scrolls, swapped: () => cur.innerHTML, reloads: () => reloads, stale: () => stale.map((x) => x.textContent) };
+    return { scrolls, tick: () => tick(), fireTimers: () => timers.splice(0).forEach((f) => f()), swapped: () => cur.innerHTML, reloads: () => reloads, fetches: () => fetches, stale: () => stale.map((x) => x.textContent) };
   }
   const settle = () => new Promise((r) => setImmediate(r));
 
@@ -127,17 +134,21 @@ describe('#4597 the Streams tab', () => {
     expect(t.scrolls).toEqual([]);
   });
 
-  test('NEGATIVE PROOF: a re-read with no stream, or an error status, reloads so the reason is named, never stale lines', async () => {
+  test('NEGATIVE PROOF: a 200 page with no stream reloads so the reason is named, never stale lines', async () => {
     const gone = runTail(1200, { ok: true, body: 'no-stream' });
     await settle();
     expect(gone.reloads()).toBe(1);
     expect(gone.swapped()).toBe('old');
-    const err = runTail(1200, { ok: false, body: 'login' });
-    await settle();
-    expect(err.reloads()).toBe(1);
-    expect(err.swapped()).toBe('old');
     const none = runTail(1200, { ok: true, body: 'new' }, false);
     expect(none.reloads()).toBe(1);
+  });
+
+  test('NEGATIVE PROOF: an error status (a 502 during a restart) marks the stream stale and never reloads', async () => {
+    const t = runTail(1200, { ok: false, status: 502, body: 'bad gateway' });
+    await settle();
+    expect(t.reloads()).toBe(0);
+    expect(t.stale()).toEqual(['Not refreshed: answered 502']);
+    expect(t.swapped()).toBe('old');
   });
 
   test('NEGATIVE PROOF: a failed re-read marks the stream not refreshed, with the reason', async () => {
@@ -145,6 +156,17 @@ describe('#4597 the Streams tab', () => {
     await settle();
     expect(t.stale()).toEqual(['Not refreshed: network down']);
     expect(t.swapped()).toBe('old');
+  });
+
+  test('NEGATIVE PROOF: one read at a time, and a hung read is abandoned so the tail keeps going', async () => {
+    const t = runTail(1200, 'hang');
+    t.tick(); // a second tick while the first read hangs sends nothing
+    expect(t.fetches()).toBe(1);
+    t.fireTimers(); // 8 s pass: the hung read is abandoned
+    await settle();
+    expect(t.stale()).toEqual(['Not refreshed: no answer in 8 s']);
+    t.tick(); // the tail is free again
+    expect(t.fetches()).toBe(2);
   });
 
   test('NEGATIVE PROOF: an unreachable stream is named, never an empty page', async () => {

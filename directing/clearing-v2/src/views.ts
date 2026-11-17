@@ -1030,15 +1030,16 @@ function roleClass(role: string): string {
 
 /** #4986 — tail -f on the phone. Every 5 s the page is re-read and only the stream is swapped in
  *  place; the view follows the newest line only if the reader is at the bottom when the new lines
- *  land, so a reader scrolled up to read back keeps their place. One read at a time. When the
- *  re-read comes back without a stream (it became unreadable or empty, or a sign-in or error page
- *  came back), the page reloads so the reason is named, never stale lines shown as live. When the
- *  re-read fails outright, the stream is marked stale with the reason and the next tick retries. */
+ *  land, so a reader scrolled up to read back keeps their place. One read at a time, and a read
+ *  that takes over 8 s is abandoned, so a hung request never stops the tail. A 200 page without a
+ *  stream (it became unreadable or empty) reloads so the reason is named. Anything else (an error
+ *  status such as a 502 during a restart, a network failure, a timeout) keeps the lines, marks them
+ *  "Not refreshed: <reason>" under the newest line, and the next tick tries again. */
 export const STREAM_TAIL_SCRIPT = `(function () {
   function atBottom() { return window.innerHeight + window.scrollY >= document.body.scrollHeight - 40; }
   function stale(why) {
     var s = document.getElementById('stream-stale');
-    if (!s) { s = document.createElement('div'); s.id = 'stream-stale'; s.className = 'meta fail'; document.getElementById('stream-tail').before(s); }
+    if (!s) { s = document.createElement('div'); s.id = 'stream-stale'; s.className = 'meta fail'; document.getElementById('stream-tail').after(s); }
     s.textContent = 'Not refreshed: ' + why;
   }
   if (document.getElementById('stream-tail')) window.scrollTo(0, document.body.scrollHeight);
@@ -1048,11 +1049,12 @@ export const STREAM_TAIL_SCRIPT = `(function () {
     if (!cur) { window.location.reload(); return; }
     if (busy) return;
     busy = true;
-    fetch(window.location.href, { credentials: 'same-origin' }).then(function (r) {
-      if (!r.ok) { window.location.reload(); return null; }
+    var ctl = new AbortController();
+    var timer = setTimeout(function () { ctl.abort(); }, 8000);
+    fetch(window.location.href, { credentials: 'same-origin', signal: ctl.signal }).then(function (r) {
+      if (!r.ok) throw new Error('answered ' + r.status);
       return r.text();
     }).then(function (h) {
-      if (h === null) return;
       var next = new DOMParser().parseFromString(h, 'text/html').getElementById('stream-tail');
       if (!next) { window.location.reload(); return; }
       var stick = atBottom();
@@ -1060,7 +1062,9 @@ export const STREAM_TAIL_SCRIPT = `(function () {
       var s = document.getElementById('stream-stale');
       if (s) s.remove();
       if (stick) window.scrollTo(0, document.body.scrollHeight);
-    }).catch(function (e) { stale(e && e.message ? e.message : 'unreachable'); }).then(function () { busy = false; });
+    }).catch(function (e) {
+      stale(e && e.name === 'AbortError' ? 'no answer in 8 s' : e && e.message ? e.message : 'unreachable');
+    }).then(function () { clearTimeout(timer); busy = false; });
   }, 5000);
 })();`;
 
