@@ -1,0 +1,309 @@
+#!/usr/bin/env python3
+"""#4994: after the land, point the running Promtail at chorus's platform/config/promtail/
+promtail-native.yaml, move its positions without losing an offset, prove it is a light
+forwarder, and only then remove the old config from shared-observability.
+# @domain: logs
+
+Order (Borg Queen 17:21), so a failure before the proof leaves Promtail up on the old file:
+  1. the new config is in the canonical checkout and promtail accepts it (-check-syntax)
+  2. bootout the running Promtail FIRST: it flushes its offsets on SIGTERM
+  3. COPY (never move: a restore still has it) the old positions file to the new path, unless
+     the new one is already newer (a rerun must not put old offsets back: Borg Queen 17:32)
+  4. archive the old dated ops/logs now (log-archive ops-logs; its agent runs only at 04:30),
+     install the canonical com.gathering.promtail plist and bootstrap
+  5. a fresh spine event (chorus-log) reaches Loki within SPINE_WAIT s: promtail ships the spine
+     that borg-prove and every alert read (Wren 17:35, Jeff "please be careful"); then
+     :9080/metrics shows promtail_files_active_total under FILES_MAX and no series for a dagu
+     step log path, and promtail's CPU, sampled after it settles, averages under CPU_MAX %
+  On any failure after step 2 the plist installed before is put back and reloaded, so
+  Promtail comes back on the old config with the old positions (both untouched).
+  6. rotate the GB-scale daemon logs now (gathering-log-rotate.sh, the one rotation path, #4718)
+     and reload com.chorus.log-archive (its job gained ops-logs)
+  7. only then: remove shared-observability's promtail-native.yaml (if it still holds the bytes
+     chorus copied, or its committed bytes) and the Docker-era promtail-config.yaml (if clean),
+     and commit just those paths
+DRY RUN unless --apply. Exit 0 = done (or the plan printed); 1 = Promtail is not light on the
+new config (restored); 2 = a step could not run.
+"""
+import hashlib
+import json
+import os
+import shutil
+import subprocess
+import sys
+import time
+import urllib.parse
+import urllib.request
+import uuid
+
+CHORUS = os.environ.get("CHORUS_HOME", "/Users/jeffbridwell/CascadeProjects/chorus")
+NEW_CONFIG = os.path.join(CHORUS, "platform/config/promtail/promtail-native.yaml")
+CANON = os.path.join(CHORUS, "platform/scripts/launchagents-canonical")
+LABEL = "com.gathering.promtail"
+ARCHIVE_LABEL = "com.chorus.log-archive"
+METRICS = os.environ.get("PROMTAIL_METRICS_URL", "http://localhost:9080/metrics")
+OBS = os.environ.get("OBS_REPO", "/Users/jeffbridwell/CascadeProjects/shared-observability")
+OLD = "config/promtail/promtail-native.yaml"
+# Docker-era; nothing reads it (only shared-observability's docs name it). Removed only when clean.
+OLD_DOCKER = "config/promtail/promtail-config.yaml"
+LOG_ARCHIVE = os.path.join(CHORUS, "platform/scripts/log-archive")
+LOG_ROTATE = os.path.join(CHORUS, "platform/scripts/gathering-log-rotate.sh")
+# the bytes of the old file when chorus copied it (2026-11-17 17:05, with its uncommitted
+# loki.log/promtail.log exclude): any other content means someone edited it since, so it stays
+OLD_SHA256 = os.environ.get("OLD_CONFIG_SHA256", "52cfd9555fb61ada9c1bbf95c54b0fe39d4e10e764ff4ce76528c7203714acfd")
+OLD_POSITIONS = os.environ.get("OLD_POSITIONS", os.path.expanduser("~/Library/Logs/Gathering/promtail-positions.yaml"))
+NEW_POSITIONS = os.environ.get("NEW_POSITIONS", os.path.expanduser("~/.chorus/state/promtail-positions.yaml"))
+AGENTS = os.environ.get("LAUNCH_AGENTS_DIR", os.path.expanduser("~/Library/LaunchAgents"))
+LAUNCHCTL = os.environ.get("LAUNCHCTL", "launchctl")
+PS = os.environ.get("PS_BIN", "ps")
+PROMTAIL = os.environ.get("PROMTAIL_BIN", "")
+RELEASE_WAIT = int(os.environ.get("LAUNCHD_RELEASE_WAIT", "30"))
+READY_WAIT = int(os.environ.get("PROMTAIL_READY_WAIT", "120"))
+SETTLE = float(os.environ.get("PROMTAIL_SETTLE_SECS", "60"))
+SAMPLES = int(os.environ.get("PROMTAIL_CPU_SAMPLES", "6"))
+SAMPLE_GAP = float(os.environ.get("PROMTAIL_SAMPLE_GAP_SECS", "5"))
+FILES_MAX = int(os.environ.get("PROMTAIL_FILES_MAX", "500"))
+CPU_MAX = float(os.environ.get("PROMTAIL_CPU_MAX", "10"))
+LOKI = os.environ.get("LOKI_URL", "http://localhost:3102")
+CHORUS_LOG = os.environ.get("CHORUS_LOG_BIN", os.path.join(CHORUS, "platform/scripts/chorus-log"))
+SPINE_WAIT = int(os.environ.get("SPINE_WAIT", "60"))
+RUN_UID = int(os.environ.get("LAND_AS_UID", os.getuid()))
+DAGU_PATH = "/Library/Logs/Chorus/dagu/"
+
+
+def sha256_bytes(b):
+    return hashlib.sha256(b).hexdigest()
+
+
+def promtail_bin():
+    if PROMTAIL:
+        return PROMTAIL
+    r = subprocess.run(["plutil", "-extract", "ProgramArguments.0", "raw", os.path.join(CANON, LABEL + ".plist")],
+                       capture_output=True, text=True)
+    return r.stdout.strip()
+
+
+def bootout(label):
+    uid = str(RUN_UID)
+    subprocess.run([LAUNCHCTL, "bootout", f"gui/{uid}/{label}"], capture_output=True, timeout=60)
+    # bootstrap refuses a label still tearing down: wait until launchd no longer knows it
+    for _ in range(RELEASE_WAIT):
+        if subprocess.run([LAUNCHCTL, "print", f"gui/{uid}/{label}"], capture_output=True, timeout=10).returncode != 0:
+            return ""
+        time.sleep(1)
+    return f"launchd still holds {label} {RELEASE_WAIT} s after bootout; not bootstrapping over it"
+
+
+def bootstrap(installed):
+    r = subprocess.run([LAUNCHCTL, "bootstrap", f"gui/{RUN_UID}", installed], capture_output=True, text=True, timeout=60)
+    return "" if r.returncode == 0 else f"launchctl bootstrap failed: {r.stderr.strip()}"
+
+
+def reading(text):
+    """(promtail_files_active_total or None, number of series naming a dagu step log path)."""
+    files, dagu = None, 0
+    for line in text.splitlines():
+        if line.startswith("#"):
+            continue
+        if line.startswith("promtail_files_active_total"):
+            files = float(line.rsplit(" ", 1)[1])
+        if DAGU_PATH in line:
+            dagu += 1
+    return files, dagu
+
+
+def verdict(files, dagu, cpus):
+    """'' when Promtail is a light forwarder, else why. Pure: the tests feed it today's
+    9,214 files / 54.7 % (red) and a green reading."""
+    if files is None:
+        return "promtail_files_active_total is missing from :9080/metrics"
+    if files >= FILES_MAX:
+        return f"promtail tails {files:g} files (want under {FILES_MAX})"
+    if dagu:
+        return f"{dagu} series on :9080 name a dagu step log (want 0)"
+    if not cpus:
+        return "no CPU sample of promtail"
+    avg = sum(cpus) / len(cpus)
+    if avg >= CPU_MAX:
+        return f"promtail averages {avg:.1f} % CPU over {len(cpus)} samples (want under {CPU_MAX:g} %)"
+    return ""
+
+
+def pid():
+    r = subprocess.run([LAUNCHCTL, "print", f"gui/{RUN_UID}/{LABEL}"], capture_output=True, text=True, timeout=10)
+    for line in r.stdout.splitlines():
+        if line.strip().startswith("pid = "):
+            return line.split("=", 1)[1].strip()
+    return None
+
+
+def metrics_text():
+    with urllib.request.urlopen(METRICS, timeout=5) as r:
+        return r.read().decode()
+
+
+def spine_reaches_loki():
+    """'' when a spine event written now is in Loki (job platform-chorus) within SPINE_WAIT s."""
+    marker = f"land4994{uuid.uuid4().hex[:12]}"
+    w = run([CHORUS_LOG, "land.promtail.spine-probe", "system", "card=4994", f"probe={marker}"], "chorus-log")
+    if w:
+        return w
+    start = int((time.time() - 60) * 1e9)
+    deadline = time.time() + SPINE_WAIT
+    while time.time() < deadline:
+        q = urllib.parse.urlencode({"query": '{job="platform-chorus"} |= "%s"' % marker, "start": start, "limit": 5})
+        try:
+            with urllib.request.urlopen(f"{LOKI}/loki/api/v1/query_range?{q}", timeout=10) as r:
+                if any(st.get("values") for st in json.load(r).get("data", {}).get("result", [])):
+                    print(f"spine event {marker} reached Loki")
+                    return ""
+        except (OSError, ValueError):
+            pass
+        time.sleep(1)
+    return f"the spine probe {marker} did not reach Loki in {SPINE_WAIT} s"
+
+
+def light():
+    deadline = time.time() + READY_WAIT
+    while True:
+        try:
+            metrics_text()
+            break
+        except OSError:
+            if time.time() > deadline:
+                return f"promtail's :9080/metrics did not answer {READY_WAIT} s after the reload"
+            time.sleep(1)
+    why = spine_reaches_loki()  # first: the spine is the log everything else reads
+    if why:
+        return why
+    time.sleep(SETTLE)  # the first sync opens every target; judge it after that
+    cpus = []
+    for _ in range(SAMPLES):
+        p = pid()
+        r = subprocess.run([PS, "-o", "%cpu=", "-p", p], capture_output=True, text=True) if p else None
+        if r and r.returncode == 0 and r.stdout.strip():
+            cpus.append(float(r.stdout.strip()))
+        time.sleep(SAMPLE_GAP)
+    try:
+        files, dagu = reading(metrics_text())
+    except OSError as e:
+        return f":9080/metrics unreadable: {e}"
+    why = verdict(files, dagu, cpus)
+    if not why:
+        print(f"promtail tails {files:g} files, 0 dagu series, at {sum(cpus) / len(cpus):.1f} % CPU")
+    return why
+
+
+def run(cmd, what):
+    """'' when cmd exits 0, else why (its last lines)."""
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return f"{what} did not run: {e}"
+    print(r.stdout.strip())
+    return "" if r.returncode == 0 else f"{what} failed: {(r.stdout + r.stderr).strip()[-300:]}"
+
+
+def copy_positions():
+    """'' after the copy (or when the new file is already newer), else why."""
+    if not os.path.isfile(OLD_POSITIONS):
+        return ""
+    if os.path.isfile(NEW_POSITIONS) and os.path.getmtime(NEW_POSITIONS) >= os.path.getmtime(OLD_POSITIONS):
+        print(f"{NEW_POSITIONS} is newer than {OLD_POSITIONS}: kept (a rerun)")
+        return ""
+    try:
+        os.makedirs(os.path.dirname(NEW_POSITIONS), exist_ok=True)
+        shutil.copy2(OLD_POSITIONS, NEW_POSITIONS)  # copy: the old file stays for a restore
+    except OSError as e:
+        return f"could not copy the positions: {e}"
+    return ""
+
+
+def install(src, installed):
+    try:
+        shutil.copyfile(src, installed)
+    except OSError as e:
+        return f"could not install {src}: {e}"
+    return ""
+
+
+def main(argv):
+    if "--apply" not in argv:
+        print(f"plan: check {NEW_CONFIG}; bootout {LABEL}; copy {OLD_POSITIONS} -> {NEW_POSITIONS}; install the "
+              f"canonical {LABEL} plist; bootstrap; prove under {FILES_MAX} files, 0 dagu series and {CPU_MAX:g} % CPU; "
+              f"reload {ARCHIVE_LABEL}; then remove {OBS}/{OLD} (not run in a dry run)")
+        return 0
+    if not os.path.isfile(NEW_CONFIG):
+        print(f"land-4994-rows: {NEW_CONFIG} is not in the canonical checkout; nothing changed", file=sys.stderr)
+        return 2
+    chk = subprocess.run([promtail_bin(), "-check-syntax", "-config.file", NEW_CONFIG], capture_output=True, text=True)
+    if chk.returncode:
+        print(f"land-4994-rows: promtail refuses {NEW_CONFIG}: {(chk.stdout + chk.stderr).strip()[-300:]}; nothing changed", file=sys.stderr)
+        return 2
+    if not os.path.isfile(OLD_POSITIONS) and not os.path.isfile(NEW_POSITIONS):
+        # no offsets anywhere: the new Promtail would re-ship every file from byte 0
+        print(f"land-4994-rows: no positions at {OLD_POSITIONS} or {NEW_POSITIONS}; nothing changed", file=sys.stderr)
+        return 2
+    installed = os.path.join(AGENTS, LABEL + ".plist")
+    try:
+        if os.stat(installed).st_uid != RUN_UID:
+            print(f"land-4994-rows: {installed} belongs to uid {os.stat(installed).st_uid}, this land runs as {RUN_UID}; "
+                  "nothing changed", file=sys.stderr)
+            return 2
+        with open(installed, "rb") as f:
+            before = f.read()
+    except OSError as e:
+        print(f"land-4994-rows: cannot read the installed {LABEL} plist: {e}; nothing changed", file=sys.stderr)
+        return 2
+
+    why = bootout(LABEL) or copy_positions()  # bootout first: promtail flushes its offsets as it stops
+    why = why or run([sys.executable, LOG_ARCHIVE, "ops-logs", "--apply"], "log-archive ops-logs") or install(os.path.join(CANON, LABEL + ".plist"), installed) or bootstrap(installed) or light()
+    if why:
+        try:
+            with open(installed, "wb") as f:
+                f.write(before)
+            r = bootout(LABEL) or bootstrap(installed) or "old plist restored and reloaded"
+        except OSError as e:
+            r = f"RESTORE FAILED, could not write the old plist back: {e}"
+        print(f"land-4994-rows: {why}; {r}; the old config stays", file=sys.stderr)
+        return 1
+
+    # the GB-scale logs rotate now, not at tomorrow's run; log-archive's job gained ops-logs,
+    # and a loaded agent keeps its old plist until reloaded
+    ainst = os.path.join(AGENTS, ARCHIVE_LABEL + ".plist")
+    why = run(["/bin/bash", LOG_ROTATE], "gathering-log-rotate.sh") or install(os.path.join(CANON, ARCHIVE_LABEL + ".plist"), ainst) or bootout(ARCHIVE_LABEL) or bootstrap(ainst)
+    if why:
+        print(f"land-4994-rows: promtail is light, but {ARCHIVE_LABEL}: {why}", file=sys.stderr)
+        return 2
+
+    gone = []
+    old = os.path.join(OBS, OLD)
+    if os.path.exists(old):
+        with open(old, "rb") as f:
+            now = sha256_bytes(f.read())
+        head = subprocess.run(["git", "-C", OBS, "show", f"HEAD:{OLD}"], capture_output=True)
+        if now != OLD_SHA256 and not (head.returncode == 0 and sha256_bytes(head.stdout) == now):
+            print(f"land-4994-rows: promtail is light, but {old} changed since chorus copied it; left in place", file=sys.stderr)
+            return 2
+        gone.append(OLD)
+    if os.path.exists(os.path.join(OBS, OLD_DOCKER)):
+        clean = subprocess.run(["git", "-C", OBS, "diff", "--quiet", "HEAD", "--", OLD_DOCKER], capture_output=True)
+        tracked = subprocess.run(["git", "-C", OBS, "ls-files", "--error-unmatch", "--", OLD_DOCKER], capture_output=True)
+        if clean.returncode or tracked.returncode:
+            print(f"land-4994-rows: {OBS}/{OLD_DOCKER} is untracked or edited; left in place", file=sys.stderr)
+            return 2
+        gone.append(OLD_DOCKER)
+    if gone:
+        r = subprocess.run(["git", "-C", OBS, "rm", "-q", "-f", "--"] + gone, capture_output=True, text=True)
+        c = subprocess.run(["git", "-C", OBS, "commit", "-q", "-m",
+                            "kade: #4994 Promtail's config moved to chorus platform/config/promtail/promtail-native.yaml", "--"] + gone,
+                           capture_output=True, text=True)
+        if r.returncode or c.returncode:
+            print(f"land-4994-rows: removing the old config failed: {(r.stderr + c.stderr).strip()}", file=sys.stderr)
+            return 2
+    print(f"Promtail runs {NEW_CONFIG}; removed from {OBS}: {', '.join(gone) or 'nothing (already gone)'}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
