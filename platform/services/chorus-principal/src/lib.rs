@@ -68,6 +68,41 @@ pub struct Live {
     pub pane: String,
 }
 
+/// #4414 — the one pane test: a registry pane is `%` followed by digits.
+pub fn named_pane(p: &str) -> bool { p.len() > 1 && p.starts_with('%') && p[1..].chars().all(|c| c.is_ascii_digit()) }
+
+/// #4414 (Silas 15:28) — is `pid` running under tmux? Walks the parent chain of a
+/// `ps -Ao pid=,ppid=,comm=` table (ps reads every account; a tmux socket does not).
+/// None when the table could not be read: then nothing is judged.
+pub fn under_tmux(table: Option<&str>, pid: u64) -> Option<bool> {
+    let table = table?;
+    let mut procs = std::collections::HashMap::new();
+    for line in table.lines() {
+        let mut it = line.split_whitespace();
+        if let (Some(p), Some(pp), Some(c)) = (it.next(), it.next(), it.next()) {
+            procs.insert(p.to_string(), (pp.to_string(), c.rsplit('/').next().unwrap_or(c).to_string()));
+        }
+    }
+    // Silas 15:55 — "outside" only when the walk reaches the top of the tree (pid 1 or 0) with
+    // no tmux on the way; a pid missing from the table, a cycle or a chain past 64 is unknown
+    let mut cur = pid.to_string();
+    let mut seen = std::collections::HashSet::new();
+    for _ in 0..64 {
+        if !seen.insert(cur.clone()) { return None; }
+        let (pp, comm) = procs.get(&cur)?;
+        if comm.starts_with("tmux") { return Some(true); }
+        if pp == "1" || pp == "0" { return Some(false); }
+        cur = pp.clone();
+    }
+    None
+}
+
+/// #4414 — a live session is outside tmux only when its entry names no pane AND its process
+/// has no tmux ancestor. Ancestry unknown (None) judges nothing, so a healthy role is never ended.
+pub fn outside_tmux(l: &Live, ancestry: Option<bool>) -> bool {
+    !named_pane(&l.pane) && ancestry == Some(false)
+}
+
 /// What to launch, decided from claude's own session list + the newest
 /// conversation file. Pure; unit-tested.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1241,7 +1276,17 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
         eprintln!("  run `chorus-principal logout {}` to end both, then `chorus-principal login {}`.", role, role);
         return Err((1, format!("{} live sessions", live.len())));
     }
-    if let Some(l) = live.first() {
+    // #4414 — the registry often holds no pane for a Claude role (host "unknown"), so a stray
+    // is a session with no tmux ancestor; a process table that cannot be read decides nothing.
+    let table = sh(&ctx.ps, &["-Ao", "pid=,ppid=,comm="]).ok();
+    let ancestry = live.first().and_then(|l| under_tmux(table.as_deref(), l.pid));
+    // #4414 AC1 — Jeff 09-30 15:48: a Silas in a plain window (no tmux pane) was blessed
+    // "already awake" and nothing started in tmux; nudges cannot reach a role outside its
+    // pane. It is ended only once every check that can refuse the start has passed (below).
+    let stray: Option<Live> = live.first().filter(|l| outside_tmux(l, ancestry)).cloned();
+    if let Some(l) = &stray {
+        println!("moving {} into tmux: pid {} on {} is outside its pane, so nudges cannot reach it", role, l.pid, l.tty);
+    } else if let Some(l) = live.first() {
         let liveness_on = envd("AWAKE_LIVENESS", "1") != "0";
         let mute_window: u64 = envd("AWAKE_MUTE_SECS", "900").parse().unwrap_or(900);
         let age = sh(&ctx.ps, &["-o", "etime=", "-p", &l.pid.to_string()]).ok().and_then(|e| parse_etime(&e));
@@ -1266,6 +1311,9 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
             if let LoginState::Pending { why, .. } = &st { println!("{}", pending_line(role, why)); }
             let word = lifecycle::login_word(&st, Some(l.pid));
             mark_running(ctx, role, word);
+            if ancestry.is_none() && !named_pane(&l.pane) {
+                println!("cannot tell if {} is in tmux (the process table could not be read); leaving its session alone", role);
+            }
             println!("{}", proof_line(role, l, word, "already awake"));
             if attach { attach_to(ctx, role); }
             return Ok(came_of(&st));
@@ -1341,6 +1389,22 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
     // #4337 — CLAUDE_CODE_DISABLE_AGENT_VIEW=1: no on-demand daemon, no warm
     // spares, no exit handoff to the background (the role settings say the same)
     let launch = launch_line(ctx, role, &role_dir, &token_file, &stamp, &cmd)?;
+    // #4414 (code review) — the stray ends here, after every check that can refuse the start,
+    // and only if it really stopped: never two sessions, never none.
+    if let Some(l) = &stray {
+        let _ = sh(&ctx.claude, &["stop", &l.pid.to_string()]);
+        // code review round 2 — a session that is shutting down gets time to exit
+        let wait: u64 = envd("AWAKE_STOP_WAIT", "10").parse().unwrap_or(10);
+        let mut still = alive(&ctx.ps, l.pid);
+        for _ in 0..wait * 4 { if !still { break; } std::thread::sleep(std::time::Duration::from_millis(250)); still = alive(&ctx.ps, l.pid); }
+        if still {
+            let why = format!("could not end {}'s session outside tmux (pid {}); not starting a second one — `chorus-principal logout {}` then login", role, l.pid, role);
+            eprintln!("chorus-principal: REFUSED — {}", why);
+            return Err((1, why));
+        }
+        let _ = fs::remove_file(ctx.sessions_dir.join(format!("{}-{}.json", role, l.pid)));
+        // Silas 14:12 — its open run row is closed later, by the new run's end_run("restart") in record_run_stamped
+    }
     let in_own_pane = env::var("TMUX").is_ok() && sh(&ctx.tmux, &["display-message", "-p", "#S"]).map(|s| s.trim() == tmux_session).unwrap_or(false);
     if in_own_pane && attach {
         println!("awake: {}  starting here via {}", role, how);

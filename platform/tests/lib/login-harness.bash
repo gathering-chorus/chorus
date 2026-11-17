@@ -14,6 +14,16 @@ login_harness_stubs() {
   touch "$T/alive-pids"
   cat > "$T/bin/ps" <<EOS
 #!/bin/bash
+# #4414 — "ps -Ao pid=,ppid=,comm=": every alive pid runs under a tmux server (pid 9000),
+# except pids listed in no-tmux-pids (a plain window); ps-unreadable fails the read
+if [ "\$1" = "-Ao" ]; then
+  [ -f "$T/ps-unreadable" ] && exit 1
+  echo "9000 1 /opt/homebrew/bin/tmux"
+  while read -r p; do [ -n "\$p" ] || continue
+    if grep -qx "\$p" "$T/no-tmux-pids" 2>/dev/null; then echo "\$p 9100 claude"; echo "9100 1 /usr/bin/login"; else echo "\$p 9000 claude"; fi
+  done < "$T/alive-pids"
+  exit 0
+fi
 grep -qx "\$2" "$T/alive-pids"
 EOS
   # stub tmux: records calls; a session exists once created; the launch "starts"
@@ -53,6 +63,7 @@ case "\$1" in
   new-session) touch "$T/tmux-\$4" ;;
   kill-session) rm -f "$T/tmux-\$3" ;;
   list-clients) cat "$T/clients-\$3" 2>/dev/null ;;
+  display-message) cat "$T/own-session" 2>/dev/null ;;   # #4414 — the session this shell is in
   send-keys) register "\$3" ;;
 esac
 exit 0
@@ -60,6 +71,11 @@ EOS
   cat > "$T/bin/claude" <<EOS
 #!/bin/bash
 echo "claude \$*" >> "$T/claude.log"
+# #4414 — a stop ends the pid (unless a case says the stop fails)
+if [ "\$1" = "stop" ] && [ ! -f "$T/stop-fails" ]; then
+  gone() { grep -vx "\$2" "$T/alive-pids" > "$T/alive-pids.n" 2>/dev/null; mv "$T/alive-pids.n" "$T/alive-pids"; }
+  if [ -f "$T/stop-slow" ]; then ( sleep 1; gone "\$@" ) & else gone "\$@"; fi
+fi
 # agents: the fixture list (agents.json), or a failure when agents-fail exists (#4184)
 if [ "\$1" = "agents" ]; then [ -f "$T/agents-fail" ] && { echo "boom: unknown option --cwd" >&2; exit 1; }; cat "$T/agents.json" 2>/dev/null || echo '[]'; fi
 exit 0

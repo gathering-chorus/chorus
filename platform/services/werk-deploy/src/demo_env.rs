@@ -870,6 +870,9 @@ pub fn generate_plist(
     }
     env_pairs.extend(vec![
         ("CHORUS_ROLE", role.to_string()),
+        // #4414 — a demo variant runs the card's slot build: it opts in, since the slot
+        // wrapper otherwise answers only the role's own account (it runs as jeffbridwell)
+        ("CHORUS_USE_SLOT", "1".to_string()),
         ("CHORUS_API_ENV", "werk".to_string()),
         ("CHORUS_ROOT", werk_root.to_string()),
     ]);
@@ -1574,6 +1577,15 @@ mod tests {
 
     /// #4022 — athena-make runs from the role's deploy-werk bin slot with
     /// `serve --port <role port>`; the crate's target dir is never the program.
+    /// #4414 — a demo variant runs the card's slot build as jeffbridwell, so it opts in to
+    /// slots; without it the variant would silently test the live binary (Silas 14:58).
+    #[test]
+    fn a_demo_variant_plist_opts_in_to_its_roles_slot() {
+        let athena = env_services().into_iter().find(|s| s.name == "athena-make").unwrap();
+        let plist = generate_plist(&athena, "kade", "/werk/kade-4022", athena.port_for("kade").unwrap(), &[]);
+        assert!(plist.contains("<key>CHORUS_USE_SLOT</key><string>1</string>"), "{}", plist);
+    }
+
     #[test]
     fn athena_variant_runs_from_werk_bin_with_serve_and_port() {
         std::env::set_var("CHORUS_WERK_BASE", "/wb");
