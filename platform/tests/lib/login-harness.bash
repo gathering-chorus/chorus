@@ -53,7 +53,7 @@ case "\$1" in
   new-session) touch "$T/tmux-\$4" ;;
   kill-session) rm -f "$T/tmux-\$3" ;;
   list-clients) cat "$T/clients-\$3" 2>/dev/null ;;
-  list-panes) [ -f "$T/tmux-unreadable" ] && exit 1; cat "$T/pane-ttys" 2>/dev/null ;;   # #4414 — the ttys tmux panes own
+  list-panes) [ -f "$T/tmux-unreadable" ] && { echo "permission denied" >&2; exit 1; }; [ -f "$T/tmux-noserver" ] && { echo "no server running on /private/tmp/tmux-501/default" >&2; exit 1; }; cat "$T/pane-ttys" 2>/dev/null ;;   # #4414 — the ttys tmux panes own
   send-keys) register "\$3" ;;
 esac
 exit 0
@@ -61,6 +61,8 @@ EOS
   cat > "$T/bin/claude" <<EOS
 #!/bin/bash
 echo "claude \$*" >> "$T/claude.log"
+# #4414 — a stop ends the pid (unless a case says the stop fails)
+if [ "\$1" = "stop" ] && [ ! -f "$T/stop-fails" ]; then grep -vx "\$2" "$T/alive-pids" > "$T/alive-pids.n" 2>/dev/null; mv "$T/alive-pids.n" "$T/alive-pids"; fi
 # agents: the fixture list (agents.json), or a failure when agents-fail exists (#4184)
 if [ "\$1" = "agents" ]; then [ -f "$T/agents-fail" ] && { echo "boom: unknown option --cwd" >&2; exit 1; }; cat "$T/agents.json" 2>/dev/null || echo '[]'; fi
 exit 0

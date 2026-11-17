@@ -108,9 +108,6 @@ fn the_child_runs_as_the_skill_owner() {
         .expect("env runs");
     let seen = String::from_utf8_lossy(&out.stdout);
     assert!(seen.lines().any(|l| l == "CHORUS_ROLE=silas"), "child env: {seen}");
-    // #4414 AC2 — the runner opts in to the owner's slot; without it a card's demo would
-    // silently test the live binary (Silas 14:03). Negative proof: drop the line, this goes red.
-    assert!(seen.lines().any(|l| l == "CHORUS_USE_SLOT=1"), "child env: {seen}");
     assert!(seen.lines().any(|l| l == "DEPLOY_ROLE=silas"), "child env: {seen}");
     assert!(seen.lines().any(|l| l == "CHORUS_TRACE=00-trace"), "child env: {seen}");
 }

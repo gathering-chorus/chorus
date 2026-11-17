@@ -141,6 +141,47 @@ stray() {
   out_lacks "moving silas into tmux"
 }
 
+@test "#4414 (review) NEGATIVE PROOF: a stray that will not stop is refused, never a second session" {
+  stray silas 10263
+  touch "$T/stop-fails"
+  : > "$T/tmux.log"
+  run "$SCRIPT" on silas
+  test "$status" -ne 0
+  out_has "could not end silas's session outside tmux"
+  test -f "$T/sessions/silas-10263.json"
+  test -z "$(grep -E 'respawn-pane|new-session' "$T/tmux.log" || true)"
+}
+
+@test "#4414 (review) NEGATIVE PROOF: a start that is refused leaves the stray running, never no session" {
+  stray silas 10263
+  rm -f "$T/roles/silas/.mcp.json"
+  : > "$T/claude.log"
+  run "$SCRIPT" on silas
+  test "$status" -ne 0
+  test -z "$(grep "claude stop 10263" "$T/claude.log" || true)"
+  test -f "$T/sessions/silas-10263.json"
+}
+
+@test "#4414 (review): no tmux server running means the role is outside tmux, and it is moved" {
+  stray silas 10263
+  touch "$T/tmux-noserver"
+  run "$SCRIPT" on silas
+  out_has "moving silas into tmux"
+  out_lacks "cannot tell"
+}
+
+@test "#4414 (review) NEGATIVE PROOF: a session with a named pane (%5) is never judged outside, whatever its tty" {
+  printf '{"role":"silas","pid":10263,"tty":"","host":"tmux","tmux":"%%5"}' > "$T/sessions/silas-10263.json"
+  echo 10263 >> "$T/alive-pids"
+  # a talking session (as `running` writes), so only the pane rule is under test, not the mute rule
+  printf '{"role":"silas","event":"reply.published","timestamp":"%s"}\n' "$(date '+%Y-%m-%dT%H:%M:%S')" >> "$T/spine-read.log"
+  printf '{"state":"recorded","session":"silas-x-1","pid":10263}' > "$T/identity/silas/login.json"
+  : > "$T/claude.log"
+  run "$SCRIPT" on silas
+  out_lacks "moving silas into tmux"
+  test -z "$(grep "claude stop 10263" "$T/claude.log" || true)"
+}
+
 @test "on: a running role whose login is on file for this pid is left alone" {
   running kade 4264
   printf '{"state":"recorded","session":"kade-x-1","pid":4264}' > "$T/identity/kade/login.json"

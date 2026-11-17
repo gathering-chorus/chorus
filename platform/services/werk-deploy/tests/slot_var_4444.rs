@@ -44,6 +44,7 @@ fn run_full(w: &str, role: &str, envs: &[(&str, String)]) -> (i32, String, Strin
 fn run_as(w: &str, role: &str, account: Option<&str>, envs: &[(&str, String)]) -> (i32, String, String) {
     let mut path = "/usr/bin:/bin".to_string();
     if let Some(a) = account {
+        // one stub dir per account, reused across calls in this test process
         let d = std::env::temp_dir().join(format!("id-4414-{}-{}", a, std::process::id()));
         std::fs::create_dir_all(&d).unwrap();
         let id = d.join("id");
@@ -140,6 +141,7 @@ fn negative_proof_the_shared_env_file_never_opts_in() {
 #[test]
 fn a_stale_wrapper_is_rewritten_and_nothing_else_is_touched() {
     let d = std::env::temp_dir().join(format!("refresh-4414-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&d); // code review: start clean
     std::fs::create_dir_all(&d).unwrap();
     let b = d.to_string_lossy().to_string();
     std::fs::write(d.join("werk-test-bin"), "bin").unwrap();
@@ -156,9 +158,10 @@ fn a_stale_wrapper_is_rewritten_and_nothing_else_is_touched() {
       let m = std::fs::metadata(d.join("werk-test")).unwrap();
       assert_ne!(m.ino(), ino_before, "rewritten in place: a hook mid-exec could read half a script");
       assert_eq!(m.mode() & 0o777, 0o755); }
-    assert!(std::fs::read_dir(&d).unwrap().flatten().all(|e| !e.file_name().to_string_lossy().contains(".refresh-")));
+    assert!(std::fs::read_dir(&d).unwrap().flatten().all(|e| !e.file_name().to_string_lossy().contains(".replace-")));
     assert_eq!(std::fs::read_to_string(d.join("hand-script")).unwrap(), "#!/bin/sh\necho mine\n");
     assert!(std::fs::read_to_string(d.join("orphan")).unwrap().ends_with("old\n"));
     // already current: nothing to do
     assert!(refresh_stale_wrappers(&b).is_empty());
+    let _ = std::fs::remove_dir_all(&d);
 }

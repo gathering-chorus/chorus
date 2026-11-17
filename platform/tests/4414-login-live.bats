@@ -30,11 +30,12 @@ def in_tmux(pid):
         if comm.startswith("tmux"): return True
         pid=ppid; seen+=1
     return False
-rows=[]
+rows=[]; bad=[]
 for f in glob.glob(os.path.join(sys.argv[1],"*-[0-9]*.json")):
-    try: rows.append(json.load(open(f)))
-    except Exception: pass
-bad=[r.get("role") for r in rows if not in_tmux(str(r.get("pid")))]
+    try: r=json.load(open(f))
+    except Exception: bad.append(os.path.basename(f)); continue   # an unreadable entry is never skipped
+    if str(r.get("pid")) in procs: rows.append(r)                 # a dead pid is no live session
+bad+=[r.get("role") for r in rows if not in_tmux(str(r.get("pid")))]
 sys.exit(0 if rows and not bad else 1)'
 
 @test "AC3: every live role session on this machine is in a tmux pane" {
@@ -54,6 +55,12 @@ sys.exit(0 if rows and not bad else 1)'
   rm "$d/silas-300.json"
   printf '{"role":"silas","pid":600,"tty":"/dev/ttys015","host":"unknown"}' > "$d/silas-600.json"
   printf '{"role":"silas","pid":600}' > "$d/silas.turn.json"
+  # a dead pid's leftover entry is not a live session
+  printf '{"role":"kade","pid":999,"tty":"/dev/ttys009","host":"unknown"}' > "$d/kade-999.json"
   run python3 -c "$ALL_IN_TMUX" "$d" "$ps"
   [ "$status" -eq 0 ] || return 1
+  # an entry that cannot be read fails, never skipped
+  printf 'not json' > "$d/wren-700.json"
+  run python3 -c "$ALL_IN_TMUX" "$d" "$ps"
+  [ "$status" -ne 0 ] || return 1
 }

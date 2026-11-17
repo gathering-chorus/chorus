@@ -73,10 +73,22 @@ pub struct Live {
 /// tmux could not be read (None) nothing is judged outside, so a healthy role is never ended.
 fn norm_tty(t: &str) -> &str { t.trim().trim_start_matches("/dev/") }
 
+/// #4414 — the one pane test: a registry pane is `%` followed by digits.
+pub fn named_pane(p: &str) -> bool { p.len() > 1 && p.starts_with('%') && p[1..].chars().all(|c| c.is_ascii_digit()) }
+
+/// #4414 — the ttys tmux panes own. No tmux server running means no panes (Some(""));
+/// any other failure means tmux could not be read (None), and nothing is judged.
+pub fn pane_ttys_of(listed: Result<String, String>) -> Option<String> {
+    match listed {
+        Ok(o) => Some(o),
+        Err(e) if e.contains("no server running") || e.contains("error connecting to") && e.contains("No such file") => Some(String::new()),
+        Err(_) => None,
+    }
+}
+
 pub fn outside_tmux(l: &Live, pane_ttys: Option<&str>) -> bool {
-    let named_pane = l.pane.starts_with('%') && l.pane.len() > 1 && l.pane[1..].chars().all(|c| c.is_ascii_digit());
     match pane_ttys {
-        _ if named_pane => false,
+        _ if named_pane(&l.pane) => false,
         None => false,
         // Silas 14:21 — compare normalized ttys: the registry may hold `ttys007`, tmux `/dev/ttys007`
         Some(list) => { let mine = norm_tty(&l.tty); !list.lines().any(|t| !mine.is_empty() && norm_tty(t) == mine) }
@@ -1258,19 +1270,13 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
     }
     // #4414 — the registry often holds no pane for a Claude role (host "unknown"), so a stray
     // is a session whose tty no tmux pane owns; a tmux that cannot be read decides nothing.
-    let pane_ttys = sh(&ctx.tmux, &["list-panes", "-a", "-F", "#{pane_tty}"]).ok();
-    if pane_ttys.is_none() && live.first().is_some_and(|l| !l.pane.starts_with('%')) {
-        println!("cannot tell if {} is in tmux (tmux could not be read); leaving its session alone", role);
-    }
-    if let Some(l) = live.first().filter(|l| outside_tmux(l, pane_ttys.as_deref())) {
-        // #4414 AC1 — Jeff 09-30 15:48: a Silas in a plain window (no tmux pane) was blessed
-        // "already awake" and nothing started in tmux; nudges cannot reach a role outside
-        // its pane. One login ends it and starts the role in its pane, and says so.
+    let pane_ttys = pane_ttys_of(sh(&ctx.tmux, &["list-panes", "-a", "-F", "#{pane_tty}"]));
+    // #4414 AC1 — Jeff 09-30 15:48: a Silas in a plain window (no tmux pane) was blessed
+    // "already awake" and nothing started in tmux; nudges cannot reach a role outside its
+    // pane. It is ended only once every check that can refuse the start has passed (below).
+    let stray: Option<Live> = live.first().filter(|l| outside_tmux(l, pane_ttys.as_deref())).cloned();
+    if let Some(l) = &stray {
         println!("moving {} into tmux: pid {} on {} is outside its pane, so nudges cannot reach it", role, l.pid, l.tty);
-        let _ = sh(&ctx.claude, &["stop", &l.pid.to_string()]);
-        let _ = fs::remove_file(ctx.sessions_dir.join(format!("{}-{}.json", role, l.pid)));
-        // Silas 14:12 — its open run row is closed by the start below (end_run "restart"), so the
-        // sweep never reads the stray as a crash; the 4295 test asserts that close.
     } else if let Some(l) = live.first() {
         let liveness_on = envd("AWAKE_LIVENESS", "1") != "0";
         let mute_window: u64 = envd("AWAKE_MUTE_SECS", "900").parse().unwrap_or(900);
@@ -1296,6 +1302,9 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
             if let LoginState::Pending { why, .. } = &st { println!("{}", pending_line(role, why)); }
             let word = lifecycle::login_word(&st, Some(l.pid));
             mark_running(ctx, role, word);
+            if pane_ttys.is_none() && !named_pane(&l.pane) {
+                println!("cannot tell if {} is in tmux (tmux could not be read); leaving its session alone", role);
+            }
             println!("{}", proof_line(role, l, word, "already awake"));
             if attach { attach_to(ctx, role); }
             return Ok(came_of(&st));
@@ -1376,6 +1385,18 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
         println!("awake: {}  starting here via {}", role, how);
         let _ = Command::new("bash").arg("-c").arg(&launch).status();
         return Ok(came_of(&st));
+    }
+    // #4414 (code review) — the stray ends here, after every check that can refuse the start,
+    // and only if it really stopped: never two sessions, never none.
+    if let Some(l) = &stray {
+        let _ = sh(&ctx.claude, &["stop", &l.pid.to_string()]);
+        if alive(&ctx.ps, l.pid) {
+            let why = format!("could not end {}'s session outside tmux (pid {}); not starting a second one — `chorus-principal logout {}` then login", role, l.pid, role);
+            eprintln!("chorus-principal: REFUSED — {}", why);
+            return Err((1, why));
+        }
+        let _ = fs::remove_file(ctx.sessions_dir.join(format!("{}-{}.json", role, l.pid)));
+        // Silas 14:12 — its open run row was closed by the start's end_run("restart") above
     }
     if let Err(e) = start_in_pane(ctx, role, &role_dir, &launch) { eprintln!("chorus-principal: {}", e.1); return Err(e); }
 
