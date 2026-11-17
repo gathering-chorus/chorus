@@ -92,6 +92,8 @@ plist_wrong() {
   [[ "${lines[0]}" == "exit 1" ]] || { echo "$output"; return 1; }
   [[ "$output" == *"installed: old com.gathering.promtail"* && "$output" == *"obs left: promtail-bedroom.yaml,promtail-config.yaml,promtail-native.yaml"* ]] || { echo "$output"; return 1; }
   [[ "$output" == *"9214 files (want under 500)"* && "$output" != *"log-rotate"* ]] || { echo "$output"; return 1; }
+  # the trial read a.log to 77 past the copied 42: the restored promtail starts there, shipping nothing twice
+  [[ "$output" == *"old positions: positions:   a.log: \"77\""* ]] || { echo "$output"; return 1; }
 }
 
 @test "AC4 NEGATIVE PROOF: a spine event that never reaches Loki restores the old plist before any rotate or retire" {
@@ -120,3 +122,21 @@ PY
   [[ "${lines[1]}" == "promtail averages 52.4 % CPU over 2 samples (want under 10 %)" ]] || { echo "$output"; return 1; }
   [[ "${lines[2]}" == "promtail_files_active_total is missing from :9080/metrics" && "${lines[3]}" == green ]] || { echo "$output"; return 1; }
 }
+
+@test "AC4 NEGATIVE PROOF: a restore whose bootout is slow still bootstraps the old plist (Promtail never left down)" {
+  run python3 - "$LAND" "$T" <<'PY2'
+import importlib.machinery, importlib.util, os, sys
+l = importlib.machinery.SourceFileLoader("land", sys.argv[1]); s = importlib.util.spec_from_loader("land", l)
+m = importlib.util.module_from_spec(s); l.exec_module(m)
+t = sys.argv[2]; calls = []
+m.OLD_POSITIONS, m.NEW_POSITIONS = f"{t}/o.yaml", f"{t}/n.yaml"
+m.bootout = lambda label: calls.append("bootout") or "launchd still holds com.gathering.promtail 30 s after bootout"
+m.bootstrap = lambda p: calls.append("bootstrap") or ""
+open(f"{t}/inst.plist", "w").write("trial")
+print(m.restore(b"old", f"{t}/inst.plist"))
+print(",".join(calls), open(f"{t}/inst.plist").read())
+PY2
+  [[ "${lines[0]}" == "old plist restored and reloaded (launchd still holds"* ]] || { echo "$output"; return 1; }
+  [ "${lines[1]}" = "bootout,bootstrap old" ] || { echo "$output"; return 1; }
+}
+

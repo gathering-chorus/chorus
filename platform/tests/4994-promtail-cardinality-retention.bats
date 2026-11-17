@@ -69,3 +69,15 @@ ROUTES_4336() { ruby "$ROOT/platform/tests/fixtures/4336/promtail-routes.rb" "$@
   printf 'scrape_configs:\n  - job_name: chorus-dagu\n    static_configs: [{ labels: { job: dagu, __path__: "%s/Library/Logs/Chorus/dagu/**/*.{log,out,err}" } }]\n' "$h" > "$BATS_TEST_TMPDIR/old.yaml"
   [ "$(ROUTES_4336 "$BATS_TEST_TMPDIR/old.yaml" "$h/Library/Logs/Chorus/dagu/cicd/dag-run_x/step.log")" = "dagu" ]
 }
+
+@test "AC3: ops-logs with no ops/logs folder says so and exits 0 (never a traceback)" {
+  run env LOG_ARCHIVE_OPS_LOGS="$BATS_TEST_TMPDIR/none" python3 "$LA" ops-logs --apply
+  [ "$status" -eq 0 ] && [[ "$output" == *"no folder"* ]] || { echo "$output"; return 1; }
+}
+
+@test "AC3: an ops-logs file already archived with the same bytes leaves no copy behind (the shared move path)" {
+  mkdir -p "$LOG_ARCHIVE_ROOT/ops-logs"; printf 'a\n' > "$LOG_ARCHIVE_ROOT/ops-logs/athena-make-20261101.jsonl"
+  run python3 "$LA" ops-logs --apply
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ ! -e "$LOG_ARCHIVE_OPS_LOGS/athena-make-20261101.jsonl" ] && [ ! -e "$LOG_ARCHIVE_ROOT"/ops-logs/athena-make-20261101.jsonl.2* ] || { ls "$LOG_ARCHIVE_ROOT/ops-logs"; return 1; }
+}

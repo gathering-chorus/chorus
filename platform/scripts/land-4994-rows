@@ -28,6 +28,7 @@ new config (restored); 2 = a step could not run.
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -227,11 +228,65 @@ def install(src, installed):
     return ""
 
 
+POS_LINE = re.compile(r'^  (.+?):\s*["\']?(\d+)["\']?\s*$')
+
+
+def read_positions(path):
+    """{file: offset} from a promtail positions file ("positions:" then "  <file>: "<offset>"")."""
+    out = {}
+    try:
+        with open(path) as f:
+            for line in f:
+                m = POS_LINE.match(line.rstrip("\n"))
+                if m:
+                    out[m.group(1).strip("\"'")] = int(m.group(2))
+    except OSError:
+        pass
+    return out
+
+
+def carry_back():
+    """A red trial already shipped lines past the old offsets: write the trial's offsets into
+    the old positions file (each file the trial tailed takes its offset; every other file keeps
+    its old one), so the restored Promtail ships nothing twice (gate-code 18:11)."""
+    old, new = read_positions(OLD_POSITIONS), read_positions(NEW_POSITIONS)
+    if not new:
+        return
+    old.update({k: max(v, old.get(k, 0)) for k, v in new.items()})
+    tmp = OLD_POSITIONS + ".land4994"
+    with open(tmp, "w") as f:
+        f.write("positions:\n" + "".join(f'  {k}: "{v}"\n' for k, v in sorted(old.items())))
+    os.replace(tmp, OLD_POSITIONS)
+
+
+def restore(before, installed):
+    """Put back the plist installed before and bring Promtail up on it. The trial Promtail is
+    stopped first (it flushes its offsets), those offsets are carried back, and the old plist is
+    bootstrapped even if the bootout was slow: Promtail is never left down (gate-code 18:11)."""
+    try:
+        with open(installed, "wb") as f:
+            f.write(before)
+    except OSError as e:
+        return f"RESTORE FAILED, could not write the old plist back: {e}"
+    slow = bootout(LABEL)
+    try:
+        carry_back()
+    except OSError as e:
+        slow = (slow + "; " if slow else "") + f"offsets not carried back: {e}"
+    b = bootstrap(installed)
+    if b:
+        return f"RESTORE FAILED: {b}" + (f" ({slow})" if slow else "")
+    return "old plist restored and reloaded" + (f" ({slow})" if slow else "")
+
+
 def main(argv):
     if "--apply" not in argv:
-        print(f"plan: check {NEW_CONFIG}; bootout {LABEL}; copy {OLD_POSITIONS} -> {NEW_POSITIONS}; install the "
-              f"canonical {LABEL} plist; bootstrap; prove under {FILES_MAX} files, 0 dagu series and {CPU_MAX:g} % CPU; "
-              f"reload {ARCHIVE_LABEL}; then remove {OBS}/{OLD} (not run in a dry run)")
+        print(f"plan: check {NEW_CONFIG}; bootout {LABEL}; copy {OLD_POSITIONS} -> {NEW_POSITIONS} (unless newer); "
+              f"archive old dated ops/logs (log-archive ops-logs --apply); install the canonical {LABEL} plist; "
+              f"bootstrap; a fresh spine event in Loki within {SPINE_WAIT} s; under {FILES_MAX} files, 0 dagu series and "
+              f"{CPU_MAX:g} % CPU; on red restore the old plist with the trial's offsets carried back; then copy-and-truncate "
+              f"the GB-scale logs (gathering-log-rotate.sh); reload {ARCHIVE_LABEL}; remove {OBS}/{OLD} and {OLD_DOCKER} "
+              "(not run in a dry run)")
         return 0
     if not os.path.isfile(NEW_CONFIG):
         print(f"land-4994-rows: {NEW_CONFIG} is not in the canonical checkout; nothing changed", file=sys.stderr)
@@ -259,13 +314,7 @@ def main(argv):
     why = bootout(LABEL) or copy_positions()  # bootout first: promtail flushes its offsets as it stops
     why = why or run([sys.executable, LOG_ARCHIVE, "ops-logs", "--apply"], "log-archive ops-logs") or install(os.path.join(CANON, LABEL + ".plist"), installed) or bootstrap(installed) or light()
     if why:
-        try:
-            with open(installed, "wb") as f:
-                f.write(before)
-            r = bootout(LABEL) or bootstrap(installed) or "old plist restored and reloaded"
-        except OSError as e:
-            r = f"RESTORE FAILED, could not write the old plist back: {e}"
-        print(f"land-4994-rows: {why}; {r}; the old config stays", file=sys.stderr)
+        print(f"land-4994-rows: {why}; {restore(before, installed)}; the old config stays", file=sys.stderr)
         return 1
 
     # the GB-scale logs rotate now, not at tomorrow's run; log-archive's job gained ops-logs,

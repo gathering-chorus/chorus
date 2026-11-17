@@ -41,7 +41,10 @@ echo "launchctl $1 $(basename "$2") [new positions: $(grep -c . {d}/state/positi
 case "$1" in
   print) grep -qx "up $2" {d}/up 2>/dev/null && {{ echo "	pid = 4242"; exit 0; }}; exit 113;;
   bootout) grep -vx "up $2" {d}/up > {d}/up.n 2>/dev/null; mv {d}/up.n {d}/up; exit 0;;
-  bootstrap) echo "up $2/$(basename "$3" .plist)" >> {d}/up; exit 0;;
+  bootstrap) echo "up $2/$(basename "$3" .plist)" >> {d}/up
+    # the trial promtail reads on: positions copied at 42 move to 77 (a rerun's newer file is left)
+    grep -q "^new com.gathering.promtail" "$3" && grep -q "a.log: '42'" {d}/state/positions.yaml 2>/dev/null && printf "positions:\\n  a.log: '77'\\n" > {d}/state/positions.yaml
+    exit 0;;
 esac
 """)
 open(f"{d}/bin/ps", "w").write(f"#!/bin/sh\necho {cpu}\n")
@@ -80,6 +83,7 @@ print(f"exit {r.returncode}")
 print(open(log).read().strip())
 print("installed:", open(f"{d}/agents/com.gathering.promtail.plist").read().strip())
 print("old positions kept:", os.path.isfile(f"{d}/old/positions.yaml"))
+print("old positions:", open(f"{d}/old/positions.yaml").read().replace("\n", " ").strip())
 print("new positions:", open(f"{d}/state/positions.yaml").read().replace("\n", " ").strip() if os.path.isfile(f"{d}/state/positions.yaml") else "none")
 print("obs left:", ",".join(sorted(os.listdir(f"{d}/obs/config/promtail"))))
 print("stderr:", r.stderr.strip()[-300:])

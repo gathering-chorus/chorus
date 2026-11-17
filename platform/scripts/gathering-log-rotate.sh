@@ -26,6 +26,7 @@ for FILE in "$LOG_DIR"/{fuseki,gathering-app,loki,prometheus,grafana,promtail,vi
   [ "$(stat -f%z "$FILE" 2>/dev/null || echo 0)" -gt "$LIMIT" ] || continue
   cp "$FILE" "$FILE.$STAMP" && : > "$FILE" && echo "log-rotate: $LOG rotated to $LOG.$STAMP.gz"
   gzip -f "$FILE.$STAMP" 2>/dev/null
-  find "$(dirname "$FILE")" -name "$LOG.*" -mtime +"$KEEP_DAYS" -delete 2>/dev/null
+  # -maxdepth 1: Logs/Chorus holds the dagu tree; retention never reaches below the log's own folder
+  find "$(dirname "$FILE")" -maxdepth 1 -name "$LOG.*" -mtime +"$KEEP_DAYS" -delete 2>/dev/null
 done
 exit "${RC:-0}"

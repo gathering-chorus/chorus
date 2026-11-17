@@ -85,7 +85,7 @@ scrape_configs:
           - localhost
         labels:
           job: daemon-logs
-          __path__: /Users/jeffbridwell/.chorus/{heartbeat-probe.log,heartbeat-probe.stderr.log,reindex-worker.log}
+          __path__: /Users/jeffbridwell/.chorus/{heartbeat-probe.log,heartbeat-probe.stderr.log,heartbeat-probe.stdout.log,reindex-worker.log}
     pipeline_stages:
       - regex:
           expression: '^(?P<content>.+)$'

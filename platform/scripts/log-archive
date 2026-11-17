@@ -114,12 +114,26 @@ def dagu(days, apply):
     if not apply or not old:
         print("dry run: nothing moved" if not apply else "nothing to move")
         return 0
+    return move_verified("dagu", DAGU_LOGS, manifest, total, after=lambda: prune_empty(old))
+
+
+def prune_empty(old):
+    for rel in old:  # the run dirs are empty now; leave nothing for promtail to watch
+        p = os.path.join(DAGU_LOGS, rel)
+        for d, _, _ in sorted(os.walk(p), key=lambda w: -len(w[0])):
+            if os.path.isdir(d) and not os.listdir(d):
+                os.rmdir(d)
+
+
+def move_verified(kind, root, manifest, total, after=None):
+    """Move every manifest file from root to ARCHIVE/<kind>, proven: the manifest is written
+    first; a file already archived with the same bytes is a proven duplicate and its source
+    goes, other bytes go beside it under a stamped name; then no file may be left in root
+    and every one must match its size and sha256 in the archive. Shared by dagu and ops-logs
+    (#4994: one move path, not two)."""
     stamp = time.strftime("%Y%m%dT%H%M%S")
-    dest = os.path.join(ARCHIVE, "dagu")
-    # a file already in the archive (a twin run, an earlier partial move): the
-    # same bytes are already safe, so the source is a proven duplicate; other
-    # bytes go beside it under a stamped name. Decided before the manifest is
-    # written, so the manifest names where every file will be.
+    dest = os.path.join(ARCHIVE, kind)
+    # decided before the manifest is written, so the manifest names where every file will be
     for e in manifest:
         t = os.path.join(dest, e["path"])
         if os.path.exists(t):
@@ -128,25 +142,22 @@ def dagu(days, apply):
             else:
                 e["source"], e["path"] = e["path"], f"{e['path']}.{stamp}"
     os.makedirs(os.path.join(ARCHIVE, "manifests"), exist_ok=True)
-    mpath = os.path.join(ARCHIVE, "manifests", f"dagu-{stamp}.json")
+    mpath = os.path.join(ARCHIVE, "manifests", f"{kind}-{stamp}.json")
     with open(mpath, "w") as f:
-        json.dump({"from": DAGU_LOGS, "to": dest, "files": manifest}, f)
+        json.dump({"from": root, "to": dest, "files": manifest}, f)
     for e in manifest:
-        src = os.path.join(DAGU_LOGS, e.get("source", e["path"]))
+        src = os.path.join(root, e.get("source", e["path"]))
         if e.get("duplicate"):
             os.remove(src)  # its bytes are in the archive, proven by sha256 above
             continue
         t = os.path.join(dest, e["path"])
         os.makedirs(os.path.dirname(t), exist_ok=True)
         shutil.move(src, t)
-    for rel in old:  # the run dirs are empty now; leave nothing for promtail to watch
-        p = os.path.join(DAGU_LOGS, rel)
-        for d, _, _ in sorted(os.walk(p), key=lambda w: -len(w[0])):
-            if os.path.isdir(d) and not os.listdir(d):
-                os.rmdir(d)
-    left = [e["path"] for e in manifest if os.path.exists(os.path.join(DAGU_LOGS, e.get("source", e["path"])))]
+    if after:
+        after()
+    left = [e["path"] for e in manifest if os.path.exists(os.path.join(root, e.get("source", e["path"])))]
     if left:
-        print(f"LOG-ARCHIVE FAILED: {len(left)} file(s) still in {DAGU_LOGS} after the move; manifest {mpath}", file=sys.stderr)
+        print(f"LOG-ARCHIVE FAILED: {len(left)} file(s) still in {root} after the move; manifest {mpath}", file=sys.stderr)
         return 1
     bad = verify(manifest, dest)
     if bad:
@@ -161,8 +172,10 @@ def dagu(days, apply):
 def ops_logs(days, apply):
     """#4994 — athena-make and owl-api write one dated jsonl a day into ops/logs and nothing
     ever retired them: 173 files, every one held open by promtail's *.jsonl target. Those
-    older than N days move to the archive the same way dagu runs do: manifest first, move,
-    then each file proven by size and sha256. Undated files (werk-*.jsonl) are live: never moved."""
+    older than N days move to the archive through the same move_verified as dagu runs. Undated files (werk-*.jsonl) are live: never moved."""
+    if not os.path.isdir(OPS_LOGS):
+        print(f"log-archive ops-logs: no folder {OPS_LOGS}; nothing to move")
+        return 0
     cutoff = time.time() - days * 86400
     old = sorted(n for n in os.listdir(OPS_LOGS)
                  if DATED.match(n) and os.path.isfile(os.path.join(OPS_LOGS, n))
@@ -173,27 +186,7 @@ def ops_logs(days, apply):
     if not apply or not old:
         print("dry run: nothing moved" if not apply else "nothing to move")
         return 0
-    stamp = time.strftime("%Y%m%dT%H%M%S")
-    dest = os.path.join(ARCHIVE, "ops-logs")
-    for e in manifest:  # a name already archived with other bytes goes beside it, stamped
-        t = os.path.join(dest, e["path"])
-        if os.path.exists(t):
-            e["source"], e["path"] = e["path"], f"{e['path']}.{stamp}"
-    os.makedirs(os.path.join(ARCHIVE, "manifests"), exist_ok=True)
-    mpath = os.path.join(ARCHIVE, "manifests", f"ops-logs-{stamp}.json")
-    with open(mpath, "w") as f:
-        json.dump({"from": OPS_LOGS, "to": dest, "files": manifest}, f)
-    os.makedirs(dest, exist_ok=True)
-    for e in manifest:
-        shutil.move(os.path.join(OPS_LOGS, e.get("source", e["path"])), os.path.join(dest, e["path"]))
-    bad = verify(manifest, dest)
-    if bad:
-        print(f"LOG-ARCHIVE FAILED: {len(bad)} of {len(manifest)} file(s) not proven in the archive; manifest {mpath}", file=sys.stderr)
-        for b in bad[:20]:
-            print(f"  {b}", file=sys.stderr)
-        return 1
-    print(f"moved and verified {len(manifest)} file(s) ({total} bytes) → {dest}; manifest {mpath}")
-    return 0
+    return move_verified("ops-logs", OPS_LOGS, manifest, total)
 
 
 def fresh_log(path):
