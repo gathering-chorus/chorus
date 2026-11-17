@@ -3,16 +3,18 @@
 // @owner: wren
 // @domain: messages
 // #4766 (AC3): the Streams tab renders with the old Clearing stopped
+// #4986 (AC1): one stream, every role interleaved, oldest at top, newest at the bottom
 /**
  * #4597 — Jeff 19:11: "i cant scroll up in message history and really need streams tab".
  * Scrolling up loads the page just older than the oldest shown; the Streams tab shows
- * each role's recent commands, newest first, and names an unreadable stream.
+ * every role's recent commands as one stream, newest at the bottom (#4986), and names an
+ * unreadable stream.
  */
 import http from 'http';
 import { createApp } from '../src/server';
 import { ROOM_PAGE_MESSAGES } from '../src/data-service';
-import { groupByRole, fetchStreams } from '../src/sources/streams';
-import { renderStreamsPage } from '../src/views';
+import { fetchStreams } from '../src/sources/streams';
+import { renderStreamsPage, STREAM_TAIL_SCRIPT } from '../src/views';
 const { loadOlderMessages } = require('../public/app.js');
 
 const msg = (i: number) => ({ id: `h${i}`, from: i % 2 ? 'wren' : 'jeff', text: `history ${i}`, ts: new Date(1760800000000 + i * 1000).toISOString(), type: 'jeff-input' as const, visible: true, room: 'team' });
@@ -63,17 +65,108 @@ describe('#4597 scrolling up loads older messages', () => {
 });
 
 describe('#4597 the Streams tab', () => {
-  test('commands are grouped one column per role, newest first', () => {
-    const roles = groupByRole([
+  // #4986 (AC1) — Jeff 11-17: "interleaved across all of u most recent at bottom", like tail -f
+  test('every role in one stream, oldest at top, newest at the bottom, each line naming its role', () => {
+    const lines = [
       { ts: '7:10 PM', role: 'kade', text: 'bash: one' },
       { ts: '7:11 PM', role: 'wren', text: 'bash: two' },
       { ts: '7:12 PM', role: 'kade', text: 'bash: three' },
-    ]);
-    expect(roles.map((r) => r.role)).toEqual(['kade', 'wren']);
-    expect(roles[0].lines.map((l) => l.text)).toEqual(['bash: three', 'bash: one']);
-    const html = renderStreamsPage({ ok: true, roles }, []);
+    ];
+    const html = renderStreamsPage({ ok: true, lines }, []);
     expect(html).toContain('href="/streams" class="on"');
-    expect(html.indexOf('bash: three')).toBeLessThan(html.indexOf('bash: one'));
+    const at = (t: string) => html.indexOf(t);
+    expect(at('bash: one')).toBeLessThan(at('bash: two'));
+    expect(at('bash: two')).toBeLessThan(at('bash: three'));
+    expect(html).toMatch(/<b class="who-wren">wren<\/b> bash: two/);
+    // NEGATIVE PROOF: the lines come out exactly in time order across roles. A per-role grouped
+    // render gives kade one, kade three, wren two; newest-first gives three, two, one. Both fail
+    // this sequence (both mutations were run red).
+    const order = Array.from(html.matchAll(/bash: (one|two|three)/g)).map((m) => m[1]);
+    expect(order).toEqual(['one', 'two', 'three']);
+  });
+
+  // #4986 (AC1) — tail -f on the phone: the stream refreshes in place and follows the bottom only
+  // while the reader is there; scrolled up to read back, the reader keeps their place.
+  type Resp = { ok: boolean; status?: number; body: string } | Error | 'hang';
+  function runTail(scrollY: number, resp: Resp = { ok: true, body: 'new' }, hasTail = true) {
+    const scrolls: number[] = [];
+    let reloads = 0;
+    let fetches = 0;
+    let tick: () => void = () => undefined;
+    const timers: Array<() => void> = [];
+    const stale: Array<{ textContent: string }> = [];
+    const cur = { innerHTML: 'old', after: (n: { textContent: string }) => { stale.push(n); } };
+    const win = { innerHeight: 800, scrollY, location: { href: 'http://x/streams', reload: () => { reloads++; } }, scrollTo: (_x: number, y: number) => { scrolls.push(y); } };
+    const doc = {
+      body: { scrollHeight: 2000 },
+      getElementById: (id: string) => (id === 'stream-tail' && hasTail ? cur : id === 'stream-stale' ? stale[0] ?? null : null),
+      createElement: () => ({ id: '', className: '', textContent: '' }),
+    };
+    const parser = function DOMParser(this: unknown) {
+      return { parseFromString: (h: string) => ({ getElementById: () => (h === 'no-stream' ? null : { innerHTML: h }) }) };
+    };
+    class Ctl { signal = { aborted: false, onabort: null as null | (() => void) }; abort() { this.signal.aborted = true; this.signal.onabort?.(); } }
+    const fetchStub = (_u: string, o: { signal: Ctl['signal'] }) => {
+      fetches++;
+      if (resp === 'hang') return new Promise((_r, rej) => { o.signal.onabort = () => { const e = new Error('aborted'); e.name = 'AbortError'; rej(e); }; });
+      if (resp instanceof Error) return Promise.reject(resp);
+      return Promise.resolve({ ok: resp.ok, status: resp.status ?? (resp.ok ? 200 : 502), text: () => Promise.resolve(resp.body) });
+    };
+    new Function('window', 'document', 'fetch', 'DOMParser', 'setInterval', 'setTimeout', 'clearTimeout', 'AbortController', STREAM_TAIL_SCRIPT)(
+      win, doc, fetchStub, parser, (fn: () => void) => { tick = fn; }, (fn: () => void) => { timers.push(fn); return timers.length; }, () => undefined, Ctl);
+    scrolls.length = 0; // the first load always opens at the bottom
+    tick();
+    return { scrolls, tick: () => tick(), fireTimers: () => timers.splice(0).forEach((f) => f()), swapped: () => cur.innerHTML, reloads: () => reloads, fetches: () => fetches, stale: () => stale.map((x) => x.textContent) };
+  }
+  const settle = () => new Promise((r) => setImmediate(r));
+
+  test('at the bottom, a refresh swaps the stream in place and follows the newest line', async () => {
+    const t = runTail(1200); // 800 + 1200 = bottom of 2000
+    await settle();
+    expect(t.swapped()).toBe('new');
+    expect(t.scrolls).toEqual([2000]);
+  });
+
+  test('NEGATIVE PROOF: scrolled up, a refresh swaps the stream but never moves the reader', async () => {
+    const t = runTail(100);
+    await settle();
+    expect(t.swapped()).toBe('new');
+    expect(t.scrolls).toEqual([]);
+  });
+
+  test('NEGATIVE PROOF: a 200 page with no stream reloads so the reason is named, never stale lines', async () => {
+    const gone = runTail(1200, { ok: true, body: 'no-stream' });
+    await settle();
+    expect(gone.reloads()).toBe(1);
+    expect(gone.swapped()).toBe('old');
+    const none = runTail(1200, { ok: true, body: 'new' }, false);
+    expect(none.reloads()).toBe(1);
+  });
+
+  test('NEGATIVE PROOF: an error status (a 502 during a restart) marks the stream stale and never reloads', async () => {
+    const t = runTail(1200, { ok: false, status: 502, body: 'bad gateway' });
+    await settle();
+    expect(t.reloads()).toBe(0);
+    expect(t.stale()).toEqual(['Not refreshed: answered 502']);
+    expect(t.swapped()).toBe('old');
+  });
+
+  test('NEGATIVE PROOF: a failed re-read marks the stream not refreshed, with the reason', async () => {
+    const t = runTail(1200, new Error('network down'));
+    await settle();
+    expect(t.stale()).toEqual(['Not refreshed: network down']);
+    expect(t.swapped()).toBe('old');
+  });
+
+  test('NEGATIVE PROOF: one read at a time, and a hung read is abandoned so the tail keeps going', async () => {
+    const t = runTail(1200, 'hang');
+    t.tick(); // a second tick while the first read hangs sends nothing
+    expect(t.fetches()).toBe(1);
+    t.fireTimers(); // 8 s pass: the hung read is abandoned
+    await settle();
+    expect(t.stale()).toEqual(['Not refreshed: no answer in 8 s']);
+    t.tick(); // the tail is free again
+    expect(t.fetches()).toBe(2);
   });
 
   test('NEGATIVE PROOF: an unreachable stream is named, never an empty page', async () => {
@@ -101,17 +194,15 @@ describe('#4766 Streams without the old Clearing', () => {
     ],
   };
 
-  test('each role shows its calls newest first, read with ?limit=200', async () => {
+  test('calls come back as one stream, newest last, read with ?limit=200', async () => {
     const r = await stubRoute(rows);
     try {
       const got = await fetchStreams(r.url);
       expect(r.seen).toEqual(['/pulse/streams/events?limit=200']);
       expect(got.ok).toBe(true);
       if (!got.ok) return;
-      expect(got.roles.map((x) => x.role)).toEqual(['kade', 'wren']);
-      expect(got.roles[1].lines.map((l) => l.text)).toEqual(['\u23f3 cargo test', 'read card']);
-      expect(got.roles[0].lines[0].text).toBe('git status \u2717');
-      expect(got.roles[1].lines[0].ts).toBe('20:00'); // 01:00 UTC as Boston time
+      expect(got.lines.map((l) => `${l.role} ${l.text}`)).toEqual(['wren read card', 'kade git status \u2717', 'wren \u23f3 cargo test']);
+      expect(got.lines[2].ts).toBe('20:00'); // 01:00 UTC as Boston time
     } finally { await r.close(); }
   });
 
