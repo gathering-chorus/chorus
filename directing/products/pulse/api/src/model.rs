@@ -43,6 +43,8 @@ pub struct ClassDef {
     pub plural: &'static str,
     pub segment: &'static str,
     pub graph: &'static str,
+    /// #4766 — where the rows live: "graph" or "spine" (the spine log, read from its end)
+    pub store: &'static str,
     /// #4742 — homed in another product and composed here: read-only
     pub composed: bool,
     pub fields: &'static [FieldDef],
@@ -50,7 +52,7 @@ pub struct ClassDef {
 
 pub const CLASSES: &[ClassDef] = &[
     ClassDef {
-        domain: "awareness", name: "Heartbeat", kind: "heartbeat", plural: "heartbeats", segment: "heartbeats", graph: "urn:chorus:domains:awareness", composed: false,
+        domain: "awareness", name: "Heartbeat", kind: "heartbeat", plural: "heartbeats", segment: "heartbeats", graph: "urn:chorus:domains:awareness", store: "graph", composed: false,
         fields: &[
             FieldDef { name: "comment", link: false, datatype: "string", required: true, many: false, allowed: &[] },
             FieldDef { name: "label", link: false, datatype: "string", required: true, many: false, allowed: &[] },
@@ -63,7 +65,7 @@ pub const CLASSES: &[ClassDef] = &[
         ],
     },
     ClassDef {
-        domain: "awareness", name: "Reading", kind: "reading", plural: "readings", segment: "readings", graph: "urn:chorus:domains:awareness", composed: false,
+        domain: "awareness", name: "Reading", kind: "reading", plural: "readings", segment: "readings", graph: "urn:chorus:domains:awareness", store: "graph", composed: false,
         fields: &[
             FieldDef { name: "comment", link: false, datatype: "string", required: true, many: false, allowed: &[] },
             FieldDef { name: "label", link: false, datatype: "string", required: true, many: false, allowed: &[] },
@@ -76,7 +78,7 @@ pub const CLASSES: &[ClassDef] = &[
         ],
     },
     ClassDef {
-        domain: "awareness", name: "RoleState", kind: "role-state", plural: "rolestates", segment: "rolestates", graph: "urn:chorus:domains:awareness", composed: false,
+        domain: "awareness", name: "RoleState", kind: "role-state", plural: "rolestates", segment: "rolestates", graph: "urn:chorus:domains:awareness", store: "graph", composed: false,
         fields: &[
             FieldDef { name: "comment", link: false, datatype: "string", required: true, many: false, allowed: &[] },
             FieldDef { name: "label", link: false, datatype: "string", required: true, many: false, allowed: &[] },
@@ -93,7 +95,7 @@ pub const CLASSES: &[ClassDef] = &[
         ],
     },
     ClassDef {
-        domain: "awareness", name: "WaitingOn", kind: "waiting-on", plural: "waitingons", segment: "waitingons", graph: "urn:chorus:domains:awareness", composed: false,
+        domain: "awareness", name: "WaitingOn", kind: "waiting-on", plural: "waitingons", segment: "waitingons", graph: "urn:chorus:domains:awareness", store: "graph", composed: false,
         fields: &[
             FieldDef { name: "comment", link: false, datatype: "string", required: true, many: false, allowed: &[] },
             FieldDef { name: "label", link: false, datatype: "string", required: true, many: false, allowed: &[] },
@@ -106,7 +108,7 @@ pub const CLASSES: &[ClassDef] = &[
         ],
     },
     ClassDef {
-        domain: "streams", name: "StreamEvent", kind: "stream-event", plural: "streamevents", segment: "events", graph: "urn:chorus:domains:streams", composed: false,
+        domain: "streams", name: "StreamEvent", kind: "stream-event", plural: "streamevents", segment: "events", graph: "urn:chorus:domains:streams", store: "spine", composed: false,
         fields: &[
             FieldDef { name: "streamPhase", link: false, datatype: "string", required: true, many: false, allowed: &[] },
             FieldDef { name: "streamRole", link: false, datatype: "string", required: true, many: false, allowed: &[] },
@@ -115,7 +117,7 @@ pub const CLASSES: &[ClassDef] = &[
         ],
     },
     ClassDef {
-        domain: "alerts", name: "Alert", kind: "alert", plural: "alerts", segment: "alerts", graph: "urn:chorus:domains:alerts", composed: true,
+        domain: "alerts", name: "Alert", kind: "alert", plural: "alerts", segment: "alerts", graph: "urn:chorus:domains:alerts", store: "graph", composed: true,
         fields: &[
             FieldDef { name: "label", link: false, datatype: "string", required: true, many: false, allowed: &[] },
             FieldDef { name: "alertFile", link: false, datatype: "string", required: false, many: false, allowed: &[] },
@@ -132,7 +134,7 @@ pub const CLASSES: &[ClassDef] = &[
         ],
     },
     ClassDef {
-        domain: "alerts", name: "AlertCase", kind: "alert-case", plural: "alertcases", segment: "cases", graph: "urn:chorus:domains:alerts", composed: true,
+        domain: "alerts", name: "AlertCase", kind: "alert-case", plural: "alertcases", segment: "cases", graph: "urn:chorus:domains:alerts", store: "graph", composed: true,
         fields: &[
             FieldDef { name: "caseCause", link: false, datatype: "string", required: true, many: false, allowed: &[] },
             FieldDef { name: "caseClosedAt", link: false, datatype: "dateTime", required: false, many: false, allowed: &[] },
@@ -145,7 +147,7 @@ pub const CLASSES: &[ClassDef] = &[
         ],
     },
     ClassDef {
-        domain: "cards", name: "Card", kind: "card", plural: "cards", segment: "cards", graph: "urn:chorus:domains:cards", composed: true,
+        domain: "cards", name: "Card", kind: "card", plural: "cards", segment: "cards", graph: "urn:chorus:domains:cards", store: "graph", composed: true,
         fields: &[
             FieldDef { name: "label", link: false, datatype: "string", required: true, many: false, allowed: &[] },
             FieldDef { name: "assignee", link: true, datatype: "", required: false, many: false, allowed: &[] },
@@ -156,7 +158,7 @@ pub const CLASSES: &[ClassDef] = &[
         ],
     },
     ClassDef {
-        domain: "cards", name: "CardAC", kind: "card-a-c", plural: "cardacs", segment: "acs", graph: "urn:chorus:domains:cards", composed: true,
+        domain: "cards", name: "CardAC", kind: "card-a-c", plural: "cardacs", segment: "acs", graph: "urn:chorus:domains:cards", store: "graph", composed: true,
         fields: &[
             FieldDef { name: "label", link: false, datatype: "string", required: true, many: false, allowed: &[] },
             FieldDef { name: "acFor", link: true, datatype: "", required: true, many: false, allowed: &[] },
@@ -169,7 +171,7 @@ pub const CLASSES: &[ClassDef] = &[
         ],
     },
     ClassDef {
-        domain: "messages", name: "Channel", kind: "channel", plural: "channels", segment: "channels", graph: "urn:chorus:domains:messages", composed: true,
+        domain: "messages", name: "Channel", kind: "channel", plural: "channels", segment: "channels", graph: "urn:chorus:domains:messages", store: "graph", composed: true,
         fields: &[
             FieldDef { name: "label", link: false, datatype: "string", required: true, many: false, allowed: &[] },
             FieldDef { name: "channelKind", link: false, datatype: "string", required: true, many: false, allowed: &[] },
@@ -178,7 +180,7 @@ pub const CLASSES: &[ClassDef] = &[
         ],
     },
     ClassDef {
-        domain: "messages", name: "Delivery", kind: "delivery", plural: "deliveries", segment: "deliveries", graph: "urn:chorus:domains:messages", composed: true,
+        domain: "messages", name: "Delivery", kind: "delivery", plural: "deliveries", segment: "deliveries", graph: "urn:chorus:domains:messages", store: "graph", composed: true,
         fields: &[
             FieldDef { name: "label", link: false, datatype: "string", required: true, many: false, allowed: &[] },
             FieldDef { name: "deliveredAt", link: false, datatype: "string", required: false, many: false, allowed: &[] },
@@ -191,7 +193,7 @@ pub const CLASSES: &[ClassDef] = &[
         ],
     },
     ClassDef {
-        domain: "messages", name: "Message", kind: "message", plural: "messages", segment: "messages", graph: "urn:chorus:domains:messages", composed: true,
+        domain: "messages", name: "Message", kind: "message", plural: "messages", segment: "messages", graph: "urn:chorus:domains:messages", store: "graph", composed: true,
         fields: &[
             FieldDef { name: "label", link: false, datatype: "string", required: true, many: false, allowed: &[] },
             FieldDef { name: "messageBody", link: false, datatype: "string", required: true, many: false, allowed: &[] },
@@ -208,7 +210,7 @@ pub const CLASSES: &[ClassDef] = &[
         ],
     },
     ClassDef {
-        domain: "messages", name: "Nudge", kind: "nudge", plural: "nudges", segment: "nudges", graph: "urn:chorus:domains:messages", composed: true,
+        domain: "messages", name: "Nudge", kind: "nudge", plural: "nudges", segment: "nudges", graph: "urn:chorus:domains:messages", store: "graph", composed: true,
         fields: &[
             FieldDef { name: "label", link: false, datatype: "string", required: true, many: false, allowed: &[] },
             FieldDef { name: "messageBody", link: false, datatype: "string", required: true, many: false, allowed: &[] },

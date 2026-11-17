@@ -2,6 +2,7 @@
 // @domain: messages
 // @card: #4595
 // @owner: abby-normal
+// #4766 (AC2): the Streams tab reads the generated streams route, never :3470
 
 import { renderRoomsPage, renderBoardPage, renderRolesPage, roleAndonLight, ownerPresence } from '../src/views';
 import { toActorRow } from '../src/sources/pulse';
@@ -319,5 +320,31 @@ describe('#4595 Clearing v2 live streams, actor rail, and idle/busy lights with 
     expect(row.cards?.[1].id).toBe(4595);
     expect(row.stream).toHaveLength(1);
     expect(row.stream?.[0].action).toBe('compile');
+  });
+});
+
+// #4766 AC2 — the Streams tab reads the generated streams route (pulse API, from the spine
+// log), never the old Clearing on :3470.
+describe('#4766 Streams read the generated route, never :3470', () => {
+  const fs = require('fs') as typeof import('fs');
+  const path = require('path') as typeof import('path');
+  const SRC = path.join(__dirname, '../src');
+  const sources = (): Array<[string, string]> => {
+    const out: Array<[string, string]> = [];
+    const walk = (d: string) => { for (const f of fs.readdirSync(d)) { const p = path.join(d, f); if (fs.statSync(p).isDirectory()) walk(p); else if (p.endsWith('.ts')) out.push([p, fs.readFileSync(p, 'utf8')]); } };
+    walk(SRC);
+    return out;
+  };
+  const readsOldClearing = (text: string) => text.split('\n').some((l) => /:3470\b/.test(l) && !/^\s*(\/\/|\*|\/\*)/.test(l));
+
+  test('the default streams URL is the pulse API route and no source reads :3470', () => {
+    const server = fs.readFileSync(path.join(SRC, 'server.ts'), 'utf8');
+    expect(server).toMatch(/STREAM_URL = .*'http:\/\/127\.0\.0\.1:3392\/pulse\/streams\/events'/);
+    expect(sources().filter(([, t]) => readsOldClearing(t)).map(([p]) => p)).toEqual([]);
+  });
+
+  test('NEGATIVE PROOF: a source that still reads :3470 is caught', () => {
+    expect(readsOldClearing("const STREAM_URL = 'http://127.0.0.1:3470/api/stream';")).toBe(true);
+    expect(readsOldClearing('// the old Clearing (:3470) is retired')).toBe(false);
   });
 });

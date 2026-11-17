@@ -7,6 +7,10 @@ mod auth;
 mod model;
 mod ops;
 mod rules;
+mod spine;
+mod spine_log;
+#[cfg(test)]
+mod spine_tests;
 mod settings;
 mod store;
 #[cfg(test)]
@@ -114,6 +118,10 @@ pub fn write(ctx: &Ctx, caller: &auth::Caller, method: &str, class: &ClassDef, n
     // #4742 — a composed domain belongs to another product: this one reads it, its owner writes it
     if class.composed {
         return error(405, "composed", &format!("{} is composed here from its owner; write it through {}'s own door", class.domain, class.domain));
+    }
+    // #4766 — spine rows are written by the hooks; the API only reads them
+    if class.store == "spine" {
+        return error(405, "read-only", &format!("a {} is read from the spine log; the hooks write it, never this API", class.name));
     }
     let parsed: Value = if body.trim().is_empty() && method == "DELETE" { json!({}) } else {
         match serde_json::from_str(body) { Ok(v) => v, Err(e) => return error(400, "bad-json", &e.to_string()) }
@@ -284,7 +292,11 @@ fn main() {
     // #4524 — one engine for rows and for sign-in: an embedded product never reaches
     // for a remote store (or its credential) to learn who its people are.
     let engine = store::open_engine(&s);
-    let store: Box<dyn store::RowStore> = Box::new(store::Sparql::shared(engine.clone()));
+    let graph: Box<dyn store::RowStore> = Box::new(store::Sparql::shared(engine.clone()));
+    // #4766 — a class whose rows live in the spine log is read from the log's end; the rest stay in the graph
+    let store: Box<dyn store::RowStore> = if CLASSES.iter().any(|c| c.store == "spine") {
+        Box::new(spine::Routed { graph, spine: spine::SpineRows { path: s.spine_path.clone(), max: spine::TAIL_BYTES } })
+    } else { graph };
     // #4519 — the shared verifier reads THIS product's people (its namespace, its
     // identity graphs), never Chorus's; a verifier already set to another model is refused
     if let Err(m) = chorus_oidc::identity_model::configure(chorus_oidc::identity_model::IdentityModel::new(model::NS, &s.identity_graph_prefix)) {
