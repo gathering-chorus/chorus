@@ -31,17 +31,19 @@ sys.exit(0 if any(r.get("streamRole") and recent(r) for r in rows) else 1)'
 
 # reads Clearing v2's /api/streams on stdin (route body in ROUTE_BODY, fetched FIRST); exit 0 when
 # v2's lines are the route's calls in time order, newest last: each line is matched to a route row
-# by exact label (with the running/failed/stopped marks stripped), and the matched route positions
+# by exact label, unique in the route (marks stripped), and the matched route positions
 # must only fall (route is newest first). v2 is read after the route, so calls newer than the route
 # read match nothing and are skipped, never a race. When the route holds more than one role, v2
 # must show more than one too (interleaved, not one role's column); one busy role alone is fine.
 INTERLEAVED='
 import json, os, sys
 rows = json.loads(os.environ["ROUTE_BODY"]).get("data") or []
-at = {}
-for i, r in enumerate(rows):
-    if r.get("label") and r["label"] not in at:
-        at[r["label"]] = i
+counts = {}
+for r in rows:
+    if r.get("label"):
+        counts[r["label"]] = counts.get(r["label"], 0) + 1
+# a label seen twice (the same command run again) cannot place a line in time: use unique ones only
+at = {r["label"]: i for i, r in enumerate(rows) if r.get("label") and counts[r["label"]] == 1}
 def bare(t):
     t = t[2:] if t.startswith("\u23f3 ") else t
     for end in (" \u2717", " (stopped)"):
@@ -80,6 +82,10 @@ sys.exit(0 if d.get("ok") and in_order and roles_ok else 1)'
   # grouped by role: kade a, kade c, then wren b
   run env ROUTE_BODY="$route" python3 -c "$INTERLEAVED" <<< '{"ok":true,"lines":[{"role":"kade","text":"a"},{"role":"kade","text":"c"},{"role":"wren","text":"b"}]}'
   [ "$status" -ne 0 ]
+  # the same command run twice (label "git status" at positions 0 and 2) places nothing; the rest still order
+  dup='{"data":[{"label":"git status","streamRole":"kade"},{"label":"b","streamRole":"wren"},{"label":"git status","streamRole":"kade"},{"label":"a","streamRole":"kade"}]}'
+  run env ROUTE_BODY="$dup" python3 -c "$INTERLEAVED" <<< '{"ok":true,"lines":[{"role":"kade","text":"a"},{"role":"kade","text":"git status"},{"role":"wren","text":"b"},{"role":"kade","text":"git status"}]}'
+  [ "$status" -eq 0 ]
   # only one role active in the route: in order is enough
   run env ROUTE_BODY='{"data":[{"label":"y","streamRole":"wren"},{"label":"x","streamRole":"wren"}]}' python3 -c "$INTERLEAVED" <<< '{"ok":true,"lines":[{"role":"wren","text":"x"},{"role":"wren","text":"y"}]}'
   [ "$status" -eq 0 ]
