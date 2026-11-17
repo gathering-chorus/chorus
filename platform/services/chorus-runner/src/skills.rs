@@ -316,6 +316,9 @@ pub fn child_env(owner: &str, token: &str, trace: &str) -> Vec<(&'static str, St
         ("CHORUS_IDENTITY_TOKEN", token.to_string()),
         ("CHORUS_ROLE", owner.to_string()),
         ("DEPLOY_ROLE", owner.to_string()),
+        // #4414 — a machine caller keeps reaching the owner's werk slot (the slot wrapper
+        // answers only the role's own account or an opted-in runner; Jeff's shell never opts in)
+        ("CHORUS_USE_SLOT", "1".to_string()),
         ("CHORUS_TRACE", trace.to_string()),
         // #4535 — a tool run under a role's own Mac account finds the shared state.
         ("CHORUS_STATE_DIR", crate::server::state_dir()),

@@ -3978,6 +3978,7 @@ fn uid() -> u32 {
 
 /// #3101 — the canonical CLI-verb wrapper: the role's werk slot first, else the
 /// installed binary. #4444 reopen 3 — the slot var is derived from the role.
+/// #4414 — only the role's own account, or a runner with CHORUS_USE_SLOT=1, reaches a slot.
 pub fn canonical_wrapper(bin: &str, bin_path: &str) -> String {
     format!(
         "#!/bin/sh\n\
@@ -3988,6 +3989,9 @@ case \"${{CHORUS_ROLE:-}}\" in\n\
   *[!a-z0-9-]*|'') ;;\n\
   *) v=\"WERK_$(printf '%s' \"$CHORUS_ROLE\" | tr 'a-z-' 'A-Z_')_BIN\"; eval \"d=\\${{$v:-}}\"; [ -n \"$d\" ] && slot=\"$d/{name}\" ;;\n\
 esac\n\
+# #4414: a slot answers only the role's own account, or a runner that opts in (CHORUS_USE_SLOT=1).\n\
+# Jeff's shell sources chorus-env-setup (every WERK_*_BIN) and never sets it, so a card's build never answers him.\n\
+if [ -n \"$slot\" ] && [ \"$(id -un)\" != \"chorus-$CHORUS_ROLE\" ] && [ \"${{CHORUS_USE_SLOT:-}}\" != 1 ]; then slot=\"\"; fi\n\
 if [ -n \"$slot\" ] && [ -x \"$slot\" ]; then\n\
   # #4853: a slot runs as whoever calls this wrapper (the runner runs as jeffbridwell).\n\
   # Refuse a symlink, or a slot or dir that group/other can write or that is owned by\n\
