@@ -114,19 +114,19 @@ function basename_of(tok,    n, parts) {
   own = user
   if (match(cmd, /chorus-werk\/[a-zA-Z0-9_-]+\//)) {
     werk_seg = substr(cmd, RSTART + 12, RLENGTH - 13)
-    if (cmd ~ /(server\.js|app\.js|directing\/clearing|platform\/api)/ && cmd !~ /jest/) {
+    if (bin ~ /^(node|pulse-api|athena-make|chorus-runner)$/ && cmd ~ /(server\.js|app\.js|directing\/clearing|platform\/api|pulse-api|athena-make|chorus-runner)/ && cmd !~ /(jest|tsc|eslint)/) {
       wl = "werk-demo-server"
       own = werk_seg
     }
   }
   if (wl == "") {
-    if (bin ~ /^(clang|clang\+\+|cc1|cc1plus|c\+\+|ld)$/ || cmd ~ /\/(clang\+\+|cc1plus)(\s|$)/) {
+    if (bin ~ /^(clang|clang\+\+|cc1|cc1plus|c\+\+|ld)$/ || cmd ~ /\/(clang\+\+|cc1plus)([[:space:]]|$)/) {
       wl = "cxx-build"
     } else if (bin ~ /^(rustc|cargo|rustdoc|cargo-llvm-cov)$/) {
       wl = "rust-build"
-    } else if (bin == "bats" || cmd ~ /\/bats(-exec-[a-z]+)?(\s|$)/) {
+    } else if (bin == "bats" || cmd ~ /\/bats(-exec-[a-z]+)?([[:space:]]|$)/) {
       wl = "bats-tests"
-    } else if (cmd ~ /\/jest(\.js)?(\s|$)/ || cmd ~ /node_modules\/\.bin\/jest/) {
+    } else if (cmd ~ /\/jest(\.js)?([[:space:]]|$)/ || cmd ~ /node_modules\/\.bin\/jest/) {
       wl = "jest-tests"
     } else if (bin == "promtail") {
       wl = "promtail"

@@ -64,6 +64,8 @@ assert clearing_cpu is not None and clearing_cpu >= 10.0, f"missing chorus-clear
 assert gathering_cpu is not None and gathering_cpu >= 27.0, f"missing gathering-app workload: {gathering_cpu}"
 assert jest_cpu is not None and jest_cpu >= 41.0, f"missing chorus-wren jest-tests workload: {jest_cpu}"
 assert promtail_cpu is not None and promtail_cpu >= 112.0, f"missing promtail workload: {promtail_cpu}"
+bats_cpu = get_val("host_workload_cpu_percent", workload="bats-tests", owner="chorus-kade")
+assert bats_cpu is not None and abs(bats_cpu - 19.0) < 0.2, f"BWK awk [[:space:]] failed to classify bats-exec-test: {bats_cpu}"
 
 # 3. Direct host load gauges + daily peak watermark
 l1 = get_val("host_load_average", window="1m")

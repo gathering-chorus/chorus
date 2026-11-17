@@ -3,26 +3,29 @@
 grant chorus group write on shared-observability, and wire the canonical process-memory-exporter.
 # @domain: metrics
 
-Order and idempotency contract (Silas review 2026-11-17 11:32):
+Order and idempotency contract (Silas review 2026-11-17 11:32 + gate-code round 1):
   Every step is idempotent on re-run, because cross-system mutations (Fuseki store + host POSIX
   permissions + shared-observability git symlink) cannot share one rollback transaction:
-  1. Pre-flight (before any store or filesystem write): canonical exporter exists and is executable,
-     OBS_REPO belongs to RUN_UID (wrong-owner refusal exit 2), and OBS_REPO/scripts/process-memory-exporter.sh
-     has no uncommitted tracked edits (refusal exit 2).
-  2. AC1 (idempotent per row): apply any remaining Athena ownedBy -> principal-borg-queen transfers
-     from designing/domains/metrics/ownership-4992.json via governed `athena-model apply` (rows
-     already updated by model-before-rows or a prior run read as SAME and are skipped), signing in
-     via chorus-identity-token strictly as `jeff` (under jeffbridwell at land; Jeff's signed go is
-     the authority, with no agent credential fallback per Wren 2026-11-17 11:37), then verify
-     readback shows all 6 ownedBy principal-borg-queen.
-  3. AC2 (idempotent): chgrp -R chorus on OBS_REPO + grant group rwX and directory setgid (g+s)
-     only where mode bits differ, preserving read-only git object/pack files.
-  4. AC3 (idempotent): point OBS_REPO/scripts/process-memory-exporter.sh at
+  1. Pre-flight (before any store or filesystem write): canonical exporter exists, is executable,
+     and is not inside a chorus-werk worktree; OBS_REPO and its scoped repo paths belong to RUN_UID
+     (or already carry OBS_GROUP access; wrong-owner refusal exit 2); and
+     OBS_REPO/scripts/process-memory-exporter.sh has no uncommitted tracked edits (refusal exit 2).
+  2. AC1 (one writer per row, idempotent): the 5 Domain rows (alerts, heralds, logs, metrics,
+     monitors) move via MODEL_SET TTLs + staged triple retirements in model-before-rows
+     (athena-deploy); this script applies ONLY the non-TTL row (`repository:shared-observability`,
+     writer="athena-model") via governed `athena-model apply` signed strictly as `jeff` (no agent
+     credential fallback per Wren 2026-11-17 11:37), then verifies readback (?limit=1000) shows all
+     6 subjects ownedBy principal-borg-queen.
+  3. AC2 (scoped + persistent, idempotent): grant group `chorus` + g+rwX,g+s on OBS_REPO's repo tree
+     and `data/textfile_collector` ONLY (never descending into TSDB/Loki/Grafana runtime dirs under
+     `data/*`), preserving read-only git pack/object files, and set `core.sharedRepository=group`.
+  4. AC3 (idempotent): point OBS_REPO/scripts/process-memory-exporter.sh at canonical
      chorus/proving/scripts/process-memory-exporter.sh, commit ONLY that path if staged diff is
      non-empty, and execute it once to verify process_memory.prom writes disaggregated workload + load series.
 DRY RUN unless --apply. --ttl <path> writes planned ownership triples as Turtle for validation.
-Exit 0 = plan printed (or applied); 1 = a token/write/chgrp/exporter check failed; 2 = pre-flight refused.
+Exit 0 = plan printed (or applied); 1 = a token/write/readback/chgrp/exporter check failed; 2 = pre-flight refused.
 """
+import grp
 import json
 import os
 import stat
@@ -33,7 +36,7 @@ import urllib.request
 NS = "https://jeffbridwell.com/chorus#"
 ROOT = os.environ.get("LAND_ROOT", os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 PLAN_FILE = os.path.join(ROOT, "designing/domains/metrics/ownership-4992.json")
-CANON_EXP = os.path.join(ROOT, "proving/scripts/process-memory-exporter.sh")
+CANON_EXP = os.environ.get("CANON_EXP_OVERRIDE", os.path.join(ROOT, "proving/scripts/process-memory-exporter.sh"))
 _PARENT = os.path.dirname(ROOT)
 _PROJECTS = os.path.dirname(_PARENT) if os.path.basename(_PARENT) == "chorus-werk" else _PARENT
 OBS = os.environ.get("OBS_REPO", os.path.join(_PROJECTS, "shared-observability"))
@@ -78,8 +81,8 @@ def load_live_owners():
             return json.load(fh)
     owners = {}
     for endpoint, prefix in (
-        ("/owl/domains/domains", ""),
-        ("/owl/code/repositories", "repository-"),
+        ("/owl/domains/domains?limit=1000", ""),
+        ("/owl/code/repositories?limit=1000", "repository-"),
     ):
         with urllib.request.urlopen(f"{API}{endpoint}", timeout=10) as resp:
             body = json.loads(resp.read().decode("utf-8"))
@@ -138,9 +141,42 @@ def apply_owner_row(row, token):
     return True
 
 
+def iter_repo_targets(obs_root):
+    """Yield (path, is_dir, stat_result) for repo-scoped paths in obs_root.
+    Never descends into runtime data subdirectories under `data/` except `data/textfile_collector`.
+    """
+    data_dir = os.path.realpath(os.path.join(obs_root, "data"))
+    for dirpath, dirnames, filenames in os.walk(obs_root, topdown=True, followlinks=False):
+        real_dir = os.path.realpath(dirpath)
+        if real_dir == data_dir:
+            dirnames[:] = [d for d in dirnames if d == "textfile_collector"]
+            filenames = [f for f in filenames if f == ".gitkeep"]
+        else:
+            dirnames[:] = [d for d in dirnames if not os.path.islink(os.path.join(dirpath, d))]
+        if not os.path.islink(dirpath):
+            yield dirpath, True, os.stat(dirpath)
+        for fn in filenames:
+            fp = os.path.join(dirpath, fn)
+            if os.path.islink(fp):
+                continue
+            yield fp, False, os.stat(fp)
+
+
 def preflight_obs():
     if not (os.path.isfile(CANON_EXP) and os.access(CANON_EXP, os.X_OK)):
         print(f"land-4992-rows: canonical exporter missing or not executable at {CANON_EXP}; nothing changed", file=sys.stderr)
+        return 2
+    real_exp = os.path.realpath(CANON_EXP)
+    if "/chorus-werk/" in real_exp and os.environ.get("LAND_ALLOW_WERK_SOURCE") != "1":
+        print(
+            f"land-4992-rows: refusing to symlink shared-observability into a werk tree ({real_exp}); nothing changed",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        target_gid = grp.getgrnam(OBS_GROUP).gr_gid
+    except KeyError:
+        print(f"land-4992-rows: unknown group '{OBS_GROUP}'; nothing changed", file=sys.stderr)
         return 2
     try:
         st = os.stat(OBS)
@@ -153,6 +189,25 @@ def preflight_obs():
             file=sys.stderr,
         )
         return 2
+    try:
+        for p, is_dir, pst in iter_repo_targets(OBS):
+            if pst.st_uid == RUN_UID:
+                continue
+            mode = stat.S_IMODE(pst.st_mode)
+            grp_ok = pst.st_gid == target_gid and (
+                bool(mode & stat.S_IWGRP) if (is_dir or (mode & stat.S_IWUSR)) else bool(mode & stat.S_IRGRP)
+            )
+            if not grp_ok:
+                print(
+                    f"land-4992-rows: {p} belongs to uid {pst.st_uid} without {OBS_GROUP} group access, "
+                    f"this land runs as {RUN_UID}; nothing changed",
+                    file=sys.stderr,
+                )
+                return 2
+    except OSError as exc:
+        print(f"land-4992-rows: cannot inspect {OBS}: {exc}; nothing changed", file=sys.stderr)
+        return 2
+
     target_exp = os.path.join(OBS, REL_EXP)
     if os.path.lexists(target_exp):
         tracked = subprocess.run(
@@ -172,31 +227,40 @@ def preflight_obs():
 
 
 def grant_group_write():
-    r = subprocess.run([CHGRP, "-R", OBS_GROUP, OBS], capture_output=True, text=True, timeout=120)
-    if r.returncode != 0:
-        print(f"land-4992-rows: chgrp -R {OBS_GROUP} {OBS} failed: {(r.stderr or r.stdout).strip()}", file=sys.stderr)
-        return False
     try:
-        for dirpath, _dirnames, filenames in os.walk(OBS):
-            if not os.path.islink(dirpath):
-                dmode = stat.S_IMODE(os.stat(dirpath).st_mode)
-                want_d = dmode | stat.S_IRGRP | stat.S_IWGRP | stat.S_IXGRP | stat.S_ISGID
-                if want_d != dmode:
-                    os.chmod(dirpath, want_d)
-            for fn in filenames:
-                fp = os.path.join(dirpath, fn)
-                if os.path.islink(fp):
+        targets = [(p, is_dir, pst) for p, is_dir, pst in iter_repo_targets(OBS) if pst.st_uid == RUN_UID]
+    except OSError as exc:
+        print(f"land-4992-rows: failed scanning {OBS}: {exc}", file=sys.stderr)
+        return False
+
+    paths = [p for p, _is_dir, _pst in targets]
+    for idx in range(0, len(paths), 200):
+        chunk = paths[idx : idx + 200]
+        r = subprocess.run([CHGRP, "-h", OBS_GROUP, *chunk], capture_output=True, text=True, timeout=120)
+        if r.returncode != 0:
+            print(f"land-4992-rows: chgrp {OBS_GROUP} failed: {(r.stderr or r.stdout).strip()}", file=sys.stderr)
+            return False
+
+    try:
+        for p, is_dir, pst in targets:
+            mode = stat.S_IMODE(pst.st_mode)
+            if is_dir:
+                want = mode | stat.S_IRGRP | stat.S_IWGRP | stat.S_IXGRP | stat.S_ISGID
+            else:
+                if not (mode & stat.S_IWUSR):
                     continue
-                fmode = stat.S_IMODE(os.stat(fp).st_mode)
-                if not (fmode & stat.S_IWUSR):
-                    continue
-                want_f = fmode | stat.S_IRGRP | stat.S_IWGRP
-                if fmode & stat.S_IXUSR:
-                    want_f |= stat.S_IXGRP
-                if want_f != fmode:
-                    os.chmod(fp, want_f)
+                want = mode | stat.S_IRGRP | stat.S_IWGRP
+                if mode & stat.S_IXUSR:
+                    want |= stat.S_IXGRP
+            if want != mode:
+                os.chmod(p, want)
     except OSError as exc:
         print(f"land-4992-rows: chmod group write on {OBS} failed: {exc}", file=sys.stderr)
+        return False
+
+    cfg = subprocess.run(["git", "-C", OBS, "config", "core.sharedRepository", "group"], capture_output=True, text=True)
+    if cfg.returncode != 0:
+        print(f"land-4992-rows: git config core.sharedRepository failed: {(cfg.stderr or cfg.stdout).strip()}", file=sys.stderr)
         return False
     return True
 
@@ -269,21 +333,27 @@ def main(argv):
         print(f"land-4992-rows: plan or live owners unreadable: {exc}", file=sys.stderr)
         return 2
 
-    to_change = []
+    dal_change = []
+    model_change = []
     same_cnt = 0
     for r in rows:
         cur = live.get(r["iri"], "")
+        writer = r.get("writer", "athena-model")
         if cur == r["ownedBy"]:
             same_cnt += 1
             print(f"SAME   {r['kind']}:{r['name']} ({cur})")
+        elif writer == "athena-model":
+            dal_change.append(r)
+            print(f"CHANGE {r['kind']}:{r['name']} ({cur or 'none'} -> {r['ownedBy']}) [via athena-model]")
         else:
-            to_change.append(r)
-            print(f"CHANGE {r['kind']}:{r['name']} ({cur or 'none'} -> {r['ownedBy']})")
+            model_change.append(r)
+            print(f"VERIFY {r['kind']}:{r['name']} ({cur or 'none'} -> {r['ownedBy']}) [via athena-deploy]")
 
     if not apply_mode:
         print(
-            f"plan: ownership: {len(to_change)} change, {same_cnt} same (signer={LAND_SIGNER}); "
-            f"grant group {OBS_GROUP} write+setgid on {OBS}; "
+            f"plan: ownership: {len(dal_change) + len(model_change)} change "
+            f"({len(dal_change)} athena-model, {len(model_change)} athena-deploy), {same_cnt} same (signer={LAND_SIGNER}); "
+            f"grant group {OBS_GROUP} write+setgid+sharedRepository on {OBS} (excluding data/* runtime DBs); "
             f"symlink {OBS}/{REL_EXP} -> {CANON_EXP} (dry run)"
         )
         return 0
@@ -292,17 +362,22 @@ def main(argv):
     if pf != 0:
         return pf
 
-    if to_change:
+    if dal_change:
         tok = mint_land_token()
         if not tok:
             return 1
-        failed_rows = [r for r in to_change if not apply_owner_row(r, tok)]
+        failed_rows = [r for r in dal_change if not apply_owner_row(r, tok)]
         if failed_rows:
             names = ", ".join(f"{r['kind']}:{r['name']}" for r in failed_rows)
             print(f"land-4992-rows: REFUSED {len(failed_rows)} ownership update(s): {names}", file=sys.stderr)
             return 1
 
-    after = load_live_owners()
+    try:
+        after = load_live_owners()
+    except Exception as exc:
+        print(f"land-4992-rows: post-apply live owners unreadable: {exc}", file=sys.stderr)
+        return 1
+
     mismatched = [
         f"{r['kind']}:{r['name']}={after.get(r['iri'], 'none')}"
         for r in rows
@@ -315,7 +390,7 @@ def main(argv):
 
     if not grant_group_write():
         return 1
-    print(f"permissions verified: {OBS} group={OBS_GROUP} g+rwX,g+s")
+    print(f"permissions verified: {OBS} group={OBS_GROUP} g+rwX,g+s,core.sharedRepository=group")
 
     if not install_and_prove_exporter():
         return 1

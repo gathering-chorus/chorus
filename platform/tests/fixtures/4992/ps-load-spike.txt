@@ -12,3 +12,5 @@ jeffbridwell     48624  10.9 /Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin
 chorus-wren     120000  41.2 /Users/jeffbridwell/.nvm/versions/node/v20.20.2/bin/node /Users/jeffbridwell/CascadeProjects/chorus-werk/wren-4991/platform/pulse/node_modules/.bin/jest
 chorus-borg-queen 340000 4.6 /Users/chorus-borg-queen/.antigravity/bin/agy
 chorus-silas    280000   3.1 claude
+chorus-kade      12400   6.5 /opt/homebrew/bin/rg needle /Users/jeffbridwell/CascadeProjects/chorus-werk/kade-4965/platform/api/src
+chorus-kade      18200  19.0 /bin/bash /opt/homebrew/Cellar/bats-core/1.13.0/libexec/bats-core/bats-exec-test /tmp/t.bats
