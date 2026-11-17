@@ -81,7 +81,7 @@ state_is() { grep -q "\"state\":\"$2\"" "$T/identity/$1/login.json"; }
 # no tmux pane), said "already awake", and started nothing in tmux; nudges could not reach it.
 stray() {
   printf '{"role":"%s","pid":%s,"tty":"/dev/ttys007","host":"unknown","tmux":""}' "$1" "$2" > "$T/sessions/$1-$2.json"
-  echo "$2" >> "$T/alive-pids"
+  echo "$2" >> "$T/alive-pids"; echo "$2" >> "$T/no-tmux-pids"   # a plain window: no tmux ancestor
   printf '{"role":"%s","event":"reply.published","timestamp":"%s"}\n' "$1" "$(date '+%Y-%m-%dT%H:%M:%S')" >> "$T/spine-read.log"
 }
 
@@ -110,42 +110,11 @@ stray() {
   out_lacks "via already awake"
 }
 
-@test "#4414 AC1 NEGATIVE PROOF: a role registered without a pane whose tty a tmux pane owns is left alone (the live case)" {
-  stray silas 10263
-  echo /dev/ttys007 > "$T/pane-ttys"
-  printf '{"state":"recorded","session":"silas-x-1","pid":10263}' > "$T/identity/silas/login.json"
-  : > "$T/claude.log"
-  run "$SCRIPT" on silas
-  test "$status" -eq 0
-  out_lacks "moving silas into tmux"
-  out_has "via already awake"
-  test -z "$(grep "claude stop 10263" "$T/claude.log" || true)"
-}
-
-@test "#4414 AC1 NEGATIVE PROOF: tmux that cannot be read never ends a session, and says it cannot tell" {
-  stray silas 10263
-  touch "$T/tmux-unreadable"
-  printf '{"state":"recorded","session":"silas-x-1","pid":10263}' > "$T/identity/silas/login.json"
-  : > "$T/claude.log"
-  run "$SCRIPT" on silas
-  out_has "cannot tell if silas is in tmux"
-  test -z "$(grep "claude stop 10263" "$T/claude.log" || true)"
-}
-
-@test "#4414 AC1: a registry tty without /dev/ still matches tmux's pane tty" {
-  printf '{"role":"silas","pid":10263,"tty":"ttys007","host":"unknown","tmux":""}' > "$T/sessions/silas-10263.json"
-  echo 10263 >> "$T/alive-pids"
-  echo /dev/ttys007 > "$T/pane-ttys"
-  printf '{"state":"recorded","session":"silas-x-1","pid":10263}' > "$T/identity/silas/login.json"
-  run "$SCRIPT" on silas
-  out_lacks "moving silas into tmux"
-}
-
 @test "#4414 (review) NEGATIVE PROOF: a stray that will not stop is refused, never a second session" {
   stray silas 10263
   touch "$T/stop-fails"
   : > "$T/tmux.log"
-  run "$SCRIPT" on silas
+  run env AWAKE_STOP_WAIT=1 "$SCRIPT" on silas
   test "$status" -ne 0
   out_has "could not end silas's session outside tmux"
   test -f "$T/sessions/silas-10263.json"
@@ -162,14 +131,6 @@ stray() {
   test -f "$T/sessions/silas-10263.json"
 }
 
-@test "#4414 (review): no tmux server running means the role is outside tmux, and it is moved" {
-  stray silas 10263
-  touch "$T/tmux-noserver"
-  run "$SCRIPT" on silas
-  out_has "moving silas into tmux"
-  out_lacks "cannot tell"
-}
-
 @test "#4414 (review) NEGATIVE PROOF: a session with a named pane (%5) is never judged outside, whatever its tty" {
   printf '{"role":"silas","pid":10263,"tty":"","host":"tmux","tmux":"%%5"}' > "$T/sessions/silas-10263.json"
   echo 10263 >> "$T/alive-pids"
@@ -180,6 +141,47 @@ stray() {
   run "$SCRIPT" on silas
   out_lacks "moving silas into tmux"
   test -z "$(grep "claude stop 10263" "$T/claude.log" || true)"
+}
+
+@test "#4414 AC1 NEGATIVE PROOF: a role registered without a pane but running under tmux is left alone (the live case)" {
+  printf '{"role":"silas","pid":10263,"tty":"/dev/ttys015","host":"unknown"}' > "$T/sessions/silas-10263.json"
+  echo 10263 >> "$T/alive-pids"
+  printf '{"role":"silas","event":"reply.published","timestamp":"%s"}\n' "$(date '+%Y-%m-%dT%H:%M:%S')" >> "$T/spine-read.log"
+  printf '{"state":"recorded","session":"silas-x-1","pid":10263}' > "$T/identity/silas/login.json"
+  : > "$T/claude.log"
+  run "$SCRIPT" on silas
+  test "$status" -eq 0
+  out_lacks "moving silas into tmux"
+  out_has "via already awake"
+  test -z "$(grep "claude stop 10263" "$T/claude.log" || true)"
+}
+
+@test "#4414 AC1 NEGATIVE PROOF: a process table that cannot be read ends nothing, and says it cannot tell" {
+  stray silas 10263
+  touch "$T/ps-unreadable"
+  printf '{"state":"recorded","session":"silas-x-1","pid":10263}' > "$T/identity/silas/login.json"
+  : > "$T/claude.log"
+  run "$SCRIPT" on silas
+  out_has "cannot tell if silas is in tmux"
+  test -z "$(grep "claude stop 10263" "$T/claude.log" || true)"
+}
+
+@test "#4414 (review 2): a stray that takes a moment to exit is waited for, not refused" {
+  stray silas 10263
+  touch "$T/stop-slow"
+  run env AWAKE_STOP_WAIT=3 "$SCRIPT" on silas
+  test "$status" -eq 0
+  out_has "moving silas into tmux"
+  out_lacks "could not end"
+}
+
+@test "#4414 (review 2): login from inside the role's own pane still ends the stray first" {
+  stray silas 10263
+  echo chorus-silas > "$T/own-session"
+  : > "$T/claude.log"
+  run env TMUX=1 AWAKE_NO_ATTACH=0 "$SCRIPT" on silas
+  grep -q "claude stop 10263" "$T/claude.log"
+  test ! -f "$T/sessions/silas-10263.json"
 }
 
 @test "on: a running role whose login is on file for this pid is left alone" {
