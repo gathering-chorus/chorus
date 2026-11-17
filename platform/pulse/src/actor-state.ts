@@ -581,7 +581,8 @@ export function deriveActorState(input: ActorFactInput): RoleStateResult[] {
   const observedAt = now.toISOString();
   const actionMap = new Map<string, ActionFact>(Object.entries(input.actions ?? {}));
   const unmeasured = input.unmeasured && input.unmeasured.length > 0 ? input.unmeasured : undefined;
-  const lokiUnmeasured = Boolean(unmeasured?.some((u) => u.source.includes('loki')));
+  // #4991 — activity comes from the domain routes (pulse:*); an unread route is unmeasured, never idle
+  const lokiUnmeasured = Boolean(unmeasured?.some((u) => u.source.includes('loki') || u.source.startsWith('pulse:')));
 
   return input.principals.map((p) =>
     deriveOneActor(p, input, actionMap, nowMs, lokiUnmeasured, unmeasured, observedAt)
@@ -845,17 +846,26 @@ export function actionFactsFrom(rows: ActivityRow[], nowMs: number): Map<string,
   return out;
 }
 
+const text = (v: unknown): string => (typeof v === 'string' ? v : '');
+
+/** #4991 — one stream row as activity: a reply is not work (#4766), and a call still
+ *  running is acting now, however long ago it started. */
+export function streamActivity(r: Record<string, unknown>, nowIso = new Date().toISOString()): ActivityRow | null {
+  if (text(r.streamPhase) === 'reply') return null;
+  const ts = text(r.streamPhase) === 'running' ? nowIso : text(r.streamTs);
+  return { role: text(r.streamRole), ts, what: text(r.label) || text(r.streamTool) };
+}
+
 /** #4991 — a message as its sender's activity, or null. An alert to a role is stored with the
  *  role as both sender and recipient (11-17: 12 of the last 100 rows, every one an alert), so a
  *  message whose sender is also a recipient is not the sender acting: an alert to a sleeping
  *  role must never make it read "acting". Pure. */
-const text = (v: unknown): string => (typeof v === 'string' ? v : '');
 
 export function messageActivity(r: Record<string, unknown>): ActivityRow | null {
   const by = text(r.sentBy);
   const to = Array.isArray(r.sentTo) ? r.sentTo.map(text) : [text(r.sentTo)];
   if (by && to.includes(by)) return null;
-  const sender = text(r.senderName);
+  const sender = text(r.senderName).toLowerCase();
   // the system's own senders are no principal (Abby, 11-17 07:57)
   if (['system', 'pulse', 'bridge', ''].includes(sender)) return null;
   return { role: sender, ts: text(r.sentAt), what: 'message' };
@@ -868,10 +878,14 @@ export function messageActivity(r: Record<string, unknown>): ActivityRow | null 
  *  acting (11-17 07:21: Kade and Silas "acting" from crawler, deploy and sensor writes). This
  *  replaces pulse's own spine tail and its Loki count. A route that cannot be read is named
  *  unmeasured, never an empty "idle". */
-async function fetchActivityFacts(
+export async function fetchActivityFacts(
   pulseApiBase: string,
   unmeasured: Array<{ source: string; reason: string }>
 ): Promise<Map<string, ActionFact>> {
+  if (pulseApiBase === 'off') {
+    unmeasured.push({ source: 'pulse:streams', reason: 'PULSE_API_URL=off (a demo pulse never reads prod)' });
+    return new Map();
+  }
   const rows: ActivityRow[] = [];
   const read = async (source: string, path: string, map: (r: Record<string, unknown>) => ActivityRow | null) => {
     try {
@@ -885,7 +899,7 @@ async function fetchActivityFacts(
     }
   };
   await Promise.all([
-    read('pulse:streams', '/pulse/streams/events?limit=500', (r) => ({ role: text(r.streamRole), ts: text(r.streamTs), what: text(r.label) || text(r.streamTool) })),
+    read('pulse:streams', '/pulse/streams/events?limit=500', streamActivity),
     read('pulse:messages', '/pulse/messages/messages?limit=200&sort=-sentAt', messageActivity),
   ]);
   return actionFactsFrom(rows, Date.now());
@@ -987,6 +1001,7 @@ export function buildLiveActorFactFetcher(options: {
   const athenaBase = options.athenaBaseUrl || process.env.ATHENA_MAKE_URL || 'http://localhost:3360';
   const apiBase = options.chorusApiBaseUrl || process.env.CHORUS_API_URL || 'http://localhost:3340';
   const pulseApiBase = options.pulseApiBaseUrl || process.env.PULSE_API_URL || 'http://127.0.0.1:3392';
+  // #4991 — a demo pulse runs with PULSE_API_URL=off: it never reads prod's routes (activity reads unmeasured)
   const daguBase = options.daguBaseUrl || process.env.DAGU_URL || 'http://127.0.0.1:8526';
 
   return async (): Promise<ActorFactInput> => {

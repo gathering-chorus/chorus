@@ -62,4 +62,7 @@ sys.exit(0 if items and not bad else 1)'
   [ "$status" -ne 0 ] || return 1
   run env ROUTE_BODY="$route" python3 -c "$NONE_FALSELY_ACTING" <<< '{"actors":[{"aboutPrincipal":"principal-wren","activity":"acting"},{"aboutPrincipal":"principal-kade","activity":"idle"}]}'
   [ "$status" -eq 0 ] || return 1
+  # jeff has no stream rows of his own (he types, he does not call tools): his acting is never flagged
+  run env ROUTE_BODY="$route" python3 -c "$NONE_FALSELY_ACTING" <<< '{"actors":[{"aboutPrincipal":"principal-jeff","activity":"acting"}]}'
+  [ "$status" -eq 0 ] || return 1
 }

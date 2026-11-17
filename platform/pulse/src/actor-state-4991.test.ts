@@ -10,7 +10,7 @@
  * route (each session's calls and replies) and the messages route (what each one sent).
  * A job's model write is in neither, so it can never make a role read acting.
  */
-import { actionFactsFrom, deriveActorState, messageActivity, type ActivityRow, type ActorFactInput } from './actor-state';
+import { actionFactsFrom, deriveActorState, fetchActivityFacts, messageActivity, streamActivity, type ActivityRow, type ActorFactInput } from './actor-state';
 
 const now = Date.now();
 const ago = (s: number) => new Date(now - s * 1000).toISOString();
@@ -53,4 +53,33 @@ test('#4991 AC4 a message the role sent counts; NEGATIVE PROOF: an alert to the 
   expect(messageActivity({ senderName: 'system', sentBy: 'system', sentTo: ['principal-kade'], sentAt: ago(10) })).toBeNull();
   const k = deriveActorState(live(Object.fromEntries(actionFactsFrom([messageActivity(alert)].filter((r): r is ActivityRow => r !== null), now)))).find((s) => s.aboutPrincipal === KADE);
   expect(k?.activity).toBe('idle');
+});
+
+// #4991 demo review (code) — a reply is not work (#4766), and a running call is acting now
+test('a reply row is no activity; a call still running counts as now, however old its start', () => {
+  expect(streamActivity({ streamRole: 'kade', streamPhase: 'reply', streamTs: ago(10) })).toBeNull();
+  const nowIso = new Date(now).toISOString();
+  expect(streamActivity({ streamRole: 'kade', streamPhase: 'running', streamTs: ago(3600) }, nowIso)?.ts).toBe(nowIso);
+  expect(streamActivity({ streamRole: 'kade', streamPhase: 'done', streamTs: ago(3600) }, nowIso)?.ts).toBe(ago(3600));
+});
+
+test('system senders are skipped whatever their case', () => {
+  expect(messageActivity({ senderName: 'System', sentBy: 'x', sentTo: ['y'], sentAt: ago(10) })).toBeNull();
+});
+
+// NEGATIVE PROOF (#4991 demo review): an unread activity route reads unmeasured, never idle
+test('NEGATIVE PROOF: with the streams route unread, a quiet role reads unmeasured, not idle', () => {
+  const read = deriveActorState(live({}));
+  const unread = deriveActorState({ ...live({}), unmeasured: [{ source: 'pulse:streams', reason: 'HTTP 502' }] });
+  const kade = (r: typeof read) => r.find((x) => x.aboutPrincipal === KADE)?.activity;
+  expect(kade(read)).toBe('idle');
+  expect(kade(unread)).toBe('unmeasured');
+});
+
+// #4991 demo review (code) — a demo pulse (PULSE_API_URL=off) never reads prod's routes
+test('with the pulse API off, activity reads nothing and says it is unmeasured', async () => {
+  const unmeasured: Array<{ source: string; reason: string }> = [];
+  const got = await fetchActivityFacts('off', unmeasured);
+  expect(got.size).toBe(0);
+  expect(unmeasured.map((u) => u.source)).toEqual(['pulse:streams']);
 });

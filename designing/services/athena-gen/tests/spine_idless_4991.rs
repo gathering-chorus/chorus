@@ -58,3 +58,17 @@ fn a_reply_is_a_row_marked_reply_with_its_length_never_a_call() {
     let c = &spine_log::calls(log)[0];
     assert_eq!((c.phase.as_str(), c.tool.as_str(), c.what.as_str()), ("reply", "reply", "replied (95 words)"));
 }
+
+/// #4991 demo review (quality) — two id-less calls of one tool open at once: each end closes
+/// the OLDEST open one (FIFO). LIFO would close "second" first and leave "first" running.
+#[test]
+fn two_open_id_less_calls_of_one_tool_close_oldest_first() {
+    let log = [
+        act("2026-11-17T07:00:01", "abby-normal", "started", "", "first"),
+        act("2026-11-17T07:00:02", "abby-normal", "started", "", "second"),
+        act("2026-11-17T07:00:03", "abby-normal", "ended", "", ""),
+    ].join("\n");
+    let got: Vec<(String, String)> = spine_log::calls(&log).into_iter().map(|c| (c.what, c.phase)).collect();
+    assert!(got.contains(&("first".into(), "done".into())), "{got:?}");
+    assert!(got.contains(&("second".into(), "running".into())), "{got:?}");
+}

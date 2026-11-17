@@ -415,6 +415,8 @@ pub fn pulse_extra_env(role: &str, demo_store_dir: &str, home: &str, path: &str,
         // #4623 — prod's Loki holds prod's spine, not this werk's, and each
         // demo pulse polling it added a second pulse's load to Loki.
         ("LOKI_URL".into(), "off".into()),
+        // #4991 — nor prod's pulse routes: Teammates activity reads unmeasured in a demo.
+        ("PULSE_API_URL".into(), "off".into()),
         ("HOME".into(), home.to_string()),
         ("PATH".into(), path.to_string()),
     ]).collect())
@@ -1928,6 +1930,9 @@ mod services_for_diff_4398 {
         let env = pulse_extra_env("kade", "/w/.chorus-demo", "/Users/x", "/usr/bin", None).unwrap();
         let loki = env.iter().find(|(n, _)| n == "LOKI_URL").map(|(_, v)| v.as_str());
         assert_eq!(loki, Some("off"));
+        // #4991 — nor prod's pulse routes
+        let api = env.iter().find(|(n, _)| n == "PULSE_API_URL").map(|(_, v)| v.as_str());
+        assert_eq!(api, Some("off"));
     }
 
     /// NEGATIVE PROOF: the leak check sees each prod surface it exists to refuse.
