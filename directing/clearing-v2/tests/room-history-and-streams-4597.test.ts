@@ -4,12 +4,15 @@
 // @domain: messages
 // #4766 (AC3): the Streams tab renders with the old Clearing stopped
 // #4986 (AC1): one stream, every role interleaved, oldest at top, newest at the bottom
+// #4991 (AC6): the stream scrolls in its own box; the page, and its menu, never move
 /**
  * #4597 — Jeff 19:11: "i cant scroll up in message history and really need streams tab".
  * Scrolling up loads the page just older than the oldest shown; the Streams tab shows
  * every role's recent commands as one stream, newest at the bottom (#4986), and names an
  * unreadable stream.
  */
+import fs from 'fs';
+import path from 'path';
 import http from 'http';
 import { createApp } from '../src/server';
 import { ROOM_PAGE_MESSAGES } from '../src/data-service';
@@ -140,6 +143,14 @@ describe('#4597 the Streams tab', () => {
     const t = runTail(1200);
     await settle();
     expect(t.pageScrolls()).toBe(0);
+  });
+
+  // #4991 (AC6) — without the CSS rule a real browser's box never scrolls, and the page grows instead
+  test('the served stylesheet makes the stream box scroll on its own: a max-height and overflow-y auto', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'style.css'), 'utf8');
+    const rule = /\.stream-tail\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';
+    expect(rule).toMatch(/max-height\s*:/);
+    expect(rule).toMatch(/overflow-y\s*:\s*auto/);
   });
 
   test('NEGATIVE PROOF: scrolled up, a refresh swaps the stream but never moves the reader', async () => {
