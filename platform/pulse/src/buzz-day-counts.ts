@@ -16,7 +16,7 @@ import path from 'path';
 import Database from 'better-sqlite3';
 import WebSocket from 'ws';
 import { authRelayTag, bridgeSignerFromHome, frameText, signNote, CLEARING_CHANNEL_DEFAULT, TEAM_CHANNEL_DEFAULT } from './buzz-writer';
-import { countDays, countDoubles, bostonDay, type DatedPulseRow, type RoomNote } from './message-counts';
+import { countDays, countDoubles, bostonDay, pulseRowTime, type DatedPulseRow, type RoomNote } from './message-counts';
 
 export function readRows(db: string): DatedPulseRow[] {
   const d = new Database(db, { readonly: true, fileMustExist: true });
@@ -172,9 +172,9 @@ export async function main(argv: string[] = process.argv, env: NodeJS.ProcessEnv
   if (!url) { process.stderr.write('buzz-day-counts: UNMEASURED — PULSE_BUZZ_RELAY_URL is not set\n'); return 3; }
   const rows = readRows(db);
   if (rows.length === 0) { process.stderr.write('buzz-day-counts: UNMEASURED — no messages in the store\n'); return 3; }
-  const first = Math.min(...rows.map((r) => Date.parse(r.created_at.replace(' ', 'T') + 'Z')));
   let notes: RoomNote[];
   try {
+    const first = Math.min(...rows.map((r) => pulseRowTime(r.created_at)));
     notes = await readBothKinds(url, env, Math.floor(first / 1000) - 86400);
   } catch (e) {
     process.stderr.write(`buzz-day-counts: UNMEASURED — ${(e as Error).message}\n`);

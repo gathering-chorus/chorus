@@ -115,6 +115,18 @@ export function bostonDay(ms: number): string {
   return sdkDay(new Date(ms));
 }
 
+/** #4987 — a pulse row's created_at as epoch ms. Rows are SQLite UTC ("YYYY-MM-DD HH:MM:SS");
+ *  4 BQ nudges of 11-07 were written ISO ("2026-11-07T00:53:24.406Z"), and the reader turned
+ *  those into "…ZZ", NaN, then "Invalid time value", so the daily messages reading went
+ *  unmeasured. Both forms parse; anything else throws, naming the value. */
+export function pulseRowTime(createdAt: string): number {
+  const sql = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(\.\d+)?$/.test(createdAt);
+  const t = Date.parse(sql ? createdAt.replace(' ', 'T') + 'Z' : createdAt);
+  if (!sql && !/^\d{4}-\d{2}-\d{2}T.*(Z|[+-]\d{2}:?\d{2})$/.test(createdAt)) throw new Error(`created_at is neither SQL nor ISO with a zone: ${createdAt}`);
+  if (Number.isNaN(t)) throw new Error(`created_at does not parse: ${createdAt}`);
+  return t;
+}
+
 /** A pulse row with its UTC created_at ("YYYY-MM-DD HH:MM:SS"). */
 export interface DatedPulseRow extends PulseRow { created_at: string }
 
@@ -127,7 +139,7 @@ export interface DatedPulseRow extends PulseRow { created_at: string }
 export function countDays(rows: DatedPulseRow[], notes: RoomNote[], today: string): Array<{ day: string; sent: number; kept: number }> {
   const rowsByDay = new Map<string, PulseRow[]>();
   for (const r of rows) {
-    const day = bostonDay(Date.parse(r.created_at.replace(' ', 'T') + 'Z'));
+    const day = bostonDay(pulseRowTime(r.created_at));
     if (day >= today) continue;
     rowsByDay.set(day, [...(rowsByDay.get(day) || []), r]);
   }
