@@ -408,7 +408,7 @@ fn assemble_board() -> serde_json::Value {
 pub fn board_was_listed(stdout: &str) -> bool {
     stdout.lines().any(|l| {
         let t = l.trim_end().trim_end_matches(':');
-        !l.starts_with(' ') && t.ends_with(')') && t.rsplit_once(" (").map_or(false, |(_, n)| n.trim_end_matches(')').chars().all(|c| c.is_ascii_digit()) && n.len() > 1)
+        !l.starts_with(' ') && t.ends_with(')') && t.rsplit_once(" (").is_some_and(|(_, n)| n.trim_end_matches(')').chars().all(|c| c.is_ascii_digit()) && n.len() > 1)
     })
 }
 
