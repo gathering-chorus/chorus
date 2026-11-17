@@ -96,7 +96,7 @@ pub fn model_rs(p: &Product, model_version: &str, settings: &[(String, String)])
     ));
     s.push_str("/// Declared settings and their defaults, from the product's Property rows (see settings.rs for the lookup order).\npub const SETTINGS: &[(&str, &str)] = &[\n");
     for (k, v) in settings {
-        s.push_str(&format!("    ({}, {}),\n", lit(&k), lit(&v)));
+        s.push_str(&format!("    ({}, {}),\n", lit(k), lit(v)));
     }
     s.push_str("];\n\n");
     s.push_str(

@@ -2,6 +2,7 @@
 // @card: #4597
 // @owner: wren
 // @domain: messages
+// #4766 (AC3): the Streams tab renders with the old Clearing stopped
 /**
  * #4597 — Jeff 19:11: "i cant scroll up in message history and really need streams tab".
  * Scrolling up loads the page just older than the oldest shown; the Streams tab shows
@@ -80,5 +81,61 @@ describe('#4597 the Streams tab', () => {
     expect(streams.ok).toBe(false);
     const html = renderStreamsPage(streams, []);
     expect(html).toContain('Streams could not be read: stream unreachable');
+  });
+});
+
+// #4766 AC3 — the Streams tab renders each role's calls with the old Clearing stopped: the
+// only upstream is a stub of the generated route; nothing listens on :3470.
+describe('#4766 Streams without the old Clearing', () => {
+  async function stubRoute(body: unknown, code = 200): Promise<{ url: string; seen: string[]; close: () => Promise<void> }> {
+    const seen: string[] = [];
+    const s = http.createServer((req, res) => { seen.push(req.url || ''); res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); });
+    await new Promise<void>((r) => s.listen(0, '127.0.0.1', () => r()));
+    return { url: `http://127.0.0.1:${(s.address() as { port: number }).port}/pulse/streams/events`, seen, close: () => new Promise((r) => s.close(() => r())) };
+  }
+  const rows = {
+    data: [
+      { name: 'c3', label: 'cargo test', streamRole: 'wren', streamTool: 'Bash', streamPhase: 'running', streamTs: '2026-11-17T01:00:03Z' },
+      { name: 'c2', label: 'git status', streamRole: 'kade', streamTool: 'Bash', streamPhase: 'failed', streamTs: '2026-11-17T01:00:02Z' },
+      { name: 'c1', label: 'read card', streamRole: 'wren', streamTool: 'Read', streamPhase: 'done', streamTs: '2026-11-17T01:00:01Z' },
+    ],
+  };
+
+  test('each role shows its calls newest first, read with ?limit=200', async () => {
+    const r = await stubRoute(rows);
+    try {
+      const got = await fetchStreams(r.url);
+      expect(r.seen).toEqual(['/pulse/streams/events?limit=200']);
+      expect(got.ok).toBe(true);
+      if (!got.ok) return;
+      expect(got.roles.map((x) => x.role)).toEqual(['kade', 'wren']);
+      expect(got.roles[1].lines.map((l) => l.text)).toEqual(['\u23f3 cargo test', 'read card']);
+      expect(got.roles[0].lines[0].text).toBe('git status \u2717');
+      expect(got.roles[1].lines[0].ts).toBe('20:00'); // 01:00 UTC as Boston time
+    } finally { await r.close(); }
+  });
+
+  test('the /streams page renders from the generated route with nothing on :3470', async () => {
+    const r = await stubRoute(rows);
+    const { app } = createApp({ relayUrl: '', pulseUrl: 'http://127.0.0.1:9', relaySigner: null, streamUrl: r.url });
+    const server = http.createServer(app);
+    await new Promise<void>((ok) => server.listen(0, '127.0.0.1', () => ok()));
+    try {
+      const page = await (await fetch(`http://127.0.0.1:${(server.address() as { port: number }).port}/clearing-v2/streams`)).text();
+      expect(page).toContain('cargo test');
+      expect(page).toContain('git status');
+      expect(page).not.toContain('Streams could not be read');
+    } finally {
+      await new Promise<void>((ok) => server.close(() => ok()));
+      await r.close();
+    }
+  });
+
+  test('NEGATIVE PROOF: a route that answers without a data list is named, never an empty tab', async () => {
+    const r = await stubRoute([{ ts: '7:10 PM', role: 'kade', text: 'old shape' }]);
+    try {
+      const got = await fetchStreams(r.url);
+      expect(got).toEqual({ ok: false, reason: 'stream returned no list' });
+    } finally { await r.close(); }
   });
 });

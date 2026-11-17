@@ -88,7 +88,8 @@ export function notSignedIn(signInUrl: string | undefined): { ok: false; error: 
 const PULSE_URL = process.env.PULSE_URL || activeConfig.pulseUrl || 'http://127.0.0.1:3475';
 const ROLES_URL = process.env.ROLES_URL || activeConfig.rolesUrl || 'http://localhost:3360/v1/roles/roles';
 const BOARD_URL = process.env.BOARD_URL || activeConfig.boardUrl || 'http://localhost:3340/api/chorus/context/board';
-const STREAM_URL = process.env.STREAM_URL || activeConfig.streamUrl || 'http://127.0.0.1:3470/api/stream';
+// #4766 — the generated streams route (pulse API, read from the spine log); never the old Clearing
+const STREAM_URL = process.env.STREAM_URL || activeConfig.streamUrl || 'http://127.0.0.1:3392/pulse/streams/events';
 const CARDS_URL = process.env.CARDS_URL || activeConfig.cardsUrl || 'http://localhost:3360/v1/cards/cards';
 const ALERTS_URL = process.env.ALERTS_URL || activeConfig.alertsUrl || 'http://localhost:3340/api/chorus/context/alerts';
 /** #4634 — the herald sensors' readings, which /counts presents. */
@@ -534,6 +535,8 @@ export function resolveHandoffFile(explicit: string | undefined, env: NodeJS.Pro
 }
 
 export interface CreateAppOptions {
+  /** #4766 — the streams route (default: the pulse API's /pulse/streams/events). */
+  streamUrl?: string;
   /** #4649 — where failed hand-offs persist; tests pass a temp path (none by default under jest). */
   undeliveredFile?: string;
   /** #4652 — the hand-off log's file; tests pass one to exercise it. */
@@ -774,7 +777,7 @@ export function createApp(options?: CreateAppOptions) {
     now: options?.now ?? Date.now,
     signInUrl: options?.signInUrl ?? (SIGN_IN_URL || undefined),
     boardUrl: options?.boardUrl ?? BOARD_URL,
-    streamUrl: STREAM_URL,
+    streamUrl: options?.streamUrl ?? STREAM_URL,
     pulseUrl: urls.pulseUrl,
     readingsUrl: urls.readingsUrl,
     readOnly,

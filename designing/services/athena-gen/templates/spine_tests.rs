@@ -52,3 +52,45 @@ fn the_spine_path_setting_reads_its_env() {
     std::env::remove_var(&key);
     assert_eq!(got, "/tmp/spine-4766-from-env.log");
 }
+
+fn routed(path: String) -> crate::spine::Routed {
+    struct NoGraph;
+    impl RowStore for NoGraph {
+        fn list(&self, _: &ClassDef, _: usize, _: usize) -> Result<(Vec<crate::store::Row>, usize), String> { Ok((vec![], 0)) }
+        fn get(&self, _: &ClassDef, _: &str) -> Result<Option<crate::store::Row>, String> { Ok(None) }
+        fn exists(&self, _: &str) -> Result<bool, String> { Ok(false) }
+        fn version_count(&self, _: &str) -> Result<usize, String> { Ok(0) }
+        fn write(&self, _: &str, _: &str, _: Option<&str>, _: &[(String, Vec<crate::rules::Cell>)], _: bool) -> Result<(), String> { Ok(()) }
+        fn delete(&self, _: &str, _: &str) -> Result<(), String> { Ok(()) }
+        fn list_seen_by(&self, c: &ClassDef, l: usize, o: usize, _: &str) -> Result<(Vec<crate::store::Row>, usize), String> { self.list(c, l, o) }
+        fn get_seen_by(&self, c: &ClassDef, n: &str, _: &str) -> Result<Option<crate::store::Row>, String> { self.get(c, n) }
+        fn list_where(&self, c: &ClassDef, l: usize, o: usize, _: Option<&str>, _: &Where) -> Result<(Vec<crate::store::Row>, usize), String> { self.list(c, l, o) }
+    }
+    crate::spine::Routed { graph: Box::new(NoGraph), spine: SpineRows { path, max: 1 << 20 } }
+}
+
+/// AC1 — the generated route serves the log's calls as rows, newest first, through the
+/// same `route()` the door runs.
+#[test]
+fn the_streams_route_serves_the_logs_calls() {
+    let Some(class) = spine_class() else { return };
+    let store = routed(log("route"));
+    let who = Box::leak(Box::new(crate::auth::build("http://127.0.0.1:9/", |_| None)));
+    let ctx = crate::Ctx { store: &store, who, events: String::new(), reads_public: true };
+    let (code, out) = crate::route(&ctx, "GET", &format!("/{}/{}/{}?limit=200", crate::model::PRODUCT, class.domain, class.segment), None, "");
+    assert_eq!(code, 200, "{out}");
+    let names: Vec<String> = out["data"].as_array().unwrap().iter().map(|r| r["name"].as_str().unwrap().to_string()).collect();
+    assert_eq!(names, ["c", "b", "a"]);
+}
+
+/// AC1 NEGATIVE PROOF: with the log unreadable the route says unmeasured (503), never an
+/// empty list that reads as "no work".
+#[test]
+fn negative_proof_an_unreadable_log_is_unmeasured_not_empty() {
+    let Some(class) = spine_class() else { return };
+    let store = routed("/nonexistent/4766/chorus.log".into());
+    let who = Box::leak(Box::new(crate::auth::build("http://127.0.0.1:9/", |_| None)));
+    let ctx = crate::Ctx { store: &store, who, events: String::new(), reads_public: true };
+    let (code, out) = crate::route(&ctx, "GET", &format!("/{}/{}/{}", crate::model::PRODUCT, class.domain, class.segment), None, "");
+    assert_eq!(code, 503, "{out}");
+}
