@@ -93,7 +93,7 @@ plist_wrong() {
   [[ "$output" == *"installed: old com.gathering.promtail"* && "$output" == *"obs left: promtail-bedroom.yaml,promtail-config.yaml,promtail-native.yaml"* ]] || { echo "$output"; return 1; }
   [[ "$output" == *"9214 files (want under 500)"* && "$output" != *"log-rotate"* ]] || { echo "$output"; return 1; }
   # the trial read a.log to 77 past the copied 42: the restored promtail starts there, shipping nothing twice
-  [[ "$output" == *"old positions: positions:   a.log: \"77\""* ]] || { echo "$output"; return 1; }
+  [[ "$output" == *"old positions: positions:   a.log: '77'"* ]] || { echo "$output"; return 1; }
 }
 
 @test "AC4 NEGATIVE PROOF: a spine event that never reaches Loki restores the old plist before any rotate or retire" {
@@ -133,10 +133,59 @@ m.OLD_POSITIONS, m.NEW_POSITIONS = f"{t}/o.yaml", f"{t}/n.yaml"
 m.bootout = lambda label: calls.append("bootout") or "launchd still holds com.gathering.promtail 30 s after bootout"
 m.bootstrap = lambda p: calls.append("bootstrap") or ""
 open(f"{t}/inst.plist", "w").write("trial")
-print(m.restore(b"old", f"{t}/inst.plist"))
+print(m.restore(b"old", f"{t}/inst.plist", True))
 print(",".join(calls), open(f"{t}/inst.plist").read())
 PY2
-  [[ "${lines[0]}" == "old plist restored and reloaded (launchd still holds"* ]] || { echo "$output"; return 1; }
-  [ "${lines[1]}" = "bootout,bootstrap old" ] || { echo "$output"; return 1; }
+  [[ "${lines[0]}" == "old plist restored and reloaded (launchd still holds"*"offsets not carried back"* ]] || { echo "$output"; return 1; }
+  [ "${lines[1]}" = "bootout,bootout,bootstrap old" ] || { echo "$output"; return 1; }
+}
+
+@test "AC4: carry-back changes only the numbers the trial moved forward, keeps every other byte, mode and valid YAML" {
+  run python3 - "$LAND" "$T" <<'PY2'
+import importlib.machinery, importlib.util, os, subprocess, sys
+l = importlib.machinery.SourceFileLoader("land", sys.argv[1]); s = importlib.util.spec_from_loader("land", l)
+m = importlib.util.module_from_spec(s); l.exec_module(m)
+t = sys.argv[2]
+m.OLD_POSITIONS, m.NEW_POSITIONS = f"{t}/o.yaml", f"{t}/n.yaml"
+open(m.OLD_POSITIONS, "w").write('positions:\n  /l/a.log: "42"\n  /l/c.log: "900"\n  /l/odd: weird-value\n')
+os.chmod(m.OLD_POSITIONS, 0o640)
+open(m.NEW_POSITIONS, "w").write('positions:\n  /l/a.log: "77"\n  /l/c.log: "10"\n  "/l/x: y.log": "5"\n')
+m.carry_back()
+print(open(m.OLD_POSITIONS).read().replace("\n", "|"))
+print(oct(os.stat(m.OLD_POSITIONS).st_mode & 0o777))
+print(subprocess.run(["ruby", "-ryaml", "-e", "puts YAML.load_file(ARGV[0])['positions'].keys.sort.join(',')", m.OLD_POSITIONS], capture_output=True, text=True).stdout.strip())
+PY2
+  # a.log forward to 77; c.log never backward (the max guard: bare `v` would write 10); odd line kept; x: y.log quoted
+  [ "${lines[0]}" = 'positions:|  /l/a.log: "77"|  /l/c.log: "900"|  /l/odd: weird-value|  "/l/x: y.log": "5"|' ] || { echo "$output"; return 1; }
+  [ "${lines[1]}" = 0o640 ] || { echo "$output"; return 1; }
+  [ "${lines[2]}" = "/l/a.log,/l/c.log,/l/odd,/l/x: y.log" ] || { echo "$output"; return 1; }
+}
+
+@test "AC4 NEGATIVE PROOF: a trial that never started leaves the old positions untouched, even with a stale new file" {
+  run python3 - "$LAND" "$T" <<'PY2'
+import importlib.machinery, importlib.util, sys
+l = importlib.machinery.SourceFileLoader("land", sys.argv[1]); s = importlib.util.spec_from_loader("land", l)
+m = importlib.util.module_from_spec(s); l.exec_module(m)
+t = sys.argv[2]
+m.OLD_POSITIONS, m.NEW_POSITIONS = f"{t}/o.yaml", f"{t}/n.yaml"
+open(m.OLD_POSITIONS, "w").write('positions:\n  /l/a.log: "42"\n')
+open(m.NEW_POSITIONS, "w").write('positions:\n  /l/a.log: "99"\n')
+m.bootout = lambda label: ""; m.bootstrap = lambda p: ""
+open(f"{t}/inst.plist", "w").write("x")
+m.restore(b"old", f"{t}/inst.plist", False)
+print(open(m.OLD_POSITIONS).read().replace("\n", "|"))
+PY2
+  [ "$output" = 'positions:|  /l/a.log: "42"|' ] || { echo "$output"; return 1; }
+}
+
+@test "AC4 NEGATIVE PROOF: rotation retention deletes old copies beside the log, never one in a folder below it" {
+  mkdir -p "$T/c/dagu/run1" "$T/g"
+  head -c 2000 /dev/zero | tr '\0' x > "$T/c/chorus-api.log"
+  : > "$T/c/chorus-api.log.20200101.gz"; : > "$T/c/dagu/run1/chorus-api.log.20200101"
+  touch -t 202001010000 "$T/c/chorus-api.log.20200101.gz" "$T/c/dagu/run1/chorus-api.log.20200101"
+  run env LOG_ROTATE_DIR="$T/g" LOG_ROTATE_CHORUS_DIR="$T/c" LOG_ROTATE_SPINE="$T/none" LOG_ROTATE_BYTES=1000 bash "$ROT"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ ! -e "$T/c/chorus-api.log.20200101.gz" ] || { echo "retention did not run beside the log"; return 1; }
+  [ -e "$T/c/dagu/run1/chorus-api.log.20200101" ] || { echo "retention reached a folder below the log"; return 1; }
 }
 

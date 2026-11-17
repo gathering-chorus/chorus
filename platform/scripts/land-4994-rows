@@ -16,7 +16,9 @@ Order (Borg Queen 17:21), so a failure before the proof leaves Promtail up on th
      :9080/metrics shows promtail_files_active_total under FILES_MAX and no series for a dagu
      step log path, and promtail's CPU, sampled after it settles, averages under CPU_MAX %
   On any failure after step 2 the plist installed before is put back and reloaded, so
-  Promtail comes back on the old config with the old positions (both untouched).
+  Promtail comes back on the old config. The old positions file is touched only when the trial
+  Promtail ran: its offsets are carried back in place (each line's number only, nothing else
+  rewritten), so the restored Promtail ships nothing twice.
   6. rotate the GB-scale daemon logs now (gathering-log-rotate.sh, the one rotation path, #4718)
      and reload com.chorus.log-archive (its job gained ops-logs)
   7. only then: remove shared-observability's promtail-native.yaml (if it still holds the bytes
@@ -246,33 +248,59 @@ def read_positions(path):
 
 
 def carry_back():
-    """A red trial already shipped lines past the old offsets: write the trial's offsets into
-    the old positions file (each file the trial tailed takes its offset; every other file keeps
-    its old one), so the restored Promtail ships nothing twice (gate-code 18:11)."""
-    old, new = read_positions(OLD_POSITIONS), read_positions(NEW_POSITIONS)
-    if not new:
+    """A red trial already shipped lines past the old offsets: carry the trial's offsets into the
+    old positions file, so the restored Promtail ships nothing twice (gate-code 18:11). In place:
+    on each line whose file the trial read further, only the number changes; every other line,
+    and anything that is not a "<file>: <offset>" line, is kept byte for byte; a file only the
+    trial tailed is appended with its name JSON-quoted (valid YAML whatever the path holds). An
+    offset never goes backward. The file keeps its mode and group (round 2 review)."""
+    new = read_positions(NEW_POSITIONS)
+    if not new or not os.path.isfile(OLD_POSITIONS):
         return
-    old.update({k: max(v, old.get(k, 0)) for k, v in new.items()})
+    seen, out = set(), []
+    with open(OLD_POSITIONS) as f:
+        for line in f:
+            m = POS_LINE.match(line.rstrip("\n"))
+            k = m.group(1).strip("\"'") if m else None
+            if k in new:
+                seen.add(k)
+                if new[k] > int(m.group(2)):
+                    a, b = m.span(2)
+                    line = line[:a] + str(new[k]) + line[b:]
+            out.append(line)
+    out += [f'  {json.dumps(k)}: "{v}"\n' for k, v in sorted(new.items()) if k not in seen]
     tmp = OLD_POSITIONS + ".land4994"
     with open(tmp, "w") as f:
-        f.write("positions:\n" + "".join(f'  {k}: "{v}"\n' for k, v in sorted(old.items())))
+        f.write("".join(out))
+    shutil.copystat(OLD_POSITIONS, tmp)
+    st = os.stat(OLD_POSITIONS)
+    try:
+        os.chown(tmp, -1, st.st_gid)
+    except OSError:
+        pass
     os.replace(tmp, OLD_POSITIONS)
 
 
-def restore(before, installed):
-    """Put back the plist installed before and bring Promtail up on it. The trial Promtail is
-    stopped first (it flushes its offsets), those offsets are carried back, and the old plist is
-    bootstrapped even if the bootout was slow: Promtail is never left down (gate-code 18:11)."""
+def restore(before, installed, trial_ran):
+    """Put back the plist installed before and bring Promtail up on it. When the trial ran it is
+    stopped first (it flushes its offsets; a slow bootout gets one more wait) and its offsets are
+    carried back; a trial that never started leaves the old positions untouched. The old plist is
+    bootstrapped either way: Promtail is never left down (gate-code 18:11)."""
     try:
         with open(installed, "wb") as f:
             f.write(before)
     except OSError as e:
         return f"RESTORE FAILED, could not write the old plist back: {e}"
     slow = bootout(LABEL)
-    try:
-        carry_back()
-    except OSError as e:
-        slow = (slow + "; " if slow else "") + f"offsets not carried back: {e}"
+    if slow:
+        slow = bootout(LABEL)  # one more wait: a bootstrap over a label still tearing down is refused
+    if trial_ran and not slow:
+        try:
+            carry_back()
+        except OSError as e:
+            slow = f"offsets not carried back: {e}"
+    elif trial_ran:
+        slow += "; offsets not carried back (the trial may not have flushed)"
     b = bootstrap(installed)
     if b:
         return f"RESTORE FAILED: {b}" + (f" ({slow})" if slow else "")
@@ -312,9 +340,14 @@ def main(argv):
         return 2
 
     why = bootout(LABEL) or copy_positions()  # bootout first: promtail flushes its offsets as it stops
-    why = why or run([sys.executable, LOG_ARCHIVE, "ops-logs", "--apply"], "log-archive ops-logs") or install(os.path.join(CANON, LABEL + ".plist"), installed) or bootstrap(installed) or light()
+    why = why or run([sys.executable, LOG_ARCHIVE, "ops-logs", "--apply"], "log-archive ops-logs") or install(os.path.join(CANON, LABEL + ".plist"), installed)
+    trial_ran = False
+    if not why:
+        why = bootstrap(installed)
+        trial_ran = not why
+    why = why or light()
     if why:
-        print(f"land-4994-rows: {why}; {restore(before, installed)}; the old config stays", file=sys.stderr)
+        print(f"land-4994-rows: {why}; {restore(before, installed, trial_ran)}; the old config stays", file=sys.stderr)
         return 1
 
     # the GB-scale logs rotate now, not at tomorrow's run; log-archive's job gained ops-logs,
