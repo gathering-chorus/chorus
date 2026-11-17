@@ -24,8 +24,8 @@ const live = (actions: ActorFactInput['actions']): ActorFactInput => ({
   actions,
 });
 
-test('#4991 AC4 a session call and a reply in the streams route make the role acting', () => {
-  const rows: ActivityRow[] = [{ role: 'wren', ts: ago(30), what: 'cargo test' }, { role: 'wren', ts: ago(20), what: 'replied (40 words)' }];
+test('#4991 AC4 a session tool call and a sent message make the role acting', () => {
+  const rows: ActivityRow[] = [{ role: 'wren', ts: ago(30), what: 'cargo test' }, { role: 'wren', ts: ago(20), what: 'message' }];
   const facts = actionFactsFrom(rows, now);
   expect(facts.get('wren')?.recent5mCount).toBe(2);
   const w = deriveActorState(live(Object.fromEntries(facts))).find((s) => s.aboutPrincipal === WREN);

@@ -30,7 +30,8 @@ def recent(t):
     except ValueError: return False
     if d.tzinfo is None: d=d.replace(tzinfo=datetime.timezone.utc)
     return (now-d).total_seconds() < 300
-active={r.get("streamRole") for r in rows if recent(r.get("streamTs"))}
+# the same rule as pulse streamActivity: a reply is no work; a running call is acting now
+active={r.get("streamRole") for r in rows if r.get("streamPhase")!="reply" and (r.get("streamPhase")=="running" or recent(r.get("streamTs")))}
 items=json.load(sys.stdin).get("actors") or []
 who=lambda s: str(s.get("aboutPrincipal","")).replace("principal-","")
 bad=[who(s) for s in items if s.get("activity")=="acting" and who(s) not in active and who(s)!="jeff"]
