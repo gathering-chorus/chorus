@@ -2,6 +2,7 @@
 # @test-type: integration — reads the live pulse API and Clearing v2 on this machine; run after the land
 # @domain: streams
 # @card: #4766
+# @needs: machine
 #
 # AC5: after the land, the live Streams tab shows each logged-in role's recent tool calls from
 # the generated route (pulse API /pulse/streams/events, read from the spine log), not :3470.

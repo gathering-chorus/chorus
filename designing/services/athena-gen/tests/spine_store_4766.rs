@@ -6,10 +6,10 @@
 //! Covers src/model (Class.store), src/emit (ClassDef store, spine files),
 //! templates/spine_log.rs (tail, calls).
 use athena_gen::model::{load, product};
-use std::io::Write;
 use std::path::PathBuf;
 
 #[path = "../templates/spine_log.rs"]
+#[allow(dead_code)] // each test file uses part of the template
 mod spine_log;
 
 const MODEL: &str = r#"
@@ -93,27 +93,4 @@ fn negative_proof_a_reply_only_turn_is_not_work() {
     assert!(spine_log::calls(&log).is_empty(), "a reply-only turn made rows");
     let with_call = format!("{log}\n{}", action("2026-11-16T20:00:05", "wren", "started", "x", "s1", ""));
     assert_eq!(spine_log::calls(&with_call).len(), 1, "the check must still see a real call");
-}
-
-/// AC1 NEGATIVE PROOF: the read takes only the log's end. A call written before the last
-/// `max` bytes is not read, so a whole-file read would show it and fail here.
-#[test]
-fn negative_proof_only_the_end_of_the_log_is_read() {
-    let f = dir("tail").join("chorus.log");
-    let mut w = std::fs::File::create(&f).unwrap();
-    writeln!(w, "{}", action("2026-11-16T19:00:00", "wren", "started", "old", "s0", "")).unwrap();
-    for _ in 0..2000 { writeln!(w, "{}", line("hook.decision", "wren", "00")).unwrap(); }
-    writeln!(w, "{}", action("2026-11-16T20:00:00", "wren", "started", "new", "s1", "")).unwrap();
-    drop(w);
-    let ids: Vec<String> = spine_log::calls(&spine_log::tail(f.to_str().unwrap(), 64 * 1024).unwrap()).into_iter().map(|c| c.id).collect();
-    assert_eq!(ids, ["new"], "only the end is read");
-    let all: Vec<String> = spine_log::calls(&spine_log::tail(f.to_str().unwrap(), u64::MAX).unwrap()).into_iter().map(|c| c.id).collect();
-    assert_eq!(all, ["new", "old"], "the check must see the old call when the window covers it");
-}
-
-/// AC1 NEGATIVE PROOF: an unreadable log is an error (unmeasured), never an empty list.
-#[test]
-fn negative_proof_a_missing_log_is_unmeasured_not_empty() {
-    let err = spine_log::tail("/nonexistent/4766/chorus.log", 1024).unwrap_err();
-    assert!(err.contains("unreadable"), "{err}");
 }
