@@ -845,6 +845,22 @@ export function actionFactsFrom(rows: ActivityRow[], nowMs: number): Map<string,
   return out;
 }
 
+/** #4991 — a message as its sender's activity, or null. An alert to a role is stored with the
+ *  role as both sender and recipient (11-17: 12 of the last 100 rows, every one an alert), so a
+ *  message whose sender is also a recipient is not the sender acting: an alert to a sleeping
+ *  role must never make it read "acting". Pure. */
+const text = (v: unknown): string => (typeof v === 'string' ? v : '');
+
+export function messageActivity(r: Record<string, unknown>): ActivityRow | null {
+  const by = text(r.sentBy);
+  const to = Array.isArray(r.sentTo) ? r.sentTo.map(text) : [text(r.sentTo)];
+  if (by && to.includes(by)) return null;
+  const sender = text(r.senderName);
+  // the system's own senders are no principal (Abby, 11-17 07:57)
+  if (['system', 'pulse', 'bridge', ''].includes(sender)) return null;
+  return { role: sender, ts: text(r.sentAt), what: 'message' };
+}
+
 /** #4991 — Jeff 11-17 07:45: "we need to use domain apis to get data here". What a principal
  *  did is read from the domain routes, never the raw log: the streams route (each session's
  *  tool calls and replies) and the messages route (what each one sent, Jeff's included). A job
@@ -857,20 +873,20 @@ async function fetchActivityFacts(
   unmeasured: Array<{ source: string; reason: string }>
 ): Promise<Map<string, ActionFact>> {
   const rows: ActivityRow[] = [];
-  const read = async (source: string, path: string, map: (r: Record<string, string>) => ActivityRow) => {
+  const read = async (source: string, path: string, map: (r: Record<string, unknown>) => ActivityRow | null) => {
     try {
       const res = await fetch(`${pulseApiBase}${path}`, { signal: AbortSignal.timeout(3000) });
       if (!res.ok) { unmeasured.push({ source, reason: `HTTP ${res.status}` }); return; }
-      const body = (await res.json()) as { data?: Array<Record<string, string>> };
+      const body = (await res.json()) as { data?: Array<Record<string, unknown>> };
       if (!Array.isArray(body.data)) { unmeasured.push({ source, reason: 'no data list' }); return; }
-      rows.push(...body.data.map(map));
+      for (const r of body.data) { const row = map(r); if (row) rows.push(row); }
     } catch (e: unknown) {
       unmeasured.push({ source, reason: e instanceof Error ? e.message : String(e) });
     }
   };
   await Promise.all([
-    read('pulse:streams', '/pulse/streams/events?limit=500', (r) => ({ role: r.streamRole, ts: r.streamTs, what: r.label || r.streamTool })),
-    read('pulse:messages', '/pulse/messages/messages?limit=200&sort=-sentAt', (r) => ({ role: r.senderName, ts: r.sentAt, what: 'message' })),
+    read('pulse:streams', '/pulse/streams/events?limit=500', (r) => ({ role: text(r.streamRole), ts: text(r.streamTs), what: text(r.label) || text(r.streamTool) })),
+    read('pulse:messages', '/pulse/messages/messages?limit=200&sort=-sentAt', messageActivity),
   ]);
   return actionFactsFrom(rows, Date.now());
 }

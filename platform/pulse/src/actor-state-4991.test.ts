@@ -10,7 +10,7 @@
  * route (each session's calls and replies) and the messages route (what each one sent).
  * A job's model write is in neither, so it can never make a role read acting.
  */
-import { actionFactsFrom, deriveActorState, type ActivityRow, type ActorFactInput } from './actor-state';
+import { actionFactsFrom, deriveActorState, messageActivity, type ActivityRow, type ActorFactInput } from './actor-state';
 
 const now = Date.now();
 const ago = (s: number) => new Date(now - s * 1000).toISOString();
@@ -43,4 +43,14 @@ test('#4991 AC4 old rows count toward the 30-minute window only; a bad time is s
   const facts = actionFactsFrom([{ role: 'kade', ts: ago(20 * 60), what: 'x' }, { role: 'kade', ts: 'not a time', what: 'y' }], now);
   expect(facts.get('kade')).toMatchObject({ recent30mCount: 1 });
   expect(facts.get('kade')?.recent5mCount).toBeUndefined();
+});
+
+test('#4991 AC4 a message the role sent counts; NEGATIVE PROOF: an alert to the role (sender is also recipient) does not', () => {
+  const sent = { senderName: 'wren', sentBy: 'principal-wren', sentTo: ['principal-abby-normal'], sentAt: ago(10) };
+  const alert = { senderName: 'kade', sentBy: 'principal-kade', sentTo: ['principal-kade'], sentAt: ago(10), messageBody: '[alert for kade · from system | ...]' };
+  expect(messageActivity(sent)).toEqual({ role: 'wren', ts: sent.sentAt, what: 'message' });
+  expect(messageActivity(alert)).toBeNull();
+  expect(messageActivity({ senderName: 'system', sentBy: 'system', sentTo: ['principal-kade'], sentAt: ago(10) })).toBeNull();
+  const k = deriveActorState(live(Object.fromEntries(actionFactsFrom([messageActivity(alert)].filter((r): r is ActivityRow => r !== null), now)))).find((s) => s.aboutPrincipal === KADE);
+  expect(k?.activity).toBe('idle');
 });

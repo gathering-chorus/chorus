@@ -11,31 +11,55 @@
 ROUTE="${STREAMS_ROUTE:-http://127.0.0.1:3392/pulse/streams/events}"
 ACTORS="${ACTOR_STATE:-http://127.0.0.1:3475/api/actor-state}"
 
-@test "AC5: the live streams route carries Abby's calls and at least one reply" {
-  body=$(curl -sf --max-time 10 "$ROUTE?limit=500")
-  echo "$body" | python3 -c '
+# reads a streams route body on stdin; exit 0 when it holds a call by abby-normal and a reply
+ROUTE_HAS='
 import json,sys
 rows=json.load(sys.stdin).get("data") or []
 abby=any(r.get("streamRole")=="abby-normal" and r.get("streamPhase")!="reply" for r in rows)
 reply=any(r.get("streamPhase")=="reply" for r in rows)
 sys.exit(0 if abby and reply else 1)'
-}
 
-@test "AC5: a role with no rows in the streams or messages routes in 5 minutes does not read acting" {
-  route=$(curl -sf --max-time 10 "$ROUTE?limit=500")
-  states=$(curl -sf --max-time 10 "$ACTORS")
-  ROUTE_BODY="$route" python3 -c '
+# reads pulse actor-state on stdin (route body in ROUTE_BODY); exit 0 when no principal but jeff
+# reads acting without a row of its own in the last 5 minutes; an empty actors read fails
+NONE_FALSELY_ACTING='
 import json,os,sys,datetime
 rows=json.loads(os.environ["ROUTE_BODY"]).get("data") or []
 now=datetime.datetime.now(datetime.timezone.utc)
 def recent(t):
     try: d=datetime.datetime.fromisoformat(str(t).replace("Z","+00:00"))
     except ValueError: return False
+    if d.tzinfo is None: d=d.replace(tzinfo=datetime.timezone.utc)
     return (now-d).total_seconds() < 300
 active={r.get("streamRole") for r in rows if recent(r.get("streamTs"))}
 items=json.load(sys.stdin).get("actors") or []
 who=lambda s: str(s.get("aboutPrincipal","")).replace("principal-","")
 bad=[who(s) for s in items if s.get("activity")=="acting" and who(s) not in active and who(s)!="jeff"]
-# never vacuous: no actors read at all is a failure, not a pass
-sys.exit(0 if items and not bad else 1)' <<< "$states"
+sys.exit(0 if items and not bad else 1)'
+
+@test "AC5: the live streams route carries Abby's calls and at least one reply" {
+  body=$(curl -sf --max-time 10 "$ROUTE?limit=500")
+  python3 -c "$ROUTE_HAS" <<< "$body"
+}
+
+@test "AC5: no role reads acting without rows of its own in the streams route" {
+  route=$(curl -sf --max-time 10 "$ROUTE?limit=500")
+  states=$(curl -sf --max-time 10 "$ACTORS")
+  ROUTE_BODY="$route" python3 -c "$NONE_FALSELY_ACTING" <<< "$states"
+}
+
+@test "AC5 NEGATIVE PROOF: no Abby call, no reply, a role acting with no rows, or no actors at all each fail" {
+  now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  run python3 -c "$ROUTE_HAS" <<< "{\"data\":[{\"streamRole\":\"wren\",\"streamPhase\":\"done\"},{\"streamRole\":\"wren\",\"streamPhase\":\"reply\"}]}"
+  [ "$status" -ne 0 ] || return 1
+  run python3 -c "$ROUTE_HAS" <<< "{\"data\":[{\"streamRole\":\"abby-normal\",\"streamPhase\":\"done\"}]}"
+  [ "$status" -ne 0 ] || return 1
+  run python3 -c "$ROUTE_HAS" <<< "{\"data\":[{\"streamRole\":\"abby-normal\",\"streamPhase\":\"done\"},{\"streamRole\":\"wren\",\"streamPhase\":\"reply\"}]}"
+  [ "$status" -eq 0 ] || return 1
+  route="{\"data\":[{\"streamRole\":\"wren\",\"streamTs\":\"$now\"}]}"
+  run env ROUTE_BODY="$route" python3 -c "$NONE_FALSELY_ACTING" <<< '{"actors":[{"aboutPrincipal":"principal-kade","activity":"acting"}]}'
+  [ "$status" -ne 0 ] || return 1
+  run env ROUTE_BODY="$route" python3 -c "$NONE_FALSELY_ACTING" <<< '{"actors":[]}'
+  [ "$status" -ne 0 ] || return 1
+  run env ROUTE_BODY="$route" python3 -c "$NONE_FALSELY_ACTING" <<< '{"actors":[{"aboutPrincipal":"principal-wren","activity":"acting"},{"aboutPrincipal":"principal-kade","activity":"idle"}]}'
+  [ "$status" -eq 0 ] || return 1
 }
