@@ -12,9 +12,9 @@ Order and idempotency contract (Silas review 2026-11-17 11:32):
   2. AC1 (idempotent per row): apply any remaining Athena ownedBy -> principal-borg-queen transfers
      from designing/domains/metrics/ownership-4992.json via governed `athena-model apply` (rows
      already updated by model-before-rows or a prior run read as SAME and are skipped), signing in
-     via chorus-identity-token as LAND_SIGNER (defaulting to DEPLOY_ROLE / CHORUS_ROLE / borg-queen,
-     the card's role minted by chorus-runner in cicd-land per #4960), then verify readback shows all
-     6 ownedBy principal-borg-queen.
+     via chorus-identity-token strictly as `jeff` (under jeffbridwell at land; Jeff's signed go is
+     the authority, with no agent credential fallback per Wren 2026-11-17 11:37), then verify
+     readback shows all 6 ownedBy principal-borg-queen.
   3. AC2 (idempotent): chgrp -R chorus on OBS_REPO + grant group rwX and directory setgid (g+s)
      only where mode bits differ, preserving read-only git object/pack files.
   4. AC3 (idempotent): point OBS_REPO/scripts/process-memory-exporter.sh at
@@ -44,12 +44,7 @@ AM = os.environ.get("ATHENA_MODEL_BIN", "athena-model")
 CHORUS_ENV_SH = os.environ.get("CHORUS_ENV_SH", os.path.join(ROOT, "platform/scripts/chorus-env-setup.sh"))
 FUSEKI_AUTH_SH = os.environ.get("FUSEKI_AUTH_SH", os.path.join(ROOT, "platform/scripts/fuseki-auth.sh"))
 IDENTITY_TOKEN_BIN = os.environ.get("IDENTITY_TOKEN_BIN", os.path.join(ROOT, "platform/scripts/chorus-identity-token"))
-LAND_SIGNER = (
-    os.environ.get("LAND_SIGNER")
-    or os.environ.get("DEPLOY_ROLE")
-    or os.environ.get("CHORUS_ROLE")
-    or "borg-queen"
-)
+LAND_SIGNER = "jeff"
 RUN_UID = int(os.environ.get("LAND_AS_UID", os.getuid()))
 REL_EXP = "scripts/process-memory-exporter.sh"
 

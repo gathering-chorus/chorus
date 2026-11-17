@@ -169,7 +169,7 @@ import json, os, sys
 state_file = os.environ["TEST_STATE_JSON"]
 args = sys.argv[1:]
 stdin = sys.stdin.read()
-assert os.environ.get("CHORUS_IDENTITY_TOKEN") == "jwt-for-borg-queen", os.environ.get("CHORUS_IDENTITY_TOKEN")
+assert os.environ.get("CHORUS_IDENTITY_TOKEN") == "jwt-for-jeff", os.environ.get("CHORUS_IDENTITY_TOKEN")
 assert os.environ.get("ENV_SOURCED") == "yes", "CHORUS_ENV_SH was not sourced"
 assert os.environ.get("FUSEKI_SOURCED") == "yes", "FUSEKI_AUTH_SH was not sourced"
 with open(os.environ["TEST_AM_LOG"], "a") as fh:
@@ -192,18 +192,21 @@ PY
   printf 'init\n' > "$T/obs/README.md"
   git -C "$T/obs" add README.md && git -C "$T/obs" commit -qm init
 
-  DEPLOY_ROLE="borg-queen" TEST_STATE_JSON="$T/state.json" TEST_AM_LOG="$T/am.jsonl" TEST_TOK_LOG="$T/tok.log" \
+  # Even when DEPLOY_ROLE/CHORUS_ROLE name an agent, land-4992-rows strictly mints jeff
+  DEPLOY_ROLE="borg-queen" CHORUS_ROLE="borg-queen" \
+    TEST_STATE_JSON="$T/state.json" TEST_AM_LOG="$T/am.jsonl" TEST_TOK_LOG="$T/tok.log" \
     LAND_LIVE_OWNERS_JSON="$T/state.json" ATHENA_MODEL_BIN="$T/am" \
     CHORUS_ENV_SH="$T/chorus-env.sh" FUSEKI_AUTH_SH="$T/fuseki-auth.sh" IDENTITY_TOKEN_BIN="$T/tok" \
     OBS_REPO="$T/obs" OBS_GROUP="$(id -gn)" \
     run python3 "$LAND" --apply
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$(cat "$T/tok.log")" = "borg-queen" ] || { cat "$T/tok.log"; return 1; }
+  [ "$(cat "$T/tok.log")" = "jeff" ] || { cat "$T/tok.log"; return 1; }
   [ "$(wc -l < "$T/am.jsonl" | tr -d ' ')" -eq 6 ] || { cat "$T/am.jsonl"; return 1; }
   [[ "$output" == *"ownership verified: 6/6 ownedBy principal-borg-queen"* ]] || { echo "$output"; return 1; }
 
   # Second --apply run over already-applied state is an idempotent no-op (0 new DAL writes)
-  DEPLOY_ROLE="borg-queen" TEST_STATE_JSON="$T/state.json" TEST_AM_LOG="$T/am.jsonl" TEST_TOK_LOG="$T/tok.log" \
+  DEPLOY_ROLE="borg-queen" CHORUS_ROLE="borg-queen" \
+    TEST_STATE_JSON="$T/state.json" TEST_AM_LOG="$T/am.jsonl" TEST_TOK_LOG="$T/tok.log" \
     LAND_LIVE_OWNERS_JSON="$T/state.json" ATHENA_MODEL_BIN="$T/am" \
     CHORUS_ENV_SH="$T/chorus-env.sh" FUSEKI_AUTH_SH="$T/fuseki-auth.sh" IDENTITY_TOKEN_BIN="$T/tok" \
     OBS_REPO="$T/obs" OBS_GROUP="$(id -gn)" \
