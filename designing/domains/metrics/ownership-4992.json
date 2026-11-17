@@ -1,0 +1,50 @@
+[
+  {
+    "domain": "code",
+    "kind": "repository",
+    "name": "shared-observability",
+    "iri": "https://jeffbridwell.com/chorus#repository-shared-observability",
+    "graph": "urn:chorus:domains:code",
+    "ownedBy": "principal-borg-queen"
+  },
+  {
+    "domain": "domains",
+    "kind": "domain",
+    "name": "alerts",
+    "iri": "https://jeffbridwell.com/chorus#alerts",
+    "graph": "urn:chorus:domains:domains",
+    "ownedBy": "principal-borg-queen"
+  },
+  {
+    "domain": "domains",
+    "kind": "domain",
+    "name": "heralds",
+    "iri": "https://jeffbridwell.com/chorus#heralds",
+    "graph": "urn:chorus:domains:domains",
+    "ownedBy": "principal-borg-queen"
+  },
+  {
+    "domain": "domains",
+    "kind": "domain",
+    "name": "logs",
+    "iri": "https://jeffbridwell.com/chorus#logs",
+    "graph": "urn:chorus:domains:domains",
+    "ownedBy": "principal-borg-queen"
+  },
+  {
+    "domain": "domains",
+    "kind": "domain",
+    "name": "metrics",
+    "iri": "https://jeffbridwell.com/chorus#metrics",
+    "graph": "urn:chorus:domains:domains",
+    "ownedBy": "principal-borg-queen"
+  },
+  {
+    "domain": "domains",
+    "kind": "domain",
+    "name": "monitors",
+    "iri": "https://jeffbridwell.com/chorus#monitors",
+    "graph": "urn:chorus:domains:domains",
+    "ownedBy": "principal-borg-queen"
+  }
+]
