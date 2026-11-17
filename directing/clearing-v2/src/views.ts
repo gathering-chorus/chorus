@@ -1023,36 +1023,52 @@ ${history}
   return renderPageShell('Git vs graph', 'counts', content, sources);
 }
 
-/**
- * #4597 — Jeff 16:25: "i really need a streams menu option too". #4986: one stream, every
- * role interleaved, newest at the bottom like tail -f, refreshed every 5 seconds. An
- * unreadable stream is named.
- */
 /** #4986 — a role as a class-name token: lower-case letters, digits and hyphens only. */
 function roleClass(role: string): string {
   return role.toLowerCase().replace(/[^a-z0-9-]/g, '');
 }
 
-/** #4986 — tail -f on the phone: every 5 s the stream is re-read in place (no page reload), and
- *  the view follows the newest line only while the reader is already at the bottom. Scrolled up
- *  to read back, the reader stays where they are. With no stream on the page (unreadable or
- *  empty), the page reloads to try again. */
+/** #4986 — tail -f on the phone. Every 5 s the page is re-read and only the stream is swapped in
+ *  place; the view follows the newest line only if the reader is at the bottom when the new lines
+ *  land, so a reader scrolled up to read back keeps their place. One read at a time. When the
+ *  re-read comes back without a stream (it became unreadable or empty, or a sign-in or error page
+ *  came back), the page reloads so the reason is named, never stale lines shown as live. When the
+ *  re-read fails outright, the stream is marked stale with the reason and the next tick retries. */
 export const STREAM_TAIL_SCRIPT = `(function () {
   function atBottom() { return window.innerHeight + window.scrollY >= document.body.scrollHeight - 40; }
+  function stale(why) {
+    var s = document.getElementById('stream-stale');
+    if (!s) { s = document.createElement('div'); s.id = 'stream-stale'; s.className = 'meta fail'; document.getElementById('stream-tail').before(s); }
+    s.textContent = 'Not refreshed: ' + why;
+  }
   if (document.getElementById('stream-tail')) window.scrollTo(0, document.body.scrollHeight);
+  var busy = false;
   setInterval(function () {
     var cur = document.getElementById('stream-tail');
     if (!cur) { window.location.reload(); return; }
-    var stick = atBottom();
-    fetch(window.location.href, { credentials: 'same-origin' }).then(function (r) { return r.text(); }).then(function (h) {
+    if (busy) return;
+    busy = true;
+    fetch(window.location.href, { credentials: 'same-origin' }).then(function (r) {
+      if (!r.ok) { window.location.reload(); return null; }
+      return r.text();
+    }).then(function (h) {
+      if (h === null) return;
       var next = new DOMParser().parseFromString(h, 'text/html').getElementById('stream-tail');
-      if (!next) return;
+      if (!next) { window.location.reload(); return; }
+      var stick = atBottom();
       cur.innerHTML = next.innerHTML;
+      var s = document.getElementById('stream-stale');
+      if (s) s.remove();
       if (stick) window.scrollTo(0, document.body.scrollHeight);
-    }).catch(function () { /* the next tick tries again */ });
+    }).catch(function (e) { stale(e && e.message ? e.message : 'unreachable'); }).then(function () { busy = false; });
   }, 5000);
 })();`;
 
+/**
+ * #4597 — Jeff 16:25: "i really need a streams menu option too". #4986: one stream, every
+ * role interleaved, newest at the bottom like tail -f, refreshed every 5 seconds. An
+ * unreadable stream is named.
+ */
 export function renderStreamsPage(streams: Streams, sources: TrustStripSource[]): string {
   const body = !streams.ok
     ? `<div class="meta fail" style="padding:16px">Streams could not be read: ${escapeHtml(streams.reason)}</div>`
