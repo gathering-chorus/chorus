@@ -17,10 +17,10 @@ test('#4987 AC5 a SQL row and an ISO row both read as the same instant they name
   expect(pulseRowTime('2026-11-07T00:53:24-05:00')).toBe(Date.UTC(2026, 10, 7, 5, 53, 24));
 });
 
-test('#4987 AC5 the day count takes the ISO rows with the rest (they were dropped as NaN)', () => {
-  const row = (created_at: string): DatedPulseRow => ({ created_at, type: 'nudge', from: 'borg-queen', to: 'wren', content: `n ${created_at}` }) as DatedPulseRow;
-  const days = countDays([row('2026-11-07 15:00:00'), row('2026-11-07T16:00:00.000Z')] as never, [] as never);
-  expect(JSON.stringify(days)).toContain('2026-11-07');
+test('#4987 AC5 the day count takes the ISO rows with the rest (they broke the whole reading)', () => {
+  const row = (created_at: string): DatedPulseRow => ({ created_at, type: 'nudge', from: 'borg-queen', to: 'wren', content: `n ${created_at}` });
+  const days = countDays([row('2026-11-07 15:00:00'), row('2026-11-07T16:00:00.000Z')], [], '2026-11-08');
+  expect(days).toEqual([{ day: '2026-11-07', sent: 2, kept: 0 }]);
 });
 
 test('#4987 AC5 NEGATIVE PROOF: the old append-a-Z parse fails the ISO row; anything not SQL or zoned ISO throws, naming it', () => {
