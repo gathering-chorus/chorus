@@ -29,20 +29,33 @@ def recent(r):
     return (now - t).total_seconds() < 3600
 sys.exit(0 if any(r.get("streamRole") and recent(r) for r in rows) else 1)'
 
-# reads Clearing v2's /api/streams on stdin (route body in ROUTE_BODY); exit 0 when its lines are
-# the route's calls (a line matching no route label came from elsewhere, e.g. the old Clearing),
-# more than one role appears, and the last line is one of the route's newest calls (newest last).
+# reads Clearing v2's /api/streams on stdin (route body in ROUTE_BODY, fetched FIRST); exit 0 when
+# v2's lines are the route's calls in time order, newest last: each line is matched to a route row
+# by exact label (with the running/failed/stopped marks stripped), and the matched route positions
+# must only fall (route is newest first). v2 is read after the route, so calls newer than the route
+# read match nothing and are skipped, never a race. When the route holds more than one role, v2
+# must show more than one too (interleaved, not one role's column); one busy role alone is fine.
 INTERLEAVED='
 import json, os, sys
 rows = json.loads(os.environ["ROUTE_BODY"]).get("data") or []
-labels = [r.get("label") for r in rows if r.get("label")]
+at = {}
+for i, r in enumerate(rows):
+    if r.get("label") and r["label"] not in at:
+        at[r["label"]] = i
+def bare(t):
+    t = t[2:] if t.startswith("\u23f3 ") else t
+    for end in (" \u2717", " (stopped)"):
+        if t.endswith(end):
+            t = t[: -len(end)]
+    return t
 d = json.load(sys.stdin)
 lines = d.get("lines") or []
-texts = [l.get("text", "") for l in lines]
-roles = {l.get("role") for l in lines if l.get("role")}
-ok = d.get("ok") and texts and labels and any(any(lb in t for lb in labels) for t in texts)
-ok = ok and len(roles) > 1 and any(lb in texts[-1] for lb in labels[:10])
-sys.exit(0 if ok else 1)'
+pos = [at[bare(l.get("text", ""))] for l in lines if bare(l.get("text", "")) in at]
+in_order = len(pos) >= 2 and all(a >= b for a, b in zip(pos, pos[1:]))
+route_roles = {r.get("streamRole") for r in rows if r.get("streamRole")}
+v2_roles = {l.get("role") for l in lines if l.get("role")}
+roles_ok = len(route_roles) < 2 or len(v2_roles) > 1
+sys.exit(0 if d.get("ok") and in_order and roles_ok else 1)'
 
 @test "AC5: the generated streams route serves recent tool calls with their roles" {
   body=$(curl -sf --max-time 10 "$ROUTE?limit=200")
@@ -57,14 +70,19 @@ sys.exit(0 if ok else 1)'
   ROUTE_BODY="$route" python3 -c "$INTERLEAVED" <<< "$v2"
 }
 
-@test "#4986 NEGATIVE PROOF: one role only, or newest first, fails the interleave check" {
-  route='{"data":[{"label":"new"},{"label":"old"}]}'
-  run env ROUTE_BODY="$route" python3 -c "$INTERLEAVED" <<< '{"ok":true,"lines":[{"role":"wren","text":"old"},{"role":"kade","text":"new"}]}'
+@test "#4986 NEGATIVE PROOF: newest-first or one-role-only fails; one busy role alone passes" {
+  route='{"data":[{"label":"c","streamRole":"kade"},{"label":"b","streamRole":"wren"},{"label":"a","streamRole":"kade"}]}'
+  run env ROUTE_BODY="$route" python3 -c "$INTERLEAVED" <<< '{"ok":true,"lines":[{"role":"kade","text":"a"},{"role":"wren","text":"b"},{"role":"kade","text":"\u23f3 c"}]}'
   [ "$status" -eq 0 ]
-  run env ROUTE_BODY="$route" python3 -c "$INTERLEAVED" <<< '{"ok":true,"lines":[{"role":"wren","text":"old"},{"role":"wren","text":"new"}]}'
+  # newest first
+  run env ROUTE_BODY="$route" python3 -c "$INTERLEAVED" <<< '{"ok":true,"lines":[{"role":"kade","text":"c"},{"role":"wren","text":"b"},{"role":"kade","text":"a"}]}'
   [ "$status" -ne 0 ]
-  run env ROUTE_BODY='{"data":[{"label":"new"}]}' python3 -c "$INTERLEAVED" <<< '{"ok":true,"lines":[{"role":"kade","text":"new"},{"role":"wren","text":"old"}]}'
+  # grouped by role: kade a, kade c, then wren b
+  run env ROUTE_BODY="$route" python3 -c "$INTERLEAVED" <<< '{"ok":true,"lines":[{"role":"kade","text":"a"},{"role":"kade","text":"c"},{"role":"wren","text":"b"}]}'
   [ "$status" -ne 0 ]
+  # only one role active in the route: in order is enough
+  run env ROUTE_BODY='{"data":[{"label":"y","streamRole":"wren"},{"label":"x","streamRole":"wren"}]}' python3 -c "$INTERLEAVED" <<< '{"ok":true,"lines":[{"role":"wren","text":"x"},{"role":"wren","text":"y"}]}'
+  [ "$status" -eq 0 ]
 }
 
 @test "AC5 NEGATIVE PROOF: an empty or stale route body fails the check" {

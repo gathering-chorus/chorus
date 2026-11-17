@@ -14,7 +14,7 @@ import http from 'http';
 import { createApp } from '../src/server';
 import { ROOM_PAGE_MESSAGES } from '../src/data-service';
 import { fetchStreams } from '../src/sources/streams';
-import { renderStreamsPage } from '../src/views';
+import { renderStreamsPage, STREAM_TAIL_SCRIPT } from '../src/views';
 const { loadOlderMessages } = require('../public/app.js');
 
 const msg = (i: number) => ({ id: `h${i}`, from: i % 2 ? 'wren' : 'jeff', text: `history ${i}`, ts: new Date(1760800000000 + i * 1000).toISOString(), type: 'jeff-input' as const, visible: true, room: 'team' });
@@ -80,7 +80,38 @@ describe('#4597 the Streams tab', () => {
     expect(html).toMatch(/<b class="who-wren">wren<\/b> bash: two/);
     // NEGATIVE PROOF: a per-role grouped render puts kade's two calls together (one, three, two)
     // and fails the order above; newest-first fails it too. Both mutations were run red.
-    expect(html).not.toContain('stream-col');
+  });
+
+  // #4986 (AC1) — tail -f on the phone: the stream refreshes in place and follows the bottom only
+  // while the reader is there; scrolled up to read back, the reader keeps their place.
+  function runTail(scrollY: number): { scrolls: number[]; swapped: () => string } {
+    const scrolls: number[] = [];
+    let tick: () => void = () => undefined;
+    const cur = { innerHTML: 'old' };
+    const win = { innerHeight: 800, scrollY, location: { href: 'http://x/streams', reload: () => { throw new Error('reloaded'); } }, scrollTo: (_x: number, y: number) => { scrolls.push(y); } };
+    const doc = { body: { scrollHeight: 2000 }, getElementById: (id: string) => (id === 'stream-tail' ? cur : null) };
+    const parser = function DOMParser(this: unknown) { return { parseFromString: () => ({ getElementById: () => ({ innerHTML: 'new' }) }) }; };
+    const fetchStub = () => Promise.resolve({ text: () => Promise.resolve('<div id="stream-tail">new</div>') });
+    new Function('window', 'document', 'fetch', 'DOMParser', 'setInterval', STREAM_TAIL_SCRIPT)(
+      win, doc, fetchStub, parser, (fn: () => void) => { tick = fn; });
+    scrolls.length = 0; // the first load always opens at the bottom
+    tick();
+    return { scrolls, swapped: () => cur.innerHTML };
+  }
+  const settle = () => new Promise((r) => setImmediate(r));
+
+  test('at the bottom, a refresh swaps the stream in place and follows the newest line', async () => {
+    const t = runTail(1200); // 800 + 1200 = bottom of 2000
+    await settle();
+    expect(t.swapped()).toBe('new');
+    expect(t.scrolls).toEqual([2000]);
+  });
+
+  test('NEGATIVE PROOF: scrolled up, a refresh swaps the stream but never moves the reader', async () => {
+    const t = runTail(100);
+    await settle();
+    expect(t.swapped()).toBe('new');
+    expect(t.scrolls).toEqual([]);
   });
 
   test('NEGATIVE PROOF: an unreachable stream is named, never an empty page', async () => {

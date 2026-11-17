@@ -1028,17 +1028,42 @@ ${history}
  * role interleaved, newest at the bottom like tail -f, refreshed every 5 seconds. An
  * unreadable stream is named.
  */
+/** #4986 — a role as a class-name token: lower-case letters, digits and hyphens only. */
+function roleClass(role: string): string {
+  return role.toLowerCase().replace(/[^a-z0-9-]/g, '');
+}
+
+/** #4986 — tail -f on the phone: every 5 s the stream is re-read in place (no page reload), and
+ *  the view follows the newest line only while the reader is already at the bottom. Scrolled up
+ *  to read back, the reader stays where they are. With no stream on the page (unreadable or
+ *  empty), the page reloads to try again. */
+export const STREAM_TAIL_SCRIPT = `(function () {
+  function atBottom() { return window.innerHeight + window.scrollY >= document.body.scrollHeight - 40; }
+  if (document.getElementById('stream-tail')) window.scrollTo(0, document.body.scrollHeight);
+  setInterval(function () {
+    var cur = document.getElementById('stream-tail');
+    if (!cur) { window.location.reload(); return; }
+    var stick = atBottom();
+    fetch(window.location.href, { credentials: 'same-origin' }).then(function (r) { return r.text(); }).then(function (h) {
+      var next = new DOMParser().parseFromString(h, 'text/html').getElementById('stream-tail');
+      if (!next) return;
+      cur.innerHTML = next.innerHTML;
+      if (stick) window.scrollTo(0, document.body.scrollHeight);
+    }).catch(function () { /* the next tick tries again */ });
+  }, 5000);
+})();`;
+
 export function renderStreamsPage(streams: Streams, sources: TrustStripSource[]): string {
   const body = !streams.ok
     ? `<div class="meta fail" style="padding:16px">Streams could not be read: ${escapeHtml(streams.reason)}</div>`
     : streams.lines.length === 0
       ? `<div class="meta" style="padding:16px">No commands in the stream yet.</div>`
-      : `<div class="stream-tail" id="stream-tail">${streams.lines.map((l) => `<div class="stream-line"><span class="tm">${escapeHtml(l.ts)}</span> <b class="who-${escapeHtml(l.role)}">${escapeHtml(l.role)}</b> ${escapeHtml(l.text)}</div>`).join('')}
+      : `<div class="stream-tail" id="stream-tail">${streams.lines.map((l) => `<div class="stream-line"><span class="tm">${escapeHtml(l.ts)}</span> <b class="who-${roleClass(l.role)}">${escapeHtml(l.role)}</b> ${escapeHtml(l.text)}</div>`).join('')}
     </div>`;
   const content = `<main class="page streams-page" id="streams-page">
     ${body}
   </main>
-  <script>(function () { var t = document.getElementById('stream-tail'); if (t) window.scrollTo(0, document.body.scrollHeight); })(); setTimeout(function () { window.location.reload(); }, 5000);</script>`;
+  <script>${STREAM_TAIL_SCRIPT}</script>`;
   return renderPageShell('Streams', 'streams', content, sources);
 }
 
