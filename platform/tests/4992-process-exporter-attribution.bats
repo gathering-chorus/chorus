@@ -83,6 +83,12 @@ PY
   [ -s "$T/process_memory.prom" ] || return 1
   run assert_ac3_prom "$T/process_memory.prom"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+
+  # Launchd minimal PATH (/usr/bin:/bin, omitting /usr/sbin) still resolves /usr/sbin/sysctl live
+  env -i PATH="/usr/bin:/bin" HOME="$HOME" TEXTFILE_DIR="$T/live" PS_INPUT_FILE="$FIX_PS" \
+    /bin/bash "$EXP"
+  [ -s "$T/live/process_memory.prom" ] || return 1
+  grep -q "^host_load_average{window=\"1m\"} " "$T/live/process_memory.prom" || return 1
 }
 
 @test "host_load1_daily_max preserves intra-day load spikes across later calm ticks and resets on a new day" {
@@ -112,12 +118,18 @@ PY
   [[ "$output" == *"missing sub-50MB cxx-build CPU"* ]] || { echo "$output"; return 1; }
 }
 
-@test "negative proof (#3734): failed ps command exits non-zero without clobbering prior process_memory.prom" {
+@test "negative proof (#3734): failed ps or sysctl command exits non-zero without clobbering prior process_memory.prom" {
   [ -x "$EXP" ] || { echo "exporter not executable: $EXP"; return 1; }
   printf 'KEEP_PRIOR\n' > "$T/process_memory.prom"
   TEXTFILE_DIR="$T" PS_CMD="/usr/bin/false" LOADAVG_OVERRIDE="2.00 2.00 2.00" \
     run "$EXP"
   [ "$status" -eq 1 ] || { echo "expected exit 1 when PS_CMD fails, got $status ($output)"; return 1; }
   [[ "$output" == *"ps failed"* ]] || { echo "$output"; return 1; }
+  [ "$(cat "$T/process_memory.prom")" = "KEEP_PRIOR" ] || { cat "$T/process_memory.prom"; return 1; }
+
+  TEXTFILE_DIR="$T" PS_INPUT_FILE="$FIX_PS" SYSCTL_CMD="/usr/bin/false" \
+    run "$EXP"
+  [ "$status" -eq 1 ] || { echo "expected exit 1 when SYSCTL_CMD fails, got $status ($output)"; return 1; }
+  [[ "$output" == *"sysctl failed"* ]] || { echo "$output"; return 1; }
   [ "$(cat "$T/process_memory.prom")" = "KEEP_PRIOR" ] || { cat "$T/process_memory.prom"; return 1; }
 }

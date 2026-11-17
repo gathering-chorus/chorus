@@ -11,6 +11,8 @@
 #      persisted per UTC date so intra-day spikes survive transient Prometheus scrape stalls.
 
 set -euo pipefail
+# launchd units (com.observability.process-memory, com.chorus.dagu) often omit /usr/sbin from PATH
+export PATH="/usr/sbin:/sbin:/usr/bin:/bin:${PATH:-}"
 
 CALLER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CALLER_ROOT="$(cd "$CALLER_DIR/.." && pwd)"
@@ -24,7 +26,8 @@ OUTFILE="${TEXTFILE_DIR}/process_memory.prom"
 TMPFILE="${OUTFILE}.tmp.$$"
 PS_TMP="${OUTFILE}.ps.$$"
 MAX_FILE="${TEXTFILE_DIR}/.load1_daily_max"
-PS_BIN="${PS_CMD:-ps}"
+PS_BIN="${PS_CMD:-/bin/ps}"
+SYSCTL_BIN="${SYSCTL_CMD:-/usr/sbin/sysctl}"
 
 cleanup() {
   rm -f "$TMPFILE" "$PS_TMP"
@@ -49,7 +52,10 @@ fi
 if [ -n "${LOADAVG_OVERRIDE:-}" ]; then
   load_raw="$LOADAVG_OVERRIDE"
 else
-  load_raw="$(sysctl -n vm.loadavg | tr -d '{}')"
+  if ! load_raw="$("$SYSCTL_BIN" -n vm.loadavg | tr -d '{}')"; then
+    echo "process-memory-exporter: sysctl failed ($SYSCTL_BIN)" >&2
+    exit 1
+  fi
 fi
 
 read -r l1 l5 l15 _ <<< "$load_raw"
