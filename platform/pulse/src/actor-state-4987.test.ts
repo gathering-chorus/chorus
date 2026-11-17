@@ -18,7 +18,7 @@ const realFetch = global.fetch;
 afterEach(() => { global.fetch = realFetch; });
 
 function boardSays(status: number, cards: Array<{ id: number; owner: string; title?: string }>): void {
-  global.fetch = (async () => ({ ok: status === 200, status, json: async () => ({ data: { cards } }) })) as unknown as typeof fetch;
+  global.fetch = (() => Promise.resolve({ ok: status === 200, status, json: () => Promise.resolve({ data: { cards } }) })) as unknown as typeof fetch;
 }
 
 const live = (wipCards: ActorFactInput['wipCards']): ActorFactInput => ({

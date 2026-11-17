@@ -4,7 +4,7 @@
 /**
  * context-board-wip handler tests (#2234 Step 3; #4987).
  *
- * #4987 — the endpoint reads the board (the API's live cache of `cards list`), not
+ * #4987 — the endpoint reads the board's own database at the moment of the question, not
  * pulse-latest.json. On 2026-11-17 that copy kept #4986 in WIP after its land, so the
  * pulse header said "reopened" and the Teammates tile said "building #4986" while the
  * board said Done. Both read this endpoint.

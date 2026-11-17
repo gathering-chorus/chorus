@@ -263,17 +263,8 @@ pub fn is_read_only_bash(cmd: &str) -> bool {
 ///
 /// Reads the board snapshot pulse::assemble_board maintains (#4987: ~/.chorus, not /tmp).
 pub fn wip_card_owned_by(role: &str) -> Option<String> {
-    let content = std::fs::read_to_string(board_snapshot_file()).ok()?;
+    let content = std::fs::read_to_string(crate::shared::state_paths::board_snapshot_path("json")).ok()?;
     wip_card_in(&content, role)
-}
-
-/// The file pulse::board_snapshot_path writes (#4987): beside the durable pulse file
-/// (CHORUS_PULSE_PATH, else ~/.chorus/pulse-latest.json), never the shared /tmp.
-fn board_snapshot_file() -> std::path::PathBuf {
-    let pulse = std::env::var("CHORUS_PULSE_PATH").map(std::path::PathBuf::from).unwrap_or_else(|_| {
-        std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".chorus/pulse-latest.json")
-    });
-    pulse.parent().map(|d| d.join("board-wip-snapshot.json")).unwrap_or_default()
 }
 
 /// #4987 — the role's WIP card in a board snapshot's text.

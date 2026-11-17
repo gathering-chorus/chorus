@@ -17,7 +17,7 @@
 use std::fs;
 use std::process::ExitCode;
 
-use crate::shared::state_paths::repo_root;
+use crate::shared::state_paths::{board_snapshot_path, repo_root};
 
 /// Assemble team state snapshot and write to /tmp/pulse-latest.json.
 /// Returns compact JSON string. Callers that need only the side-effect
@@ -402,17 +402,6 @@ fn assemble_board() -> serde_json::Value {
     last
 }
 
-/// #4987 — the board snapshot lives in the writer's own ~/.chorus, never the shared /tmp.
-/// /tmp is sticky (+t): once one account created /tmp/board-wip-snapshot.json, every other
-/// account's atomic rename over it failed EPERM, so the file froze at 11-16 19:41 holding
-/// #4766 and was served as the board all night.
-/// Beside the durable pulse file, so CHORUS_PULSE_PATH keeps tests off the real ~/.chorus (#4553).
-pub fn board_snapshot_path(ext: &str) -> String {
-    let pulse = durable_pulse_path();
-    let dir = pulse.parent().map(|d| d.to_path_buf()).unwrap_or_default();
-    dir.join(format!("board-wip-snapshot.{ext}")).to_string_lossy().into_owned()
-}
-
 /// #4987 — did `cards list` print the board? True when any column header
 /// (`WIP (1):`, `Next (0):`, `Done (12):` …) is present: an empty WIP column is still
 /// an answer. False for empty or headerless output, which must not overwrite the snapshot.
@@ -599,7 +588,7 @@ mod tests {
     // #4987 — the board listed with an empty WIP column is written; no listing is not
     #[test]
     fn the_board_snapshot_never_lives_in_the_shared_tmp() {
-        let p = super::board_snapshot_path("json");
+        let p = crate::shared::state_paths::board_snapshot_path("json");
         assert!(p.ends_with("/board-wip-snapshot.json"), "{p}");
         // NEGATIVE PROOF: the sticky shared /tmp is where the freeze came from
         assert!(!p.starts_with("/tmp/"), "{p}");
