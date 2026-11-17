@@ -14,8 +14,10 @@
 # own platform-chorus-log job. Config and binary live outside this repo
 # (shared-observability, ~/bin), so their absence reports UNMEASURED, not red.
 
-PROMTAIL_CONFIG="${PROMTAIL_CONFIG:-${HOME}/CascadeProjects/shared-observability/config/promtail/promtail-native.yaml}"
-PROMTAIL_BIN="${PROMTAIL_BIN:-${HOME}/bin/promtail}"
+# #4994: the config lives in this repo
+PROMTAIL_CONFIG="${PROMTAIL_CONFIG:-$(cd "$BATS_TEST_DIRNAME/../.." && pwd)/platform/config/promtail/promtail-native.yaml}"
+# #4994: the binary promtail runs from, read from its LaunchAgent in this repo (never a role's $HOME)
+PROMTAIL_BIN="${PROMTAIL_BIN:-$(plutil -extract ProgramArguments.0 raw "$(cd "$BATS_TEST_DIRNAME/../.." && pwd)/platform/scripts/launchagents-canonical/com.gathering.promtail.plist" 2>/dev/null)}"
 EVENT='{"timestamp":"2026-10-09T09:00:00.000-0400","level":"error","appName":"chorus-events","component":"lifecycle","event":"test.case.failed","role":"nightly","card_id":4454,"trace":"tr-4454-neg","file":"a.bats","case":"x","message":"x failed in a.bats: boom"}'
 
 setup() {
