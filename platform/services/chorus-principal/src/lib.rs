@@ -83,14 +83,18 @@ pub fn under_tmux(table: Option<&str>, pid: u64) -> Option<bool> {
             procs.insert(p.to_string(), (pp.to_string(), c.rsplit('/').next().unwrap_or(c).to_string()));
         }
     }
+    // Silas 15:55 — "outside" only when the walk reaches the top of the tree (pid 1 or 0) with
+    // no tmux on the way; a pid missing from the table, a cycle or a chain past 64 is unknown
     let mut cur = pid.to_string();
-    for _ in 0..32 {
-        match procs.get(&cur) {
-            Some((pp, comm)) => { if comm.starts_with("tmux") { return Some(true); } cur = pp.clone(); }
-            None => return Some(false),
-        }
+    let mut seen = std::collections::HashSet::new();
+    for _ in 0..64 {
+        if !seen.insert(cur.clone()) { return None; }
+        let (pp, comm) = procs.get(&cur)?;
+        if comm.starts_with("tmux") { return Some(true); }
+        if pp == "1" || pp == "0" { return Some(false); }
+        cur = pp.clone();
     }
-    Some(false)
+    None
 }
 
 /// #4414 — a live session is outside tmux only when its entry names no pane AND its process
@@ -1273,7 +1277,7 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
         return Err((1, format!("{} live sessions", live.len())));
     }
     // #4414 — the registry often holds no pane for a Claude role (host "unknown"), so a stray
-    // is a session whose tty no tmux pane owns; a tmux that cannot be read decides nothing.
+    // is a session with no tmux ancestor; a process table that cannot be read decides nothing.
     let table = sh(&ctx.ps, &["-Ao", "pid=,ppid=,comm="]).ok();
     let ancestry = live.first().and_then(|l| under_tmux(table.as_deref(), l.pid));
     // #4414 AC1 — Jeff 09-30 15:48: a Silas in a plain window (no tmux pane) was blessed

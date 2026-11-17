@@ -1,7 +1,7 @@
 // @domain: spine — placed by chorus-crawl's domain rules (#4538)
 // #4184 — the decision core, unit-tested with fixtures. The bats suite drives the
 // built binary with stub claude/tmux/ps for the integration proofs.
-use chorus_principal::{transcript_is_poisoned, tz_offset_secs, answered_recently, awake_verdict, chrono_secs, Awake, decide, parse_registry, proof_line, projects_dir_for, Live, login_posture, Start};
+use chorus_principal::{under_tmux, outside_tmux, named_pane, transcript_is_poisoned, tz_offset_secs, answered_recently, awake_verdict, chrono_secs, Awake, decide, parse_registry, proof_line, projects_dir_for, Live, login_posture, Start};
 
 const NOW: u128 = 1_789_000_000_000;
 fn agent(id: &str, sid: &str, pid: &str, started_ago_h: f64, state: &str) -> String {
@@ -320,4 +320,30 @@ fn negative_proof_the_window_is_what_makes_the_two_differ() {
     for _ in 0..100 { t.push_str("{\"type\":\"assistant\"}\n"); }
     assert!(!transcript_is_poisoned(&t, 40, 1));
     assert!(transcript_is_poisoned(&t, 200, 1));
+}
+
+/// #4414 — the stray judge. Outside only when the walk reaches the top of the tree with no
+/// tmux on the way; anything it cannot finish is unknown (None), and unknown ends nothing.
+#[test]
+fn under_tmux_is_true_false_or_unknown_never_a_guess() {
+    let t = "1 0 /sbin/launchd\n9000 1 /opt/homebrew/bin/tmux\n500 9000 bash\n600 500 claude\n9100 1 /usr/bin/login\n700 9100 claude\n";
+    assert_eq!(under_tmux(Some(t), 600), Some(true), "full-path comm under tmux");
+    assert_eq!(under_tmux(Some(t), 700), Some(false), "a plain window reaches pid 1 with no tmux");
+    assert_eq!(under_tmux(None, 600), None, "no table, no verdict");
+}
+
+/// NEGATIVE PROOF (Silas 15:55): a walk that cannot finish is never "outside": a pid missing
+/// from the table, a parent missing, a cycle, or a chain past the cap all answer None.
+#[test]
+fn negative_proof_an_unfinished_walk_is_unknown_and_ends_nothing() {
+    assert_eq!(under_tmux(Some("1 0 launchd\n"), 600), None, "pid missing from the table");
+    assert_eq!(under_tmux(Some("600 555 claude\n"), 600), None, "parent missing from the table");
+    assert_eq!(under_tmux(Some("600 601 claude\n601 600 bash\n"), 600), None, "a cycle");
+    let deep: String = (2..200).map(|p| format!("{} {} bash\n", p, p + 1)).collect();
+    assert_eq!(under_tmux(Some(&deep), 2), None, "a chain past the cap");
+    let l = Live { pid: 600, tty: "/dev/ttys015".into(), host: "unknown".into(), pane: String::new() };
+    assert!(!outside_tmux(&l, None), "unknown never ends a session");
+    assert!(outside_tmux(&l, Some(false)));
+    assert!(!outside_tmux(&Live { pane: "%5".into(), ..l.clone() }, Some(false)), "a named pane is never outside");
+    assert!(named_pane("%12") && !named_pane("%") && !named_pane("%a") && !named_pane(""));
 }
