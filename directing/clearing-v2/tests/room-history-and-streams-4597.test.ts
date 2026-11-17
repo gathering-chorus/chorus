@@ -90,13 +90,20 @@ describe('#4597 the Streams tab', () => {
   type Resp = { ok: boolean; status?: number; body: string } | Error | 'hang';
   function runTail(scrollY: number, resp: Resp = { ok: true, body: 'new' }, hasTail = true) {
     const scrolls: number[] = [];
+    let pageScrolls = 0;
     let reloads = 0;
     let fetches = 0;
     let tick: () => void = () => undefined;
     const timers: Array<() => void> = [];
     const stale: Array<{ textContent: string }> = [];
-    const cur = { innerHTML: 'old', after: (n: { textContent: string }) => { stale.push(n); } };
-    const win = { innerHeight: 800, scrollY, location: { href: 'http://x/streams', reload: () => { reloads++; } }, scrollTo: (_x: number, y: number) => { scrolls.push(y); } };
+    // #4991 — the stream box scrolls; scrollY here is the box's scrollTop (box 800 tall, content 2000)
+    let top = scrollY;
+    const cur = {
+      innerHTML: 'old', clientHeight: 800, scrollHeight: 2000,
+      get scrollTop() { return top; }, set scrollTop(v: number) { top = v; scrolls.push(v); },
+      after: (n: { textContent: string }) => { stale.push(n); },
+    };
+    const win = { innerHeight: 800, scrollY: 0, location: { href: 'http://x/streams', reload: () => { reloads++; } }, scrollTo: () => { pageScrolls++; } };
     const doc = {
       body: { scrollHeight: 2000 },
       getElementById: (id: string) => (id === 'stream-tail' && hasTail ? cur : id === 'stream-stale' ? stale[0] ?? null : null),
@@ -114,17 +121,25 @@ describe('#4597 the Streams tab', () => {
     };
     new Function('window', 'document', 'fetch', 'DOMParser', 'setInterval', 'setTimeout', 'clearTimeout', 'AbortController', STREAM_TAIL_SCRIPT)(
       win, doc, fetchStub, parser, (fn: () => void) => { tick = fn; }, (fn: () => void) => { timers.push(fn); return timers.length; }, () => undefined, Ctl);
-    scrolls.length = 0; // the first load always opens at the bottom
+    scrolls.length = 0; // the first load always opens the box at the bottom
+    top = scrollY;
     tick();
-    return { scrolls, tick: () => tick(), fireTimers: () => timers.splice(0).forEach((f) => f()), swapped: () => cur.innerHTML, reloads: () => reloads, fetches: () => fetches, stale: () => stale.map((x) => x.textContent) };
+    return { scrolls, pageScrolls: () => pageScrolls, tick: () => tick(), fireTimers: () => timers.splice(0).forEach((f) => f()), swapped: () => cur.innerHTML, reloads: () => reloads, fetches: () => fetches, stale: () => stale.map((x) => x.textContent) };
   }
   const settle = () => new Promise((r) => setImmediate(r));
 
   test('at the bottom, a refresh swaps the stream in place and follows the newest line', async () => {
-    const t = runTail(1200); // 800 + 1200 = bottom of 2000
+    const t = runTail(1200); // box: 1200 + 800 = bottom of 2000
     await settle();
     expect(t.swapped()).toBe('new');
     expect(t.scrolls).toEqual([2000]);
+  });
+
+  // #4991 — Jeff 11-17 08:20: "when i go to streams i lose the menu"
+  test('NEGATIVE PROOF (#4991): opening and refreshing never scroll the page, so the menu stays in view', async () => {
+    const t = runTail(1200);
+    await settle();
+    expect(t.pageScrolls()).toBe(0);
   });
 
   test('NEGATIVE PROOF: scrolled up, a refresh swaps the stream but never moves the reader', async () => {
