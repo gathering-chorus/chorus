@@ -51,7 +51,9 @@ const CARD_ROW = /^(\d+)\s+(.+?)\s+\[([^\]]+)\]$/;
  *  loop's cognitive complexity (#3149-fix). */
 function cardFromRow(cardMatch: RegExpMatchArray, status: string): CachedCard {
   const tags = cardMatch[3];
-  const ownerMatch = tags.match(/^(Wren|Silas|Kade|Jeff)/i);
+  // #4987 — any owner the board prints first (Abby-normal, Borg-queen …), not a fixed list
+  const first = tags.split('|')[0].trim();
+  const ownerMatch = /^[A-Za-z][\w-]*$/.test(first) && !/^P[1-3]$/.test(first) ? [first, first] : null;
   const typeMatch = tags.match(/type:(\w+)/);
   const priorityMatch = tags.match(/P([1-3])/);
   const domainMatch = tags.match(/domain:([\w-]+)/);

@@ -54,6 +54,12 @@ Next (2):
     expect(result[0].owner).toBe('wren');
   });
 
+  // #4987 — Abby's cards had no owner (the old list was Wren|Silas|Kade|Jeff), so her WIP never reached her tile
+  it('reads any owner name the board prints first, e.g. Abby-normal and Borg-queen', () => {
+    const result = parseCardsListOutput(`WIP (2):\n  1  A [Abby-normal|P2|type:fix]\n  2  B [Borg-queen|P1]\n`);
+    expect(result.map((c) => c.owner)).toEqual(['abby-normal', 'borg-queen']);
+  });
+
   it('leaves owner empty when no role prefix present', () => {
     const result = parseCardsListOutput(`WIP (1):\n  1  Card without owner [P1|type:fix]\n`);
     expect(result[0].owner).toBe('');

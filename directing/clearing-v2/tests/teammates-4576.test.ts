@@ -2,7 +2,10 @@
 // @domain: messages
 // @card: #4576
 // @owner: wren
+// #4987 (AC3): every teammate's name sits beside its avatar on one line
 import { renderRolesPage } from "../src/views";
+import * as fs from "fs";
+import * as path from "path";
 
 function checkTeammatesPageWords(html: string): string[] {
   const issues: string[] = [];
@@ -30,5 +33,27 @@ describe("#4576 Clearing v2 uses one word — Teammate / Teammates — for team 
       "still-has-th-Actor",
       "still-has-nav-Roles",
     ]);
+  });
+});
+
+// #4987 (AC3) — Jeff's screenshot 11-17 05:45: "Abby Normal" and "Borg-queen" wrapped below
+// their avatars while the other names sat beside theirs. The name cell's row may not wrap.
+describe("#4987 a teammate's name stays beside its avatar", () => {
+  const css = fs.readFileSync(path.join(__dirname, "../public/style.css"), "utf8");
+  const whoRule = (sheet: string) => (sheet.match(/\.row\.who\s*\{([^}]*)\}/) || [])[1] || "";
+  const nameCells = (html: string) => Array.from(html.matchAll(/<td><span class="([^"]+)"><span class="av [^"]+">.<\/span><b>([^<]+)<\/b><\/span><\/td>/g)).map((m) => [m[1], m[2]]);
+
+  test("every name cell, one-word or two, uses the no-wrap row", () => {
+    const actors = ["Abby Normal", "Borg-queen", "Kade"].map((name) => ({ id: name.toLowerCase().replace(/ /g, "-"), name, sessions: [], state: "available", activity: "idle", card: null }));
+    const cells = nameCells(renderRolesPage({ actors } as never, []));
+    expect(cells.map(([, n]) => n)).toEqual(["Abby Normal", "Borg-queen", "Kade"]);
+    expect(cells.every(([cls]) => cls.split(" ").includes("who"))).toBe(true);
+    expect(whoRule(css)).toMatch(/flex-wrap:\s*nowrap/);
+    expect(whoRule(css)).toMatch(/white-space:\s*nowrap/);
+  });
+
+  test("NEGATIVE PROOF: the old wrapping row is caught", () => {
+    expect(whoRule(".row { flex-wrap: wrap; }")).toBe("");
+    expect(whoRule(".row.who { flex-wrap: wrap; }")).not.toMatch(/flex-wrap:\s*nowrap/);
   });
 });

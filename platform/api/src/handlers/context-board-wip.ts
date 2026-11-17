@@ -1,21 +1,19 @@
-/* eslint-disable security/detect-object-injection -- Indexing on validated role/status keys. */
 /**
  * GET /api/chorus/context/board/wip (#2234 Step 3).
  *
  * Answers: "What cards are in WIP right now?" Optional `role` query param
  * scopes to a single role.
  *
- * Source today: `/tmp/pulse-latest.json`'s `board.wip_cards` — mirrored from
- * the Vikunja board API by the pulse daemon (#1881). Proof-of-shape uses
- * this mirror; a later card can swap DI to a direct board-API call without
- * changing the envelope contract.
+ * #4987 — Source: the board itself, its own database read at the moment of the question
+ * (server.ts readWipFromBoard). It used to answer from pulse-latest.json's board.wip_cards, a
+ * copy of a copy (`cards list` → /tmp/board-wip-snapshot.json → pulse-latest.json) that
+ * served its last list at any age. On 2026-11-17 that copy kept #4986 in WIP after its
+ * land: the pulse header said "reopened" and the Teammates tile said "building #4986"
+ * while the board said Done. A board read that is missing or older than
+ * BOARD_MAX_AGE_MS says unreadable, never an old list shown as now.
  *
- * DI surface: `readPulse` returns the snapshot file contents (or null).
+ * DI surface: `readBoard` returns the cached cards and when they were last read.
  * `sparql` stamps the envelope header. Tests inject both as stubs.
- *
- * Scope: domain (chorus) — the Context API itself lives in the chorus
- * product. `domain` is not set for this endpoint; a future per-domain
- * variant might add it.
  */
 
 import {
@@ -25,10 +23,38 @@ import {
   type ContextEnvelope,
 } from '../lib/context-envelope';
 
+/** A board read older than this is too old to call "now" (the cache re-reads every 60 s). */
+export const BOARD_MAX_AGE_MS = 5 * 60 * 1000;
+
+export interface BoardCard {
+  id: string;
+  title: string;
+  status: string;
+  owner: string;
+  priority: string;
+  domain: string;
+}
+
+/** #4987 — one board row (task, bucket, labels joined with |) as a card: the owner,
+ *  priority and domain are the board's own labels (owner:wren, P2, domain:chorus). */
+export function boardCardFromRow(row: { id: number; title: string; status: string; labels: string }): BoardCard {
+  const labels = row.labels ? row.labels.split('|') : [];
+  const value = (prefix: string) => (labels.find((l) => l.startsWith(prefix)) ?? '').slice(prefix.length);
+  return {
+    id: String(row.id),
+    title: row.title,
+    status: row.status,
+    owner: value('owner:').toLowerCase(),
+    priority: labels.find((l) => /^P[1-3]$/.test(l)) ?? '',
+    domain: value('domain:'),
+  };
+}
+
 export interface ContextBoardWipDeps {
   sparql: StampSparqlClient;
-  /** Returns the raw pulse-latest.json file contents, or null if missing. */
-  readPulse: () => string | null;
+  /** The board's cards and when they were read (ms since epoch; 0 = never). Throws when
+   *  the board cannot be read. */
+  readBoard: () => { cards: BoardCard[]; readAt: number };
   now?: () => Date;
 }
 
@@ -38,9 +64,6 @@ export interface WipCard {
   title: string;
   priority: string;
   domain?: string;
-  step?: string;
-  createdAt?: string;
-  updatedAt?: string;
 }
 
 export interface ContextBoardWipResponse {
@@ -53,34 +76,23 @@ export async function fetchContextBoardWip(
   sourceUrl: string,
   roleFilter?: string,
 ): Promise<ContextBoardWipResponse> {
-  const raw = deps.readPulse();
-  if (raw === null) {
-    return { status: 503, body: { error: 'No pulse snapshot available; board state unknown.' } };
-  }
-
-  let pulse: unknown;
+  let read: { cards: BoardCard[]; readAt: number };
   try {
-    pulse = JSON.parse(raw);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return { status: 500, body: { error: `pulse-latest.json unparseable: ${message}` } };
+    read = deps.readBoard();
+  } catch (e) {
+    return { status: 503, body: { error: `board unreadable: ${e instanceof Error ? e.message : String(e)}` } };
+  }
+  const { cards, readAt } = read;
+  const now = (deps.now ?? (() => new Date()))().getTime();
+  if (readAt === 0) {
+    return { status: 503, body: { error: 'board unreadable: not read yet' } };
+  }
+  if (now - readAt > BOARD_MAX_AGE_MS) {
+    return { status: 503, body: { error: `board unreadable: last read ${Math.round((now - readAt) / 1000)} s ago` } };
   }
 
   const header = await stampHeader(deps.sparql, 'chorus');
-
-  // #4510 — a board pulse could not read is unreadable, never an empty board
-  const board = (pulse as { board?: { wip_cards?: unknown; unreadable?: unknown } }).board;
-  const wipRaw = board?.wip_cards;
-  if (!Array.isArray(wipRaw)) {
-    const why = typeof board?.unreadable === 'string' ? board.unreadable : 'pulse has no wip_cards list';
-    return { status: 503, body: { error: `board unreadable: ${why}` } };
-  }
-  const source = wipRaw;
-
-  const all: WipCard[] = source
-    .filter((c): c is Record<string, unknown> => !!c && typeof c === 'object')
-    .map((c) => shapeCard(c));
-
+  const all: WipCard[] = cards.filter((c) => c.status === 'WIP').map(shapeCard).filter((c) => Number.isFinite(c.id));
   const filtered = roleFilter
     ? all.filter((c) => c.owner.toLowerCase() === roleFilter.toLowerCase())
     : all;
@@ -94,24 +106,12 @@ export async function fetchContextBoardWip(
   return { status: 200, body: envelope };
 }
 
-function shapeCard(raw: Record<string, unknown>): WipCard {
-  const str = (k: string): string | undefined => {
-    const v = raw[k];
-    return typeof v === 'string' ? v : undefined;
-  };
-  const num = (k: string): number => {
-    const v = raw[k];
-    return typeof v === 'number' ? v : 0;
-  };
+function shapeCard(c: BoardCard): WipCard {
   return {
-    id: num('id'),
-    owner: str('owner') ?? '',
-    title: str('title') ?? '',
-    priority: str('priority') ?? '',
-    ...(str('domain') && { domain: str('domain') }),
-    ...(str('valueStream') && { valueStream: str('valueStream') }),
-    ...(str('step') && { step: str('step') }),
-    ...(str('createdAt') && { createdAt: str('createdAt') }),
-    ...(str('updatedAt') && { updatedAt: str('updatedAt') }),
+    id: Number(c.id),
+    owner: c.owner,
+    title: c.title,
+    priority: c.priority,
+    ...(c.domain && { domain: c.domain }),
   };
 }

@@ -315,7 +315,7 @@ export function renderRolesPage(data: RolesData, sources: TrustStripSource[]): s
           <tbody>
             ${data.actors.map(a => `
               <tr class="${a.id === 'jeff' ? 'you' : ''}">
-                <td><span class="row"><span class="av a-${a.id}">${a.name.charAt(0)}</span><b>${a.name}</b></span></td>
+                <td><span class="row who"><span class="av a-${a.id}">${a.name.charAt(0)}</span><b>${a.name}</b></span></td>
                 <td>${renderStateBadge(a)}${renderActorDetail(a)}</td>
                 <td class="meta">${renderActivity(a)}</td>
                 <td>${renderCardRefs(a.cards, a.card, a.pair)}</td>
