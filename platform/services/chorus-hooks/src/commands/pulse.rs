@@ -17,7 +17,7 @@
 use std::fs;
 use std::process::ExitCode;
 
-use crate::shared::state_paths::repo_root;
+use crate::shared::state_paths::{board_snapshot_path, repo_root};
 
 /// Assemble team state snapshot and write to /tmp/pulse-latest.json.
 /// Returns compact JSON string. Callers that need only the side-effect
@@ -311,7 +311,8 @@ fn assemble_board() -> serde_json::Value {
     // snapshot (#4510: the cards CLI no longer writes it), so staleness is
     // bounded by pulse cadence.
     const SNAPSHOT_TTL_SECS: u64 = 10;
-    let snapshot_file = "/tmp/board-wip-snapshot.json";
+    let snapshot_path = board_snapshot_path("json");
+    let snapshot_file = snapshot_path.as_str();
 
     // Fast path: fresh snapshot.
     let snapshot_age = fs::metadata(snapshot_file).ok()
@@ -338,7 +339,8 @@ fn assemble_board() -> serde_json::Value {
     // snapshot (better stale than a process pile). Lock = O_EXCL create;
     // a lock older than 60s is treated as crashed and reclaimed (the CLI's
     // own watchdog (30s) guarantees the child is dead by then).
-    let lock_file = "/tmp/board-wip-snapshot.lock";
+    let lock_path = board_snapshot_path("lock");
+    let lock_file = lock_path.as_str();
     let lock_stale = fs::metadata(lock_file).ok()
         .and_then(|m| m.modified().ok())
         .and_then(|t| t.elapsed().ok())
@@ -373,7 +375,11 @@ fn assemble_board() -> serde_json::Value {
             let wip_cards = parse_wip_list(&stdout);
             let swat_cards = parse_section_list(&stdout, "SWAT");
             let next_cards = parse_section_list(&stdout, "Next");
-            if !wip_cards.is_empty() || !swat_cards.is_empty() || !next_cards.is_empty() {
+            // #4987 — an empty WIP column is the board's answer too. The old guard wrote only
+            // when some column had cards, so after the last WIP card landed the snapshot kept
+            // it forever (11-16 19:41 → 11-17: every role read "building #4766" all night).
+            // Write whenever the board was listed; skip only output that lists no column.
+            if board_was_listed(&stdout) {
                 let snapshot = serde_json::json!({
                     "wip_cards": &wip_cards,
                     "swat_cards": &swat_cards,
@@ -394,6 +400,16 @@ fn assemble_board() -> serde_json::Value {
     let mut last = board_from_snapshot(fs::read_to_string(snapshot_file).ok().as_deref(), None);
     if last.get("unreadable").is_none() { last["snapshot_stale"] = serde_json::json!(true); }
     last
+}
+
+/// #4987 — did `cards list` print the board? True when any column header
+/// (`WIP (1):`, `Next (0):`, `Done (12):` …) is present: an empty WIP column is still
+/// an answer. False for empty or headerless output, which must not overwrite the snapshot.
+pub fn board_was_listed(stdout: &str) -> bool {
+    stdout.lines().any(|l| {
+        let t = l.trim_end().trim_end_matches(':');
+        !l.starts_with(' ') && t.ends_with(')') && t.rsplit_once(" (").map_or(false, |(_, n)| n.trim_end_matches(')').chars().all(|c| c.is_ascii_digit()) && n.len() > 1)
+    })
 }
 
 /// Parse `cards list` stdout into WIP card records.
@@ -569,6 +585,25 @@ fn parse_epoch_approx(ts: &str) -> Option<u64> {
 
 #[cfg(test)]
 mod tests {
+    // #4987 — the board listed with an empty WIP column is written; no listing is not
+    #[test]
+    fn the_board_snapshot_never_lives_in_the_shared_tmp() {
+        let p = crate::shared::state_paths::board_snapshot_path("json");
+        assert!(p.ends_with("/board-wip-snapshot.json"), "{p}");
+        // NEGATIVE PROOF: the sticky shared /tmp is where the freeze came from
+        assert!(!p.starts_with("/tmp/"), "{p}");
+    }
+
+    #[test]
+    fn an_empty_wip_column_is_still_a_listed_board() {
+        assert!(super::board_was_listed("Blocked (4):\n  4464  Clean decisions [Wren|P2]\n\nLater (2):\n  1  x [Kade|P3]\n"));
+        assert!(super::board_was_listed("WIP (1):\n  4987  T [Wren|P2]\n"));
+        // NEGATIVE PROOF: empty or headerless output is not a board, so it never overwrites
+        assert!(!super::board_was_listed(""));
+        assert!(!super::board_was_listed("error: board API timed out\n"));
+        assert!(!super::board_was_listed("  4987  T [Wren|P2]\n"));
+    }
+
     // #4510 — an unreadable snapshot is reported as unreadable, never as an empty board
     #[test]
     fn a_readable_snapshot_lists_its_cards() {

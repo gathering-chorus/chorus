@@ -392,6 +392,9 @@ nav.top .n {
   align-items: center;
   flex-wrap: wrap;
 }
+/* #4987 — a teammate's name stays beside its avatar on one line at every width (Jeff's
+   screenshot 11-17: "Abby Normal" and "Borg-queen" wrapped below theirs). */
+.row.who { flex-wrap: nowrap; white-space: nowrap; }
 .list { display: grid; }
 .li {
   display: flex;

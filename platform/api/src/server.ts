@@ -1674,7 +1674,7 @@ app.get('/api/chorus/pulse/latest', (_req: Request, res: Response) => {
 // Pull-model endpoints with common envelope + Athena-graph-stamped headers.
 // Three endpoints for the proof-of-shape: board/wip, roles, health.
 
-import { fetchContextBoardWip } from './handlers/context-board-wip';
+import { fetchContextBoardWip, boardCardFromRow, type BoardCard } from './handlers/context-board-wip';
 import { fetchContextPriorities, roleNames, statusesFromBucketRows } from './handlers/context-priorities';
 import { fetchContextSpine } from './handlers/context-spine';
 import { fetchContextAlerts } from './handlers/context-alerts';
@@ -1707,29 +1707,36 @@ const readSpineEventsForRole = async (role: string, sinceMs: number): Promise<Sp
   }
 };
 
-/** #4028 — the board's WIP by owner. The pulse snapshot is the same source
- *  /context/board/wip answers from; the live cards cache is the fallback when a
- *  fresh process (a demo variant) has no snapshot yet. */
-const wipFromPulse = (): WipCardEntry[] => {
-  const raw = readPulseFile();
-  if (raw === null) return [];
+/** #4987 — the board's WIP, read from the board's own database at the moment of the
+ *  question (read-only, well under a millisecond). Not pulse-latest.json's copy, which
+ *  kept landed cards in WIP, and not the 60 s cards cache, which lags a land by up to a
+ *  minute. Throws when the board cannot be read; callers say unreadable, never empty. */
+const readWipFromBoard = (): { cards: BoardCard[]; readAt: number } => {
+  const db = new Database(VIKUNJA_DB_PATH, { readonly: true, fileMustExist: true });
   try {
-    const wip = (JSON.parse(raw) as { board?: { wip_cards?: unknown } }).board?.wip_cards;
-    if (!Array.isArray(wip)) return [];
-    return wip
-      .filter((c): c is Record<string, unknown> => !!c && typeof c === 'object')
-      .map((c) => ({ id: Number(c.id), owner: typeof c.owner === 'string' ? c.owner : '' }))
-      .filter((c) => Number.isFinite(c.id));
-  } catch { return []; }
+    const rows = db.prepare(
+      `SELECT t."index" AS id, t.title AS title, b.title AS status,
+              COALESCE((SELECT group_concat(l.title, '|') FROM labels l
+                          JOIN label_tasks lt ON lt.label_id = l.id
+                         WHERE lt.task_id = t.id), '') AS labels
+         FROM tasks t
+         JOIN task_buckets tb ON tb.task_id = t.id
+         JOIN buckets b ON tb.bucket_id = b.id
+        WHERE b.title = 'WIP' AND COALESCE(t.done, 0) = 0`,
+    ).all() as Array<{ id: number; title: string; status: string; labels: string }>;
+    return { cards: rows.map(boardCardFromRow), readAt: Date.now() };
+  } finally {
+    db.close();
+  }
 };
 
+/** #4028 — the board's WIP by owner, from the same live read as /context/board/wip. */
 const listWipCardsForRoles = (): WipCardEntry[] => {
-  const fromPulse = wipFromPulse();
-  if (fromPulse.length > 0) return fromPulse;
-  return getBoardCards()
-    .filter((c) => c.status === 'WIP')
-    .map((c) => ({ id: Number(c.id), owner: c.owner }))
-    .filter((c) => Number.isFinite(c.id));
+  try {
+    return readWipFromBoard().cards.map((c) => ({ id: Number(c.id), owner: c.owner })).filter((c) => Number.isFinite(c.id));
+  } catch {
+    return [];
+  }
 };
 
 app.get('/api/chorus/context/alerts', async (req: Request, res: Response) => {
@@ -1767,8 +1774,9 @@ app.get('/api/chorus/context/spine', async (req: Request, res: Response) => {
 
 app.get('/api/chorus/context/board/wip', async (req: Request, res: Response) => {
   const roleFilter = typeof req.query.role === 'string' ? req.query.role : undefined;
+  // #4987 — the board itself, read at the moment of the question, never a copy
   const r = await fetchContextBoardWip(
-    { sparql: _athena, readPulse: readPulseFile },
+    { sparql: _athena, readBoard: readWipFromBoard },
     req.originalUrl,
     roleFilter,
   );

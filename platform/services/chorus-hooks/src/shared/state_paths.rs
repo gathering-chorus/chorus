@@ -274,3 +274,16 @@ pub fn role_cwd(role: &str) -> Option<String> {
 
 /// Valid roles
 pub const ROLES: &[&str] = &["wren", "silas", "kade"];
+
+/// #4987 — the board snapshot, beside the durable pulse file (CHORUS_PULSE_PATH, else
+/// ~/.chorus/pulse-latest.json), never the shared /tmp. /tmp is sticky (+t): once one
+/// account created /tmp/board-wip-snapshot.json, every other account's atomic rename over
+/// it failed EPERM, so it froze 11-16 19:41 holding #4766. One function for its writer
+/// (pulse) and its reader (observer); CHORUS_PULSE_PATH keeps tests off ~/.chorus (#4553).
+pub fn board_snapshot_path(ext: &str) -> String {
+    let pulse = std::env::var("CHORUS_PULSE_PATH").map(std::path::PathBuf::from).unwrap_or_else(|_| {
+        std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".chorus/pulse-latest.json")
+    });
+    let dir = pulse.parent().map(|d| d.to_path_buf()).unwrap_or_default();
+    dir.join(format!("board-wip-snapshot.{ext}")).to_string_lossy().into_owned()
+}

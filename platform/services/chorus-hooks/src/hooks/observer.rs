@@ -261,11 +261,17 @@ pub fn is_read_only_bash(cmd: &str) -> bool {
 /// mentioning a card in a commit doesn't count as "working on" — only
 /// ownership does. If a role has no WIP card, their card state is blank.
 ///
-/// Reads /tmp/board-wip-snapshot.json (maintained by pulse::assemble_board).
+/// Reads the board snapshot pulse::assemble_board maintains (#4987: ~/.chorus, not /tmp).
 pub fn wip_card_owned_by(role: &str) -> Option<String> {
-    let content = std::fs::read_to_string("/tmp/board-wip-snapshot.json").ok()?;
-    let arr = serde_json::from_str::<serde_json::Value>(&content).ok()?;
-    for card in arr.as_array()? {
+    let content = std::fs::read_to_string(crate::shared::state_paths::board_snapshot_path("json")).ok()?;
+    wip_card_in(&content, role)
+}
+
+/// #4987 — the role's WIP card in a board snapshot's text.
+pub fn wip_card_in(content: &str, role: &str) -> Option<String> {
+    let arr = serde_json::from_str::<serde_json::Value>(content).ok()?;
+    // pulse writes {"wip_cards": [...]}; a bare list is the older shape
+    for card in arr.get("wip_cards").and_then(|v| v.as_array()).or_else(|| arr.as_array())? {
         let owner = card.get("owner")?.as_str()?.to_lowercase();
         if owner == role.to_lowercase() {
             let id = card.get("id")?.as_u64()?;
@@ -273,6 +279,22 @@ pub fn wip_card_owned_by(role: &str) -> Option<String> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod wip_card_4987 {
+    // #4987 — pulse writes the snapshot as {"wip_cards": [...]}; the reader took only a bare
+    // list, so it found no card for anyone and every role's card state was blank
+    #[test]
+    fn the_role_card_is_read_from_the_snapshot_pulse_writes() {
+        let snap = r#"{"wip_cards":[{"id":4987,"owner":"Wren","title":"T"}],"swat_cards":[],"next_cards":[]}"#;
+        assert_eq!(super::wip_card_in(snap, "wren"), Some("4987".into()));
+        // NEGATIVE PROOF: another role, and an empty WIP column, get no card
+        assert_eq!(super::wip_card_in(snap, "kade"), None);
+        assert_eq!(super::wip_card_in(r#"{"wip_cards":[]}"#, "wren"), None);
+        // the older bare-list shape still reads
+        assert_eq!(super::wip_card_in(r#"[{"id":1,"owner":"wren"}]"#, "wren"), Some("1".into()));
+    }
 }
 
 /// #2120 — Card = board WIP ownership. No ownership, no card.

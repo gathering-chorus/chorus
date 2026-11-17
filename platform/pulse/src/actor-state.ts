@@ -792,7 +792,7 @@ async function fetchSessionsFact(
   }
 }
 
-async function fetchWipCardsFact(
+export async function fetchWipCardsFact(
   apiBase: string,
   unmeasured: Array<{ source: string; reason: string }>
 ): Promise<WipCardFact[]> {
