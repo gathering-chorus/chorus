@@ -1,0 +1,18 @@
+# HELP host_process_resident_memory_bytes Aggregated RSS by process name.
+# TYPE host_process_resident_memory_bytes gauge
+host_process_resident_memory_bytes{name="promtail"} 573030400
+host_process_resident_memory_bytes{name="java"} 1354039296
+host_process_resident_memory_bytes{name="node"} 1162051584
+host_process_resident_memory_bytes{name="claude"} 821805056
+# HELP host_process_cpu_percent Aggregated CPU percent by process name.
+# TYPE host_process_cpu_percent gauge
+host_process_cpu_percent{name="promtail"} 50.1
+host_process_cpu_percent{name="java"} 0.4
+host_process_cpu_percent{name="node"} 190.5
+host_process_cpu_percent{name="claude"} 0.4
+# HELP host_process_count Process count by name.
+# TYPE host_process_count gauge
+host_process_count{name="promtail"} 1
+host_process_count{name="java"} 1
+host_process_count{name="node"} 38
+host_process_count{name="claude"} 3

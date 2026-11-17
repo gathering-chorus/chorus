@@ -1,0 +1,16 @@
+jeffbridwell     35840  88.4 /Library/Developer/CommandLineTools/usr/bin/clang++ -c oxigraph/rocksdb/compaction.cc
+chorus-kade      43008  64.0 /Users/jeffbridwell/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc --crate-name chorus_hooks
+root             24784  15.3 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mds
+jeffbridwell     20480  27.9 /usr/libexec/mlhostd
+jeffbridwell    425952 112.5 /Users/jeffbridwell/bin/promtail -config.file=/Users/jeffbridwell/CascadeProjects/shared-observability/config/promtail/promtail-native.yaml
+jeffbridwell   1931056  17.0 /opt/homebrew/opt/openjdk/bin/java -Xmx3g -cp /Users/jeffbridwell/.gathering/data/fuseki-5.1.0/fuseki-server.jar org.apache.jena.fuseki.cmd.FusekiCmd --port=3030
+jeffbridwell     93312   8.2 node /Users/jeffbridwell/CascadeProjects/chorus/platform/api/dist/server.js
+jeffbridwell     89056  10.7 /Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin/node /Users/jeffbridwell/CascadeProjects/chorus/directing/clearing/dist/server.js
+jeffbridwell    145584  27.4 node dist/app.js
+jeffbridwell     90208  23.7 /Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin/node /Users/jeffbridwell/CascadeProjects/chorus-werk/kade-4965/directing/clearing/dist/server.js
+jeffbridwell     48624  10.9 /Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin/node /Users/jeffbridwell/CascadeProjects/chorus-werk/kade-4965/platform/api/dist/server.js
+chorus-wren     120000  41.2 /Users/jeffbridwell/.nvm/versions/node/v20.20.2/bin/node /Users/jeffbridwell/CascadeProjects/chorus-werk/wren-4991/platform/pulse/node_modules/.bin/jest
+chorus-borg-queen 340000 4.6 /Users/chorus-borg-queen/.antigravity/bin/agy
+chorus-silas    280000   3.1 claude
+chorus-kade      12400   6.5 /opt/homebrew/bin/rg needle /Users/jeffbridwell/CascadeProjects/chorus-werk/kade-4965/platform/api/src
+chorus-kade      18200  19.0 /bin/bash /opt/homebrew/Cellar/bats-core/1.13.0/libexec/bats-core/bats-exec-test /tmp/t.bats

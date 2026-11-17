@@ -143,7 +143,7 @@ chorus:deploys a chorus:Domain ;
 chorus:logs a chorus:Domain ;
   rdfs:label "logs" ; chorus:comment "Log aggregation and querying via Loki — structured observability." ;
   chorus:purpose "Aggregate and query the system's logs via Loki — structured runtime observability." ;
-  chorus:ownedBy chorus:principal-silas ;
+  chorus:ownedBy chorus:principal-borg-queen ;
   chorus:atStep chorus:value-stream-step-proving ;
   chorus:repoTarget "platform/api/src/handlers/logs-query.ts" ; chorus:definesVocabulary chorus:LogSource ;
   # #4084 — the row made whole (DomainShape: status, gaps, hasDesignDoc) and given its instances graph.
@@ -178,7 +178,7 @@ chorus:time a chorus:Domain ;
 chorus:heralds a chorus:Domain ;
   rdfs:label "heralds" ; chorus:comment "Borg's heralds: what looks at a target (a repository, a machine, a running system) and records what it finds. The crawler is one herald; each source it reads (code, services, stores, infra, pages, tests) is a plugin its owner ships and answers for." ;
   chorus:purpose "Look at a target and record what is there, so Borg can reflect on any system it can reach." ;
-  chorus:ownedBy chorus:principal-silas ;
+  chorus:ownedBy chorus:principal-borg-queen ;
   chorus:atStep chorus:value-stream-step-proving ;
   chorus:repoTarget "platform/services/chorus-crawl" ;
   # #4405 reopen 4 — Heralds is the product; what it holds are Sensors and
@@ -246,7 +246,7 @@ chorus:metrics a chorus:Domain ;
   chorus:instancesGraph "urn:chorus:domains:metrics" ;  # #4422 (wren): the crawl reads this, never a guessed name
   rdfs:label "metrics" ; chorus:comment "Quantitative measurements of system health — latency, cost, throughput." ;
   chorus:purpose "Measure system health quantitatively — latency, cost, throughput, and their trends." ;
-  chorus:ownedBy chorus:principal-silas ;
+  chorus:ownedBy chorus:principal-borg-queen ;
   chorus:atStep chorus:value-stream-step-proving ;
   chorus:repoTarget "platform/api/src/metrics.ts" ; chorus:definesVocabulary chorus:Metric .
 
