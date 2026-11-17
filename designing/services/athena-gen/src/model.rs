@@ -46,6 +46,9 @@ pub struct Class {
     /// The collection segment: `/<domain>/<segment>` (v1's #4158 rule, kept so paths match).
     pub segment: String,
     pub graph: String,
+    /// #4766 — where the rows live: "graph" (the model store) or "spine" (the spine log,
+    /// read from its end). Said on the shape as chorus:instancesStore; unsaid is the graph.
+    pub store: String,
     pub fields: Vec<Field>,
 }
 
@@ -288,6 +291,14 @@ fn class(store: &Store, domain: &str, iri: &str, prefix: Option<&str>, product: 
                 "{name} names no instancesGraph and {product} declares no store.graph_prefix: add one or the other"))),
         },
     };
+    // #4766 — the shape says where its rows live; unsaid is the graph, an unknown store is refused
+    let row_store = match select(store, &format!(
+        "SELECT ?st WHERE {{ ?s sh:targetClass <{iri}> ; c:instancesStore ?st }} ORDER BY ?st LIMIT 1"))?
+        .into_iter().next() {
+        None => "graph".to_string(),
+        Some(r) if r["st"] == "spine" || r["st"] == "graph" => r["st"].clone(),
+        Some(r) => return Err(ModelError(format!("{name}: instancesStore \"{}\" is not one of graph, spine", r["st"]))),
+    };
     let props = select_iri(store, &format!(
         "SELECT ?path (SAMPLE(?dt) AS ?datatype) (SAMPLE(?cl) AS ?class) (SAMPLE(?nk) AS ?nodeKind) \
          (MAX(?mn) AS ?min) (MIN(?mx) AS ?max) WHERE {{ \
@@ -322,7 +333,7 @@ fn class(store: &Store, domain: &str, iri: &str, prefix: Option<&str>, product: 
             allowed,
         });
     }
-    Ok(Class { segment: segment(domain, &name), name, graph, fields })
+    Ok(Class { segment: segment(domain, &name), name, graph, store: row_store, fields })
 }
 
 /// The model's version (designing/data/model-version.ttl), so every response can say

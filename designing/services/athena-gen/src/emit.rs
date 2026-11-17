@@ -9,6 +9,9 @@ use std::collections::BTreeMap;
 
 const MAIN: &str = include_str!("../templates/main.rs");
 const STORE: &str = include_str!("../templates/store.rs");
+const SPINE: &str = include_str!("../templates/spine.rs");
+const SPINE_LOG: &str = include_str!("../templates/spine_log.rs");
+const SPINE_TESTS: &str = include_str!("../templates/spine_tests.rs");
 const SETTINGS: &str = include_str!("../templates/settings.rs");
 const AUTH: &str = include_str!("../templates/auth.rs");
 const RULES: &str = include_str!("../templates/rules.rs");
@@ -98,14 +101,14 @@ pub fn model_rs(p: &Product, model_version: &str, settings: &[(String, String)])
     s.push_str("];\n\n");
     s.push_str(
         "pub struct FieldDef {\n    pub name: &'static str,\n    pub link: bool,\n    pub datatype: &'static str,\n    pub required: bool,\n    pub many: bool,\n    pub allowed: &'static [&'static str],\n}\n\n\
-         pub struct ClassDef {\n    pub domain: &'static str,\n    pub name: &'static str,\n    pub kind: &'static str,\n    pub plural: &'static str,\n    pub segment: &'static str,\n    pub graph: &'static str,\n    /// #4742 — homed in another product and composed here: read-only\n    pub composed: bool,\n    pub fields: &'static [FieldDef],\n}\n\n\
+         pub struct ClassDef {\n    pub domain: &'static str,\n    pub name: &'static str,\n    pub kind: &'static str,\n    pub plural: &'static str,\n    pub segment: &'static str,\n    pub graph: &'static str,\n    /// #4766 — where the rows live: \"graph\" or \"spine\" (the spine log, read from its end)\n    pub store: &'static str,\n    /// #4742 — homed in another product and composed here: read-only\n    pub composed: bool,\n    pub fields: &'static [FieldDef],\n}\n\n\
          pub const CLASSES: &[ClassDef] = &[\n",
     );
     for d in &p.domains {
         for c in &d.classes {
             s.push_str(&format!(
-                "    ClassDef {{\n        domain: {}, name: {}, kind: {}, plural: {}, segment: {}, graph: {}, composed: {},\n        fields: &[\n",
-                lit(&d.name), lit(&c.name), lit(&kebab(&c.name)), lit(&crate::model::pluralize(&c.name)), lit(&c.segment), lit(&c.graph), d.composed
+                "    ClassDef {{\n        domain: {}, name: {}, kind: {}, plural: {}, segment: {}, graph: {}, store: {}, composed: {},\n        fields: &[\n",
+                lit(&d.name), lit(&c.name), lit(&kebab(&c.name)), lit(&crate::model::pluralize(&c.name)), lit(&c.segment), lit(&c.graph), lit(&c.store), d.composed
             ));
             for f in &c.fields {
                 let allowed: Vec<String> = f.allowed.iter().map(|a| lit(a)).collect();
@@ -168,6 +171,9 @@ pub fn crate_files_ops(p: &Product, model_version: &str, settings: &[(String, St
     out.insert("src/door_tests.rs".into(), retag(DOOR_TESTS, domain));
     out.insert("tests/model.rs".into(), retag(MODEL_TEST, domain));
     out.insert("src/store.rs".into(), retag(STORE, domain));
+    out.insert("src/spine.rs".into(), retag(SPINE, domain));
+    out.insert("src/spine_log.rs".into(), retag(SPINE_LOG, domain));
+    out.insert("src/spine_tests.rs".into(), retag(SPINE_TESTS, domain));
     out.insert("src/settings.rs".into(), retag(SETTINGS, domain));
     out.insert("src/model.rs".into(), format!("// @domain: {domain}\n{}", model_rs(p, model_version, settings)));
     out.insert("src/ops.rs".into(), format!("// @domain: {domain}\n{}", ops_rs(p, handlers)));

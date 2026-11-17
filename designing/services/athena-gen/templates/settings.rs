@@ -26,6 +26,8 @@ pub struct Settings {
     /// and returns only that caller's rows and grants. A product that serves public data
     /// (pulse) declares `reads.public = true` in its model, so nothing changes by accident.
     pub reads_public: bool,
+    /// #4766 — the spine log a `spine` class reads from its end
+    pub spine_path: String,
 }
 
 impl Settings {
@@ -65,7 +67,10 @@ pub fn value(key: &str, file: &BTreeMap<String, String>) -> String {
 
 /// A setting the model may leave undeclared: its value, or `default` when no row declares it.
 pub fn optional(key: &str, file: &BTreeMap<String, String>, default: &str) -> String {
-    if SETTINGS.iter().any(|(k, _)| *k == key) { value(key, file) } else { default.to_string() }
+    if SETTINGS.iter().any(|(k, _)| *k == key) { return value(key, file) }
+    // #4766 — an undeclared setting still reads its env and file before the default
+    let env = format!("{}_{}", PRODUCT.to_uppercase().replace('-', "_"), key.to_uppercase().replace(['.', '-'], "_"));
+    std::env::var(&env).ok().or_else(|| file.get(key).cloned()).unwrap_or_else(|| default.to_string())
 }
 
 pub fn load() -> Settings {
@@ -86,5 +91,6 @@ pub fn load() -> Settings {
         identity_graph_prefix: value("identity.graph_prefix", &file),
         events_command: value("events.command", &file),
         reads_public: optional("reads.public", &file, "false") == "true",
+        spine_path: optional("spine.path", &file, &format!("{}/.chorus/chorus.log", std::env::var("HOME").unwrap_or_default())),
     }
 }
