@@ -2,8 +2,10 @@
 // @card: #4597
 // @owner: abby-normal
 // @domain: messages
+// #4991 (AC3): a stream line from before today shows its date
 
 import { formatRoomText, renderRoomMessage } from '../src/views';
+import { formatStreamTime } from '../src/sources/format';
 
 describe('#4597: Clearing v2 message formatting (line breaks, links, bullets, bold, code blocks)', () => {
   describe('SSR formatRoomText (src/views.ts)', () => {
@@ -114,5 +116,19 @@ describe('#4597: Clearing v2 message formatting (line breaks, links, bullets, bo
       expect(rendered).not.toContain('<script>alert');
       expect(rendered).toContain('&lt;script&gt;alert(&quot;attack&quot;)&lt;/script&gt;');
     });
+  });
+});
+
+// #4991 (AC3) — Jeff 11-17 06:40: "we only render time"; a line from yesterday read as today.
+describe('#4991 stream times carry the date when not today (Boston)', () => {
+  const now = new Date('2026-11-17T12:40:00Z'); // 07:40 Boston
+  test('today: time only; yesterday and earlier: month, day and time', () => {
+    expect(formatStreamTime('2026-11-17T12:39:00Z', now)).toBe('07:39');
+    expect(formatStreamTime('2026-11-16T21:01:54.909-0500', now)).toBe('Nov 16 21:01');
+    expect(formatStreamTime('2026-11-17T04:30:00Z', now)).toBe('Nov 16 23:30'); // UTC today, Boston yesterday
+  });
+  test('NEGATIVE PROOF: yesterday with the time only is caught; an unreadable time is empty, never "now"', () => {
+    expect(formatStreamTime('2026-11-16T21:01:54.909-0500', now)).not.toBe('21:01');
+    expect(formatStreamTime('not a time', now)).toBe('');
   });
 });

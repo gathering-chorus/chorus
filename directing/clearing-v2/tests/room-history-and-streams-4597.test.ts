@@ -202,7 +202,7 @@ describe('#4766 Streams without the old Clearing', () => {
       expect(got.ok).toBe(true);
       if (!got.ok) return;
       expect(got.lines.map((l) => `${l.role} ${l.text}`)).toEqual(['wren read card', 'kade git status \u2717', 'wren \u23f3 cargo test']);
-      expect(got.lines[2].ts).toBe('20:00'); // 01:00 UTC as Boston time
+      expect(got.lines[2].ts).toBe('Nov 16 20:00'); // 11-17 01:00 UTC is 11-16 20:00 Boston, so the date shows (#4991)
     } finally { await r.close(); }
   });
 

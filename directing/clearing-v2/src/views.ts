@@ -1078,7 +1078,7 @@ export function renderStreamsPage(streams: Streams, sources: TrustStripSource[])
     ? `<div class="meta fail" style="padding:16px">Streams could not be read: ${escapeHtml(streams.reason)}</div>`
     : streams.lines.length === 0
       ? `<div class="meta" style="padding:16px">No commands in the stream yet.</div>`
-      : `<div class="stream-tail" id="stream-tail">${streams.lines.map((l) => `<div class="stream-line"><span class="tm">${escapeHtml(l.ts)}</span> <b class="who-${roleClass(l.role)}">${escapeHtml(l.role)}</b> ${escapeHtml(l.text)}</div>`).join('')}
+      : `<div class="stream-tail" id="stream-tail">${streams.lines.map((l) => `<div class="stream-line${l.type === 'reply' ? ' reply' : ''}"><span class="tm">${escapeHtml(l.ts)}</span> <b class="who-${roleClass(l.role)}">${escapeHtml(l.role)}</b> ${escapeHtml(l.text)}</div>`).join('')}
     </div>`;
   const content = `<main class="page streams-page" id="streams-page">
     ${body}

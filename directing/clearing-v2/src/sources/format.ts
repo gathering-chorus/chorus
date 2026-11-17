@@ -22,6 +22,17 @@ export function formatBostonWhen(iso: string | undefined, now: Date = new Date()
   return `${bostonFormat(d, { weekday: 'short' })} ${hhmm}`;
 }
 
+/** #4991 — a stream line's time: HH:MM today (Boston), else "Nov 16 21:01", so a line from
+ *  yesterday never reads as today. Unparseable → "". */
+export function formatStreamTime(iso: string | undefined, now: Date = new Date()): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const hhmm = bostonHHMM(d);
+  if (bostonDay(d) === bostonDay(now)) return hhmm;
+  return `${bostonFormat(d, { month: 'short' })} ${bostonFormat(d, { day: 'numeric' })} ${hhmm}`;
+}
+
 export function formatTodayHeader(date = new Date()): string {
   const weekday = bostonFormat(date, { weekday: 'long' });
   const month = bostonFormat(date, { month: 'short' });
