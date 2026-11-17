@@ -1,0 +1,90 @@
+#!/usr/bin/env python3
+"""#4987 (AC6): after the land, rewrite the messages.db rows whose created_at was written ISO
+("2026-11-07T00:53:24.406Z") into the store's own form ("2026-11-07 00:53:24", UTC), so every
+row carries one form. Jeff 2026-11-17 06:41: "i assume we can data cleanup?"
+# @domain: messages
+
+4 BQ nudges of 11-07 were written ISO; every reader that appended a "Z" to the stored form
+turned them into "...ZZ" and NaN (the messages sensor's "Invalid time value", AC5).
+
+Order:
+  1. read the ISO rows; none left -> SAME, exit 0 (idempotent, safe on every land)
+  2. copy messages.db to ~/.chorus/backups/ (sqlite backup API) before any write
+  3. one transaction: each ISO row gets the same instant in the store's form
+  4. prove: row count unchanged, no ISO row left, each rewritten row names the same second
+     as before; any miss rolls the transaction back and exits 1
+DRY RUN unless --apply. Exit 0 = done, SAME, or the plan printed; 1 = the proof failed
+(nothing changed); 2 = the store could not be read.
+"""
+import os
+import sqlite3
+import sys
+import time
+from datetime import datetime, timezone
+
+CHORUS = os.environ.get("CHORUS_HOME", "/Users/jeffbridwell/CascadeProjects/chorus")
+DB = os.environ.get("MESSAGES_DB", os.path.join(CHORUS, "platform/pulse/messages.db"))
+BACKUPS = os.environ.get("BACKUP_DIR", os.path.expanduser("~/.chorus/backups"))
+ISO = "created_at LIKE '____-__-__T%'"
+
+
+def store_form(iso: str) -> str:
+    """The same instant as the store writes it: UTC, 'YYYY-MM-DD HH:MM:SS'."""
+    t = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+    if t.tzinfo is None:
+        raise ValueError(f"no zone, cannot place in UTC: {iso}")
+    return t.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def main(argv):
+    apply = "--apply" in argv
+    try:
+        db = sqlite3.connect(DB, timeout=30)
+        rows = db.execute(f"SELECT id, created_at FROM messages WHERE {ISO} ORDER BY id").fetchall()
+        total = db.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
+    except sqlite3.Error as e:
+        print(f"land-4987-rows: cannot read {DB}: {e}", file=sys.stderr)
+        return 2
+    if not rows:
+        print(f"land-4987-rows: SAME — no ISO created_at in {DB} ({total} rows)")
+        return 0
+    try:
+        plan = [(rid, old, store_form(old)) for rid, old in rows]
+    except ValueError as e:
+        print(f"land-4987-rows: REFUSED — {e}", file=sys.stderr)
+        return 1
+    for rid, old, new in plan:
+        print(f"  row {rid}: {old} -> {new}")
+    if not apply:
+        print(f"land-4987-rows: DRY RUN — {len(plan)} of {total} rows would be rewritten (--apply to write)")
+        return 0
+    os.makedirs(BACKUPS, exist_ok=True)
+    backup = os.path.join(BACKUPS, f"messages-4987-{time.strftime('%Y%m%dT%H%M%S')}.db")
+    with sqlite3.connect(backup) as dst:
+        db.backup(dst)
+    print(f"  backup: {backup}")
+    try:
+        db.execute("BEGIN IMMEDIATE")
+        for rid, _old, new in plan:
+            db.execute("UPDATE messages SET created_at = ? WHERE id = ?", (new, rid))
+        left = db.execute(f"SELECT COUNT(*) FROM messages WHERE {ISO}").fetchone()[0]
+        after = db.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
+        moved = [r for r in plan if db.execute("SELECT created_at FROM messages WHERE id = ?", (r[0],)).fetchone()[0] != r[2]]
+        if left or after != total or moved:
+            db.execute("ROLLBACK")
+            print(f"land-4987-rows: PROOF FAILED — ISO left {left}, rows {total} -> {after}, unmatched {len(moved)}; rolled back", file=sys.stderr)
+            return 1
+        db.execute("COMMIT")
+    except sqlite3.Error as e:
+        try:
+            db.execute("ROLLBACK")
+        except sqlite3.Error:
+            pass
+        print(f"land-4987-rows: write failed, rolled back: {e}", file=sys.stderr)
+        return 1
+    print(f"land-4987-rows: DONE — {len(plan)} rows rewritten to the store's form; {total} rows, 0 ISO left")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

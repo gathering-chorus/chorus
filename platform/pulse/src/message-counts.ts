@@ -120,7 +120,7 @@ export function bostonDay(ms: number): string {
  *  those into "…ZZ", NaN, then "Invalid time value", so the daily messages reading went
  *  unmeasured. Both forms parse; anything else throws, naming the value. */
 export function pulseRowTime(createdAt: string): number {
-  const sql = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(\.\d+)?$/.test(createdAt);
+  const sql = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(createdAt) || /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+$/.test(createdAt);
   const t = Date.parse(sql ? createdAt.replace(' ', 'T') + 'Z' : createdAt);
   if (!sql && !/^\d{4}-\d{2}-\d{2}T.*(Z|[+-]\d{2}:?\d{2})$/.test(createdAt)) throw new Error(`created_at is neither SQL nor ISO with a zone: ${createdAt}`);
   if (Number.isNaN(t)) throw new Error(`created_at does not parse: ${createdAt}`);
