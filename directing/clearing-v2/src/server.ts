@@ -317,7 +317,7 @@ function registerReadApiRoutes(ctx: RouteContext): void {
   });
 
   // #4597 — Jeff 16:25: "i really need a streams menu option too". Each role's recent
-  // commands, read from the spine stream the old Clearing already serves; this only shows it.
+  // commands, from the generated streams route (#4766: pulse API, spine log); this only shows it.
   app.get('/api/streams', async (_req: Request, res: Response) => {
     res.json(await fetchStreams(ctx.streamUrl));
   });
