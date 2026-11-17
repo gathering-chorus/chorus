@@ -148,11 +148,11 @@ export function isTeamRole(r: { name?: string; roleKind?: string }): boolean {
 function deriveActivity(
   actionFact: ActionFact | undefined,
   nowMs: number,
-  lokiUnmeasured: boolean,
+  activityUnmeasured: boolean,
   hasSessions: boolean,
   hasUnmeasured: boolean
 ): ActivityValue {
-  if (lokiUnmeasured) return 'unmeasured';
+  if (activityUnmeasured) return 'unmeasured';
   if (!actionFact) return hasSessions ? 'idle' : (hasUnmeasured ? 'unmeasured' : 'idle');
 
   const lastActionMs = actionFact.lastActionAt ? new Date(actionFact.lastActionAt).getTime() : 0;
@@ -500,7 +500,7 @@ function deriveOneActor(
   input: ActorFactInput,
   actionMap: Map<string, ActionFact>,
   nowMs: number,
-  lokiUnmeasured: boolean,
+  activityUnmeasured: boolean,
   unmeasured: Array<{ source: string; reason: string }> | undefined,
   observedAt: string
 ): RoleStateResult {
@@ -512,7 +512,7 @@ function deriveOneActor(
   const activity = deriveActivity(
     actionFact,
     nowMs,
-    lokiUnmeasured,
+    activityUnmeasured,
     mySessions.length > 0,
     Boolean(unmeasured)
   );
@@ -582,10 +582,10 @@ export function deriveActorState(input: ActorFactInput): RoleStateResult[] {
   const actionMap = new Map<string, ActionFact>(Object.entries(input.actions ?? {}));
   const unmeasured = input.unmeasured && input.unmeasured.length > 0 ? input.unmeasured : undefined;
   // #4991 — activity comes from the domain routes (pulse:*); an unread route is unmeasured, never idle
-  const lokiUnmeasured = Boolean(unmeasured?.some((u) => u.source.includes('loki') || u.source.startsWith('pulse:')));
+  const activityUnmeasured = Boolean(unmeasured?.some((u) => u.source.includes('loki') || u.source === 'pulse:streams'));
 
   return input.principals.map((p) =>
-    deriveOneActor(p, input, actionMap, nowMs, lokiUnmeasured, unmeasured, observedAt)
+    deriveOneActor(p, input, actionMap, nowMs, activityUnmeasured, unmeasured, observedAt)
   );
 }
 
@@ -849,10 +849,14 @@ export function actionFactsFrom(rows: ActivityRow[], nowMs: number): Map<string,
 const text = (v: unknown): string => (typeof v === 'string' ? v : '');
 
 /** #4991 — one stream row as activity: a reply is not work (#4766), and a call still
- *  running is acting now, however long ago it started. */
+ *  running counts as now while it started within the last 30 minutes. */
 export function streamActivity(r: Record<string, unknown>, nowIso = new Date().toISOString()): ActivityRow | null {
   if (text(r.streamPhase) === 'reply') return null;
-  const ts = text(r.streamPhase) === 'running' ? nowIso : text(r.streamTs);
+  const start = text(r.streamTs);
+  // a call left running by a dead session must not read acting forever: running counts as
+  // now only while its start is inside the 30-minute window (demo review, round 2)
+  const fresh = Date.parse(nowIso) - Date.parse(start) < THIRTY_MINUTES_MS;
+  const ts = text(r.streamPhase) === 'running' && fresh ? nowIso : start;
   return { role: text(r.streamRole), ts, what: text(r.label) || text(r.streamTool) };
 }
 
@@ -860,10 +864,9 @@ export function streamActivity(r: Record<string, unknown>, nowIso = new Date().t
  *  role as both sender and recipient (11-17: 12 of the last 100 rows, every one an alert), so a
  *  message whose sender is also a recipient is not the sender acting: an alert to a sleeping
  *  role must never make it read "acting". Pure. */
-
 export function messageActivity(r: Record<string, unknown>): ActivityRow | null {
-  const by = text(r.sentBy);
-  const to = Array.isArray(r.sentTo) ? r.sentTo.map(text) : [text(r.sentTo)];
+  const by = text(r.sentBy).toLowerCase();
+  const to = (Array.isArray(r.sentTo) ? r.sentTo.map(text) : [text(r.sentTo)]).map((t) => t.toLowerCase());
   if (by && to.includes(by)) return null;
   const sender = text(r.senderName).toLowerCase();
   // the system's own senders are no principal (Abby, 11-17 07:57)

@@ -69,6 +69,7 @@ fn two_open_id_less_calls_of_one_tool_close_oldest_first() {
         act("2026-11-17T07:00:03", "abby-normal", "ended", "", ""),
     ].join("\n");
     let got: Vec<(String, String)> = spine_log::calls(&log).into_iter().map(|c| (c.what, c.phase)).collect();
-    assert!(got.contains(&("first".into(), "done".into())), "{got:?}");
-    assert!(got.contains(&("second".into(), "running".into())), "{got:?}");
+    let mut got = got;
+    got.sort();
+    assert_eq!(got, [("first".into(), "done".into()), ("second".into(), "running".into())]);
 }
