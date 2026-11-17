@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# @test-type: contract — ownership plan, SHACL/policy clean, dry-run/apply/idempotency, and #3734 negative proofs
+# @test-type: contract — ownership plan, MODEL_SET TTL + retirement sync, SHACL/policy clean, signed-in apply path, and #3734 negative proofs
 # @domain: metrics
 # @card: #4992
 # @owner: borg-queen
@@ -15,11 +15,14 @@ PV="$ROOT/platform/scripts/policy-validate"
 
 setup() { T="$BATS_TEST_TMPDIR"; }
 
-@test "ownership-4992.json declares shared-observability and the 5 Proving observability domains under principal-borg-queen" {
+@test "ownership-4992.json, MODEL_SET TTL files, and model-retirements.jsonl agree on principal-borg-queen for all Proving observability domains" {
   [ -f "$PLAN" ] || { echo "missing $PLAN"; return 1; }
-  run python3 - "$PLAN" <<'PY'
-import json, sys
-rows = json.load(open(sys.argv[1]))
+  run riot --validate "$ROOT/roles/wren/ontology/domains-wren-silas.ttl" "$ROOT/roles/silas/ontology/alerts-4085.ttl"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  run python3 - "$ROOT" "$PLAN" <<'PY'
+import json, os, re, sys
+root, plan_path = sys.argv[1], sys.argv[2]
+rows = json.load(open(plan_path))
 want = [
     ("code", "repository", "shared-observability", "urn:chorus:domains:code"),
     ("domains", "domain", "alerts", "urn:chorus:domains:domains"),
@@ -28,16 +31,41 @@ want = [
     ("domains", "domain", "metrics", "urn:chorus:domains:domains"),
     ("domains", "domain", "monitors", "urn:chorus:domains:domains"),
 ]
-got = sorted((r["domain"], r["kind"], r["name"], r["graph"]) for r in rows)
-assert got == sorted(want), f"unexpected targets: {got}"
+assert sorted((r["domain"], r["kind"], r["name"], r["graph"]) for r in rows) == sorted(want)
 for r in rows:
     assert r["ownedBy"] == "principal-borg-queen", r
-    assert r["iri"].startswith("https://jeffbridwell.com/chorus#"), r
+
+ttl_union = (
+    open(os.path.join(root, "roles/wren/ontology/domains-wren-silas.ttl")).read()
+    + "\n"
+    + open(os.path.join(root, "roles/silas/ontology/alerts-4085.ttl")).read()
+)
+for d in ("alerts", "heralds", "logs", "metrics", "monitors"):
+    m = re.search(rf"chorus:{d}\s+a\s+chorus:Domain\s*;(.*?)\n\s*\n", ttl_union, re.S)
+    assert m, f"missing Domain block for {d}"
+    block = m.group(1)
+    assert "chorus:ownedBy chorus:principal-borg-queen" in block, f"{d} not ownedBy borg-queen in TTL"
+    assert "chorus:ownedBy chorus:principal-silas" not in block, f"{d} still ownedBy silas in TTL"
+
+retire_lines = [json.loads(l) for l in open(os.path.join(root, "designing/schemas/model-retirements.jsonl")) if l.strip()]
+retired = {
+    (r.get("triple_subject"), r.get("triple_predicate"), r.get("triple_object"), r.get("graph"))
+    for r in retire_lines
+    if r.get("card") == "4992" and r.get("status") == "staged"
+}
+for d in ("alerts", "heralds", "logs", "metrics", "monitors"):
+    key = (
+        f"https://jeffbridwell.com/chorus#{d}",
+        "https://jeffbridwell.com/chorus#ownedBy",
+        "https://jeffbridwell.com/chorus#principal-silas",
+        "urn:chorus:domains:domains",
+    )
+    assert key in retired, f"missing staged triple retirement for {d}"
 PY
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
 
-@test "land-4992-rows --ttl emits valid RDF/SHACL Turtle naming principal-borg-queen on all 6 subjects, and policy-validate is clean" {
+@test "land-4992-rows --ttl emits valid SHACL Turtle naming principal-borg-queen on all 6 subjects, and policy-validate is clean" {
   run python3 "$LAND" --ttl "$T/ownership.ttl"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ -s "$T/ownership.ttl" ] || return 1
@@ -63,12 +91,11 @@ TTL
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [[ "$output" == *"sh:conforms  true"* || "$output" == *"sh:conforms true"* ]] || { echo "$output"; return 1; }
 
-  # Negative proof (#3734): a Role IRI or two owners violates SHACL
+  # Negative proof (#3734): a Role IRI violates Principal class constraint
   sed 's/c:principal-borg-queen/c:role-borg-queen/' "$T/ownership.ttl" > "$T/data-bad.ttl"
   run shacl validate --shapes "$T/owner-shape.ttl" --data "$T/data-bad.ttl"
   [[ "$output" == *"sh:conforms  false"* || "$output" == *"sh:conforms false"* ]] || { echo "$output"; return 1; }
 
-  # Policy validation over the repo's command policy checks stays at or below baseline
   python3 - "$ROOT" "$T/policies.json" <<'PY'
 import json, os, sys
 root, out_path = sys.argv[1], sys.argv[2]
@@ -117,7 +144,7 @@ JSON
   [[ "$output" == *"ownership: 0 change, 6 same"* ]] || { echo "$output"; return 1; }
 }
 
-@test "apply updates all 6 rows via governed athena-model apply and verifies readback" {
+@test "apply exercises the real signed-in token + fuseki-auth path, updates all 6 rows, and is idempotent on re-run" {
   cat > "$T/state.json" <<'JSON'
 {
   "https://jeffbridwell.com/chorus#repository-shared-observability": "principal-kade",
@@ -128,20 +155,30 @@ JSON
   "https://jeffbridwell.com/chorus#monitors": "principal-silas"
 }
 JSON
+  printf '#!/bin/sh\nexport ENV_SOURCED=yes\n' > "$T/chorus-env.sh"
+  printf '#!/bin/sh\nexport FUSEKI_SOURCED=yes\n' > "$T/fuseki-auth.sh"
+  cat > "$T/tok" <<'SH'
+#!/bin/sh
+echo "$1" >> "$TEST_TOK_LOG"
+printf 'jwt-for-%s\n' "$1"
+SH
+  chmod +x "$T/tok"
   cat > "$T/am" <<'PY'
 #!/usr/bin/env python3
 import json, os, sys
 state_file = os.environ["TEST_STATE_JSON"]
 args = sys.argv[1:]
 stdin = sys.stdin.read()
+assert os.environ.get("CHORUS_IDENTITY_TOKEN") == "jwt-for-borg-queen", os.environ.get("CHORUS_IDENTITY_TOKEN")
+assert os.environ.get("ENV_SOURCED") == "yes", "CHORUS_ENV_SH was not sourced"
+assert os.environ.get("FUSEKI_SOURCED") == "yes", "FUSEKI_AUTH_SH was not sourced"
 with open(os.environ["TEST_AM_LOG"], "a") as fh:
     fh.write(json.dumps({"args": args, "stdin": stdin}) + "\n")
 assert args[0] == "apply", args
 kind = args[args.index("--kind") + 1]
 name = args[args.index("--name") + 1]
 iri = f"https://jeffbridwell.com/chorus#{name}" if kind == "domain" else f"https://jeffbridwell.com/chorus#{kind}-{name}"
-assert f'"{iri}"' not in stdin and f'"<{iri}>"' in stdin, stdin
-assert '["ownedBy","principal","borg-queen"]' in stdin.replace(" ", ""), stdin
+assert f'"<{iri}>"' in stdin and '["ownedBy","principal","borg-queen"]' in stdin.replace(" ", ""), stdin
 st = json.load(open(state_file))
 st[iri] = "principal-borg-queen"
 json.dump(st, open(state_file, "w"))
@@ -155,16 +192,27 @@ PY
   printf 'init\n' > "$T/obs/README.md"
   git -C "$T/obs" add README.md && git -C "$T/obs" commit -qm init
 
-  TEST_STATE_JSON="$T/state.json" TEST_AM_LOG="$T/am.jsonl" \
+  DEPLOY_ROLE="borg-queen" TEST_STATE_JSON="$T/state.json" TEST_AM_LOG="$T/am.jsonl" TEST_TOK_LOG="$T/tok.log" \
     LAND_LIVE_OWNERS_JSON="$T/state.json" ATHENA_MODEL_BIN="$T/am" \
-    OBS_REPO="$T/obs" OBS_GROUP="$(id -gn)" CHORUS_HOME="$ROOT" \
+    CHORUS_ENV_SH="$T/chorus-env.sh" FUSEKI_AUTH_SH="$T/fuseki-auth.sh" IDENTITY_TOKEN_BIN="$T/tok" \
+    OBS_REPO="$T/obs" OBS_GROUP="$(id -gn)" \
     run python3 "$LAND" --apply
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(cat "$T/tok.log")" = "borg-queen" ] || { cat "$T/tok.log"; return 1; }
   [ "$(wc -l < "$T/am.jsonl" | tr -d ' ')" -eq 6 ] || { cat "$T/am.jsonl"; return 1; }
   [[ "$output" == *"ownership verified: 6/6 ownedBy principal-borg-queen"* ]] || { echo "$output"; return 1; }
+
+  # Second --apply run over already-applied state is an idempotent no-op (0 new DAL writes)
+  DEPLOY_ROLE="borg-queen" TEST_STATE_JSON="$T/state.json" TEST_AM_LOG="$T/am.jsonl" TEST_TOK_LOG="$T/tok.log" \
+    LAND_LIVE_OWNERS_JSON="$T/state.json" ATHENA_MODEL_BIN="$T/am" \
+    CHORUS_ENV_SH="$T/chorus-env.sh" FUSEKI_AUTH_SH="$T/fuseki-auth.sh" IDENTITY_TOKEN_BIN="$T/tok" \
+    OBS_REPO="$T/obs" OBS_GROUP="$(id -gn)" \
+    run python3 "$LAND" --apply
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(wc -l < "$T/am.jsonl" | tr -d ' ')" -eq 6 ] || { echo "expected 0 new DAL writes on idempotent rerun"; return 1; }
 }
 
-@test "negative proof (#3734): a refused or silent-noop athena-model apply makes land-4992-rows exit 1" {
+@test "negative proof (#3734): failed token mint, refused apply, or silent-noop apply makes land-4992-rows exit 1" {
   cat > "$T/state.json" <<'JSON'
 {
   "https://jeffbridwell.com/chorus#repository-shared-observability": "principal-kade",
@@ -175,20 +223,35 @@ PY
   "https://jeffbridwell.com/chorus#monitors": "principal-silas"
 }
 JSON
-  # Case A: athena-model refuses (SHACL / authz violation)
-  printf '#!/bin/sh\necho "shacl-violation: minCount" >&2\nexit 1\n' > "$T/am-fail"; chmod +x "$T/am-fail"
   mkdir -p "$T/obs/scripts" "$T/obs/data/textfile_collector"
   git -C "$T/obs" init -q && git -C "$T/obs" -c user.name=t -c user.email=t@t commit --allow-empty -qm init
-  LAND_LIVE_OWNERS_JSON="$T/state.json" ATHENA_MODEL_BIN="$T/am-fail" \
-    OBS_REPO="$T/obs" OBS_GROUP="$(id -gn)" CHORUS_HOME="$ROOT" \
+  printf '#!/bin/sh\n:\n' > "$T/fuseki-noop.sh"
+
+  # Case A: chorus-identity-token refuses (e.g. exit 6 wrong hostAccount) -> athena-model never runs
+  printf '#!/bin/sh\necho "refused — hostAccount mismatch" >&2\nexit 6\n' > "$T/tok-fail"; chmod +x "$T/tok-fail"
+  printf '#!/bin/sh\necho "ran" > "%s/ran"\nexit 0\n' "$T" > "$T/am-spy"; chmod +x "$T/am-spy"
+  LAND_LIVE_OWNERS_JSON="$T/state.json" IDENTITY_TOKEN_BIN="$T/tok-fail" FUSEKI_AUTH_SH="$T/fuseki-noop.sh" \
+    ATHENA_MODEL_BIN="$T/am-spy" OBS_REPO="$T/obs" OBS_GROUP="$(id -gn)" \
+    run python3 "$LAND" --apply
+  [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+  [[ "$output" == *"REFUSED token mint"* ]] || { echo "$output"; return 1; }
+  [ ! -f "$T/ran" ] || { echo "athena-model ran despite failed token mint!"; return 1; }
+
+  # Case B: athena-model refuses (SHACL / authz violation)
+  printf '#!/bin/sh\nprintf "jwt-ok\\n"\n' > "$T/tok-ok"; chmod +x "$T/tok-ok"
+  printf '#!/bin/sh\necho "shacl-violation: minCount" >&2\nexit 1\n' > "$T/am-fail"; chmod +x "$T/am-fail"
+  LAND_LIVE_OWNERS_JSON="$T/state.json" IDENTITY_TOKEN_BIN="$T/tok-ok" \
+    CHORUS_ENV_SH="$T/fuseki-noop.sh" FUSEKI_AUTH_SH="$T/fuseki-noop.sh" \
+    ATHENA_MODEL_BIN="$T/am-fail" OBS_REPO="$T/obs" OBS_GROUP="$(id -gn)" \
     run python3 "$LAND" --apply
   [ "$status" -eq 1 ] || { echo "$output"; return 1; }
   [[ "$output" == *"REFUSED"* ]] || { echo "$output"; return 1; }
 
-  # Case B: athena-model exits 0 without actually changing ownedBy (silent no-op mutant)
+  # Case C: athena-model exits 0 without changing ownedBy (silent no-op mutant)
   printf '#!/bin/sh\necho "ok"\nexit 0\n' > "$T/am-noop"; chmod +x "$T/am-noop"
-  LAND_LIVE_OWNERS_JSON="$T/state.json" ATHENA_MODEL_BIN="$T/am-noop" \
-    OBS_REPO="$T/obs" OBS_GROUP="$(id -gn)" CHORUS_HOME="$ROOT" \
+  LAND_LIVE_OWNERS_JSON="$T/state.json" IDENTITY_TOKEN_BIN="$T/tok-ok" \
+    CHORUS_ENV_SH="$T/fuseki-noop.sh" FUSEKI_AUTH_SH="$T/fuseki-noop.sh" \
+    ATHENA_MODEL_BIN="$T/am-noop" OBS_REPO="$T/obs" OBS_GROUP="$(id -gn)" \
     run python3 "$LAND" --apply
   [ "$status" -eq 1 ] || { echo "$output"; return 1; }
   [[ "$output" == *"readback mismatch"* ]] || { echo "$output"; return 1; }

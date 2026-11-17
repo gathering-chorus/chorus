@@ -3,20 +3,25 @@
 grant chorus group write on shared-observability, and wire the canonical process-memory-exporter.
 # @domain: metrics
 
-Order (matching #4983 / #4984 fail-closed land discipline):
-  1. Pre-flight: canonical proving/scripts/process-memory-exporter.sh exists, OBS_REPO is owned by
-     RUN_UID (wrong-owner refusal exit 2), and OBS_REPO/scripts/process-memory-exporter.sh has no
-     uncommitted tracked edits (refusal exit 2).
-  2. AC1: apply the 6 Athena ownedBy -> principal-borg-queen transfers from
-     designing/domains/metrics/ownership-4992.json via governed `athena-model apply` (one SHACL-gated
-     update per row), then verify readback shows all 6 ownedBy principal-borg-queen.
-  3. AC2: chgrp -R chorus on OBS_REPO + grant group rwX and directory setgid (g+s) so future files
-     inherit group chorus without touching read-only git packfiles.
-  4. AC3: replace untracked OBS_REPO/scripts/process-memory-exporter.sh with a tracked relative
-     symlink to chorus/proving/scripts/process-memory-exporter.sh, commit ONLY that path in OBS_REPO,
-     and execute it once to verify process_memory.prom writes disaggregated workload + load series.
+Order and idempotency contract (Silas review 2026-11-17 11:32):
+  Every step is idempotent on re-run, because cross-system mutations (Fuseki store + host POSIX
+  permissions + shared-observability git symlink) cannot share one rollback transaction:
+  1. Pre-flight (before any store or filesystem write): canonical exporter exists and is executable,
+     OBS_REPO belongs to RUN_UID (wrong-owner refusal exit 2), and OBS_REPO/scripts/process-memory-exporter.sh
+     has no uncommitted tracked edits (refusal exit 2).
+  2. AC1 (idempotent per row): apply any remaining Athena ownedBy -> principal-borg-queen transfers
+     from designing/domains/metrics/ownership-4992.json via governed `athena-model apply` (rows
+     already updated by model-before-rows or a prior run read as SAME and are skipped), signing in
+     via chorus-identity-token as LAND_SIGNER (defaulting to DEPLOY_ROLE / CHORUS_ROLE / borg-queen,
+     the card's role minted by chorus-runner in cicd-land per #4960), then verify readback shows all
+     6 ownedBy principal-borg-queen.
+  3. AC2 (idempotent): chgrp -R chorus on OBS_REPO + grant group rwX and directory setgid (g+s)
+     only where mode bits differ, preserving read-only git object/pack files.
+  4. AC3 (idempotent): point OBS_REPO/scripts/process-memory-exporter.sh at
+     chorus/proving/scripts/process-memory-exporter.sh, commit ONLY that path if staged diff is
+     non-empty, and execute it once to verify process_memory.prom writes disaggregated workload + load series.
 DRY RUN unless --apply. --ttl <path> writes planned ownership triples as Turtle for validation.
-Exit 0 = plan printed (or applied); 1 = a write/chgrp/exporter check failed; 2 = pre-flight refused.
+Exit 0 = plan printed (or applied); 1 = a token/write/chgrp/exporter check failed; 2 = pre-flight refused.
 """
 import json
 import os
@@ -36,6 +41,15 @@ OBS_GROUP = os.environ.get("OBS_GROUP", "chorus")
 CHGRP = os.environ.get("CHGRP_BIN", "chgrp")
 API = os.environ.get("CHORUS_API_URL", "http://localhost:3340")
 AM = os.environ.get("ATHENA_MODEL_BIN", "athena-model")
+CHORUS_ENV_SH = os.environ.get("CHORUS_ENV_SH", os.path.join(ROOT, "platform/scripts/chorus-env-setup.sh"))
+FUSEKI_AUTH_SH = os.environ.get("FUSEKI_AUTH_SH", os.path.join(ROOT, "platform/scripts/fuseki-auth.sh"))
+IDENTITY_TOKEN_BIN = os.environ.get("IDENTITY_TOKEN_BIN", os.path.join(ROOT, "platform/scripts/chorus-identity-token"))
+LAND_SIGNER = (
+    os.environ.get("LAND_SIGNER")
+    or os.environ.get("DEPLOY_ROLE")
+    or os.environ.get("CHORUS_ROLE")
+    or "borg-queen"
+)
 RUN_UID = int(os.environ.get("LAND_AS_UID", os.getuid()))
 REL_EXP = "scripts/process-memory-exporter.sh"
 
@@ -87,7 +101,19 @@ def load_live_owners():
     return owners
 
 
-def apply_owner_row(row):
+def mint_land_token():
+    """Mint a verified CSS token via IDENTITY_TOKEN_BIN (one code path in prod and tests)."""
+    r = subprocess.run([IDENTITY_TOKEN_BIN, LAND_SIGNER], capture_output=True, text=True, timeout=30)
+    tok = r.stdout.strip()
+    if r.returncode != 0 or not tok:
+        detail = (r.stderr or r.stdout).strip() or f"exit {r.returncode}"
+        print(f"land-4992-rows: REFUSED token mint for '{LAND_SIGNER}': {detail}", file=sys.stderr)
+        return None
+    return tok
+
+
+def apply_owner_row(row, token):
+    """Single governed execution path: source CHORUS_ENV_SH + FUSEKI_AUTH_SH, set verified token, exec AM."""
     iri = row["iri"]
     target_local = row["ownedBy"].removeprefix("principal-")
     ndjson = (
@@ -96,19 +122,20 @@ def apply_owner_row(row):
         + json.dumps({"link": [["ownedBy", "principal", target_local]]})
         + "\n"
     )
-    fuseki_sh = os.path.join(ROOT, "platform/scripts/fuseki-auth.sh")
-    tok_bin = os.path.join(ROOT, "platform/scripts/chorus-identity-token")
-    if os.environ.get("LAND_LIVE_OWNERS_JSON"):
-        cmd = [AM, "apply", "--kind", row["kind"], "--name", row["name"], "--graph", row["graph"]]
-        r = subprocess.run(cmd, input=ndjson, text=True, capture_output=True, timeout=60)
-    else:
-        sh = (
-            f'[ -f "{fuseki_sh}" ] && . "{fuseki_sh}"; '
-            f'if [ -z "${{CHORUS_IDENTITY_TOKEN:-}}" ] && [ -x "{tok_bin}" ]; then '
-            f'export CHORUS_IDENTITY_TOKEN="$("{tok_bin}" borg-queen)"; fi; '
-            f'exec "{AM}" apply --kind "{row["kind"]}" --name "{row["name"]}" --graph "{row["graph"]}"'
-        )
-        r = subprocess.run(["/bin/bash", "-c", sh], input=ndjson, text=True, capture_output=True, timeout=60)
+    env = os.environ.copy()
+    env["CHORUS_LAND_TOKEN"] = token
+    sh = (
+        'set -euo pipefail; '
+        'env_sh="$1"; auth_sh="$2"; shift 2; '
+        'if [ -f "$env_sh" ]; then . "$env_sh"; fi; '
+        'if [ -f "$auth_sh" ]; then . "$auth_sh"; fi; '
+        'export CHORUS_IDENTITY_TOKEN="$CHORUS_LAND_TOKEN"; '
+        'unset CHORUS_LAND_TOKEN; '
+        'exec "$@"'
+    )
+    argv = ["/bin/bash", "-c", sh, "land-4992-rows", CHORUS_ENV_SH, FUSEKI_AUTH_SH, AM, "apply",
+            "--kind", row["kind"], "--name", row["name"], "--graph", row["graph"]]
+    r = subprocess.run(argv, input=ndjson, env=env, text=True, capture_output=True, timeout=60)
     if r.returncode != 0:
         detail = (r.stderr or r.stdout).strip().splitlines()[-3:]
         print(f"  REFUSED {row['kind']}:{row['name']}: {' | '.join(detail)}", file=sys.stderr)
@@ -155,7 +182,7 @@ def grant_group_write():
         print(f"land-4992-rows: chgrp -R {OBS_GROUP} {OBS} failed: {(r.stderr or r.stdout).strip()}", file=sys.stderr)
         return False
     try:
-        for dirpath, dirnames, filenames in os.walk(OBS):
+        for dirpath, _dirnames, filenames in os.walk(OBS):
             if not os.path.islink(dirpath):
                 dmode = stat.S_IMODE(os.stat(dirpath).st_mode)
                 want_d = dmode | stat.S_IRGRP | stat.S_IWGRP | stat.S_IXGRP | stat.S_ISGID
@@ -166,7 +193,6 @@ def grant_group_write():
                 if os.path.islink(fp):
                     continue
                 fmode = stat.S_IMODE(os.stat(fp).st_mode)
-                # Preserve read-only git object/pack files (where owner lacks write)
                 if not (fmode & stat.S_IWUSR):
                     continue
                 want_f = fmode | stat.S_IRGRP | stat.S_IWGRP
@@ -185,10 +211,7 @@ def install_and_prove_exporter():
     os.makedirs(scripts_dir, exist_ok=True)
     dst = os.path.join(OBS, REL_EXP)
     rel_target = os.path.relpath(os.path.realpath(CANON_EXP), os.path.realpath(scripts_dir))
-    need_link = True
-    if os.path.islink(dst) and os.readlink(dst) == rel_target:
-        need_link = False
-    if need_link:
+    if not (os.path.islink(dst) and os.readlink(dst) == rel_target):
         if os.path.lexists(dst):
             os.unlink(dst)
         os.symlink(rel_target, dst)
@@ -264,7 +287,7 @@ def main(argv):
 
     if not apply_mode:
         print(
-            f"plan: ownership: {len(to_change)} change, {same_cnt} same; "
+            f"plan: ownership: {len(to_change)} change, {same_cnt} same (signer={LAND_SIGNER}); "
             f"grant group {OBS_GROUP} write+setgid on {OBS}; "
             f"symlink {OBS}/{REL_EXP} -> {CANON_EXP} (dry run)"
         )
@@ -274,11 +297,15 @@ def main(argv):
     if pf != 0:
         return pf
 
-    failed_rows = [r for r in to_change if not apply_owner_row(r)]
-    if failed_rows:
-        names = ", ".join(f"{r['kind']}:{r['name']}" for r in failed_rows)
-        print(f"land-4992-rows: REFUSED {len(failed_rows)} ownership update(s): {names}", file=sys.stderr)
-        return 1
+    if to_change:
+        tok = mint_land_token()
+        if not tok:
+            return 1
+        failed_rows = [r for r in to_change if not apply_owner_row(r, tok)]
+        if failed_rows:
+            names = ", ".join(f"{r['kind']}:{r['name']}" for r in failed_rows)
+            print(f"land-4992-rows: REFUSED {len(failed_rows)} ownership update(s): {names}", file=sys.stderr)
+            return 1
 
     after = load_live_owners()
     mismatched = [
