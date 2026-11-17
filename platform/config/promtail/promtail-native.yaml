@@ -47,16 +47,11 @@ scrape_configs:
       - output:
           source: content
 
-  # chorus #4474 — dagu run and step logs (one dir per DAG/run, so the glob
-  # recurses). Kept out of chorus-daemon-logs: that job's *.log is top-level
-  # only, and dagu's own process log (~/Library/Logs/Chorus/dagu.log) stays there.
-  - job_name: chorus-dagu
-    static_configs:
-      - targets:
-          - localhost
-        labels:
-          job: dagu
-          __path__: /Users/jeffbridwell/Library/Logs/Chorus/dagu/**/*.{log,out,err}
+  # #4994 (Jeff 17:25 via Wren): dagu's run and step logs are NOT tailed. Jeff wants to use
+  # dagu more, so its run count must never drive promtail's load (9,295 files held open on
+  # 11-17). The logs stay on disk under ~/Library/Logs/Chorus/dagu (log-archive moves runs
+  # older than 3 days); step results reach the spine. Nothing queried job="dagu" in Loki.
+  # dagu's own process log (~/Library/Logs/Chorus/dagu.log) is still tailed by daemon-logs.
 
   # All Gathering daemon logs
   # __path_exclude__ prevents duplicates with dedicated scrape jobs (#1986)

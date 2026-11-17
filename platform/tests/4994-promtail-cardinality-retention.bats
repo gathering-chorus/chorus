@@ -49,3 +49,23 @@ sys.exit(la.ops_logs(2, True))
 PY
   [ "$status" -eq 1 ] && [[ "$output" == *"LOG-ARCHIVE FAILED"*"not proven"* ]] || { echo "$output"; return 1; }
 }
+
+# Jeff 17:25 (via Wren): dagu's run count must not drive promtail's load, so its step logs are
+# never tailed; dagu's own process log still is.
+promtail_home() { dirname "$(dirname "$(plutil -extract ProgramArguments.0 raw "$ROOT/platform/scripts/launchagents-canonical/com.gathering.promtail.plist")")"; }
+ROUTES_4336() { ruby "$ROOT/platform/tests/fixtures/4336/promtail-routes.rb" "$@"; }
+
+@test "AC3: no promtail target tails a dagu run or step log; dagu.log itself is still tailed" {
+  h="$(promtail_home)"; cfg="$ROOT/platform/config/promtail/promtail-native.yaml"
+  for f in "$h/Library/Logs/Chorus/dagu/cicd/dag-run_20261117_215954Z_x/step.log" "$h/Library/Logs/Chorus/dagu/run_20261114_080409Z_991413/a.out"; do
+    out="$(ROUTES_4336 "$cfg" "$f")"
+    [ -z "$out" ] || { echo "$f tailed by: $out"; return 1; }
+  done
+  [ -n "$(ROUTES_4336 "$cfg" "$h/Library/Logs/Chorus/dagu.log")" ] || { echo "dagu.log is no longer tailed"; return 1; }
+}
+
+@test "AC3 NEGATIVE PROOF: the old recursive dagu target is named as tailing a step log" {
+  h="$(promtail_home)"
+  printf 'scrape_configs:\n  - job_name: chorus-dagu\n    static_configs: [{ labels: { job: dagu, __path__: "%s/Library/Logs/Chorus/dagu/**/*.{log,out,err}" } }]\n' "$h" > "$BATS_TEST_TMPDIR/old.yaml"
+  [ "$(ROUTES_4336 "$BATS_TEST_TMPDIR/old.yaml" "$h/Library/Logs/Chorus/dagu/cicd/dag-run_x/step.log")" = "dagu" ]
+}
