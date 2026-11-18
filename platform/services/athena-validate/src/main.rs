@@ -146,6 +146,7 @@ fn main() {
     };
     let mut known = 0usize;
     let mut keys: Vec<String> = Vec::new();
+    let known_issues = parse_known_issues(KNOWN_ISSUES_TSV);
     // #4515 — `migration`: the V1→V2 per-domain stage matrix (was the MCP tool
     // chorus_migration_readout). Its own report, not the sweep.
     if args.get(1).map(String::as_str) == Some("migration") {
@@ -236,6 +237,10 @@ fn main() {
     }
     for check in store_checks {
         let (verdict, findings) = store::run(check);
+        // #5002 — a finding the card names as known (owner-rule-missing: subject is the class)
+        let named = findings.iter().filter(|f| known_issue(&known_issues, &f.check, &f.subject, &f.subject)).count();
+        let findings: Vec<_> = findings.into_iter().filter(|f| !known_issue(&known_issues, &f.check, &f.subject, &f.subject)).collect();
+        known += named;
         let found: Vec<String> = findings.iter().map(|f| format!("{}|{}|{}", f.check, f.subject, f.detail)).collect();
         let (fresh, old_ones) = split_by_baseline(&found, baseline.as_ref());
         known += old_ones;
@@ -269,6 +274,10 @@ fn main() {
         Ok(served) => {
             for s in &served {
                 let (verdict, findings) = door::check_collection(&s.collection);
+                // #5002 — rows the card's AC3 names (old IRI prefixes, dotted names), by class and name
+                let named = findings.iter().filter(|f| known_issue(&known_issues, &f.check, &s.kind, &f.subject)).count();
+                let findings: Vec<_> = findings.into_iter().filter(|f| !known_issue(&known_issues, &f.check, &s.kind, &f.subject)).collect();
+                known += named;
                 let found: Vec<String> = findings.iter().map(|f| format!("{}|{}|{}", f.check, f.subject, f.detail)).collect();
                 let (fresh, old_ones) = split_by_baseline(&found, baseline.as_ref());
                 known += old_ones;
@@ -355,6 +364,33 @@ fn main() {
 /// #4536 — the issues a run reports as its own: those whose key is not in
 /// prod's baseline. Returns (new keys, count already in the baseline). With no
 /// baseline every issue is new — the old sweep-wide behaviour.
+/// #5002 (Silas 11:16) — the issues a card names as known, from designing/schemas/known-issues-*.tsv:
+/// `check<TAB>class<TAB>rule<TAB>rows<TAB>reason`. A finding is known when its check and class match a
+/// line and its subject (the row's name; for owner-rule-missing the class itself) fits the rule:
+/// `prefix:X`, `contains:X`, `exact:X`, `any`, `uppercase-first`. An unknown rule never matches.
+pub fn known_issue(lines: &[(String, String, String)], check: &str, class: &str, subject: &str) -> bool {
+    lines.iter().any(|(c, k, rule)| c == check && k == class && match rule.split_once(':') {
+        Some(("prefix", x)) => subject.starts_with(x),
+        Some(("contains", x)) => subject.contains(x),
+        Some(("exact", x)) => subject == x,
+        None if rule == "any" => true,
+        None if rule == "uppercase-first" => subject.chars().next().is_some_and(|c| c.is_ascii_uppercase()),
+        _ => false,
+    })
+}
+
+/// The known issues, compiled in from the source tree the binary is built from: a card's slot
+/// binary carries its card's lines, the installed one carries main's. No path is looked up at run
+/// time, so a run from any directory reads the same list.
+pub const KNOWN_ISSUES_TSV: &str = include_str!("../../../../designing/schemas/validator-known-issues.tsv");
+
+pub fn parse_known_issues(tsv: &str) -> Vec<(String, String, String)> {
+    tsv.lines()
+        .filter(|l| !l.starts_with('#') && !l.trim().is_empty())
+        .filter_map(|l| { let f: Vec<&str> = l.split('\t').collect(); (f.len() >= 3).then(|| (f[0].to_string(), f[1].to_string(), f[2].to_string())) })
+        .collect()
+}
+
 fn split_by_baseline(found: &[String], baseline: Option<&std::collections::HashSet<String>>) -> (Vec<String>, usize) {
     match baseline {
         None => (found.to_vec(), 0),
@@ -445,5 +481,48 @@ mod args_4536 {
     fn a_flag_value_is_read_and_a_missing_one_is_none() {
         assert_eq!(flag_value(&v(&["x", "--baseline", "/tmp/b"]), "--baseline"), Some("/tmp/b".to_string()));
         assert_eq!(flag_value(&v(&["x", "--baseline", "--staging"]), "--baseline"), None);
+    }
+}
+
+#[cfg(test)]
+mod known_issues_5002 {
+    use super::*;
+
+    fn lines() -> Vec<(String, String, String)> {
+        parse_known_issues("# c\nrow-not-found-at-the-door\tAppointment\tprefix:appt-\t244\tx\nrow-not-found-at-the-door\tGate\tuppercase-first\t4\tx\nrow-not-found-at-the-door\tUnitDomainMapping\tcontains:.\t77\tx\nrow-not-found-at-the-door\tEmitContract\texact:werk-emit-contract\t1\tx\nowner-rule-missing\tClass\tany\t1\tx\nrow-not-found-at-the-door\tCard\tregex:.*\t1\tx\n")
+    }
+
+    /// #5002 (Silas 11:16) — a finding the card names is known; anything outside stays red.
+    #[test]
+    fn a_named_finding_is_known_and_one_outside_is_not() {
+        let k = lines();
+        assert!(known_issue(&k, "row-not-found-at-the-door", "Appointment", "appt-alerts-engineering-lead"));
+        assert!(known_issue(&k, "row-not-found-at-the-door", "Gate", "DesignGate"));
+        assert!(known_issue(&k, "row-not-found-at-the-door", "UnitDomainMapping", "unitdomain-com.chorus.x"));
+        assert!(known_issue(&k, "row-not-found-at-the-door", "EmitContract", "werk-emit-contract"));
+        assert!(known_issue(&k, "owner-rule-missing", "Class", "Class"));
+        // NEGATIVE PROOFS: right class, wrong name; right name, wrong class; wrong check; unknown rule
+        assert!(!known_issue(&k, "row-not-found-at-the-door", "Appointment", "appointment-new"));
+        assert!(!known_issue(&k, "row-not-found-at-the-door", "EventType", "appt-x"));
+        assert!(!known_issue(&k, "owner-rule-missing", "Appointment", "Appointment"));
+        assert!(!known_issue(&k, "row-not-found-at-the-door", "EmitContract", "werk-emit-contract-2"));
+        assert!(!known_issue(&k, "row-not-found-at-the-door", "Gate", "designGate"));
+        assert!(!known_issue(&k, "row-not-found-at-the-door", "Card", "anything"), "an unknown rule never matches");
+    }
+
+    /// The compiled-in file reads, every line uses a rule the matcher knows, and it names AC1's
+    /// remainder and AC3's groups.
+    #[test]
+    fn the_compiled_list_is_well_formed() {
+        let k = parse_known_issues(KNOWN_ISSUES_TSV);
+        assert!(k.len() >= 24, "{} lines", k.len());
+        for (c, class, rule) in &k {
+            let ok = rule == "any" || rule == "uppercase-first"
+                || ["prefix:", "contains:", "exact:"].iter().any(|p| rule.starts_with(p) && rule.len() > p.len());
+            assert!(ok, "{c} {class}: rule {rule:?} is not one the matcher knows");
+        }
+        for class in ["Class", "ConceptScheme"] {
+            assert!(k.iter().any(|(c, k2, _)| c == "owner-rule-missing" && k2 == class), "{class} remainder");
+        }
     }
 }

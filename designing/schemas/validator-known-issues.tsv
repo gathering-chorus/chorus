@@ -1,0 +1,30 @@
+# validator-known-issues.tsv — issues a card names as known, with their reason (first: #5002); athena-validate compiles this file in, counts them as known and stays red on anything outside (Silas 11:16).
+# The AC3 ratchet (platform/tests/no-ownerless-rows-live.bats) reads the same file.
+# Measured 2026-11-18 11:00 (Wren + Silas): rows stored under an older IRI prefix, or a name the
+# door's name rule refuses, are listed by the door and 404/400 by name. Fix: its own card (Jeff's ok).
+# check	class	rule	rows	reason
+row-not-found-at-the-door	Version	prefix:revision-	16186	old prefix revision- (door reads version-<name>)
+row-not-found-at-the-door	ChunkMembership	prefix:chunkmembership-	490	old prefix chunkmembership- (door slug chunk-membership-)
+row-not-found-at-the-door	EventType	prefix:eventtype-	467	old prefix eventtype- (door slug event-type-)
+row-not-found-at-the-door	Appointment	prefix:appt-	244	old prefix appt- (door slug appointment-)
+row-not-found-at-the-door	UnitDomainMapping	contains:.	77	dotted names the door's name rule refuses (400)
+row-not-found-at-the-door	UnitDomainMapping	prefix:unitdomain-	10	old prefix unitdomain-
+row-not-found-at-the-door	APISurface	prefix:surface-	21	old prefix surface- (door slug a-p-i-surface-)
+row-not-found-at-the-door	APISurface	prefix:api-	1	old prefix api-
+row-not-found-at-the-door	APISurface	prefix:a-	1	old prefix a-
+row-not-found-at-the-door	CardAC	prefix:card-a-c-	9	old prefix card-a-c-
+row-not-found-at-the-door	Property	prefix:prop-	8	old prefix prop-
+row-not-found-at-the-door	PropertyKey	prefix:pk-	6	old prefix pk- (camelCase names)
+row-not-found-at-the-door	AgentRole	any	6	owl:deprecated class (use roleKind); its rows are not migrated
+row-not-found-at-the-door	HumanRole	any	2	owl:deprecated class (use roleKind); its rows are not migrated
+row-not-found-at-the-door	Value	prefix:xp-	5	old prefix xp-
+row-not-found-at-the-door	Gate	uppercase-first	4	CamelCase names (BuildGate, DesignGate, DirectionGate, ProvingGate)
+row-not-found-at-the-door	ADR	prefix:a-d-r-	4	old prefix a-d-r-
+row-not-found-at-the-door	Service	prefix:logs-domain-service-	1	old logs-domain naming
+row-not-found-at-the-door	Pipeline	prefix:logs-domain-pipeline-	1	old logs-domain naming
+row-not-found-at-the-door	EmitContract	exact:werk-emit-contract	1	stored without the emit-contract- slug
+# #5002 AC1 remainder: stray owners on model terms, and the deprecated role classes
+owner-rule-missing	Class	any	1	owl:Class carries a stray ownedBy (a model term, not an instance shape)
+owner-rule-missing	ConceptScheme	any	3	skos:ConceptScheme carries stray ownedBy (a model term)
+owner-rule-missing	AgentRole	any	6	owl:deprecated class (use roleKind)
+owner-rule-missing	HumanRole	any	2	owl:deprecated class (use roleKind)
