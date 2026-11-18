@@ -170,6 +170,24 @@ for l in sys.stdin:
   fi
 fi
 
+# #4997 AC2 — the Chorus sign-in, as the role's own last login recorded it (chorus-principal
+# writes <home>/.chorus/identity/<role>/login.json). Refused or pending is FAIL with the reason;
+# no file is FAIL (unmeasured), never a pass. 11-09: every role read green while logins were refused.
+signin="${POST_SIGNIN_FILE:-$home/.chorus/identity/$role/login.json}"
+if [ ! -r "$signin" ]; then
+  fail "signin: unmeasured — no readable Chorus login at $signin"
+else
+  read -r st why < <(python3 -c 'import json,sys
+d=json.load(open(sys.argv[1]))
+print(d.get("state","unknown"), d.get("why",""))' "$signin" 2>/dev/null || echo "unreadable")
+  case "$st" in
+    recorded) ok "signin: Chorus login recorded" ;;
+    refused) fail "signin: Chorus login refused — ${why:-no reason recorded}" ;;
+    pending) fail "signin: Chorus login pending — ${why:-no reason recorded}" ;;
+    *) fail "signin: Chorus login state '${st:-unreadable}' at $signin" ;;
+  esac
+fi
+
 # reachable
 if sh -c "$reach_cmd" >/dev/null 2>&1; then ok "reach: chorus reachable"
 else fail "reach: chorus not reachable"; fi
