@@ -74,16 +74,17 @@ file_lacks() { ! grep -q -- "$2" "$1"; }
   file_lacks "$T/tmux.log" "eyJhbGciOiJFUzI1NiJ9"
 }
 
-@test "the login is recorded as a Session row through the security API, owned by the principal" {
-  # #4933 (MOVE): the role's own establish records it, as the role's account
+@test "the login asks the door, which records the Session row; the caller never names its owner" {
+  # #4517 AC6 — the door writes the row (owner = the verified login, startedBy the door)
   est kade
   run "$SCRIPT" establish kade
   [ "$status" -eq 0 ]
-  file_has "$T/curl.log" "http://stub:1/v1/identity/sessions"
-  file_has "$T/curl.body" '"ownedBy":"principal-kade"'
-  file_has "$T/curl.body" '"tokenId":"jti-kade-0001"'
-  file_has "$T/curl.body" '"sessionState":"open"'
+  file_has "$T/curl.log" "http://stub:1/v1/identity/logins"
+  file_has "$T/curl.body" '"actsAs":"role-kade"'
+  file_has "$T/curl.body" '"channel":"pane"'
   file_has "$T/curl.body" "\"hostAccount\":\"$(id -un)\""
+  file_lacks "$T/curl.body" '"ownedBy"'
+  file_lacks "$T/curl.log" "http://stub:1/v1/identity/sessions -"
   # the token travels as a header FILE, not as a curl argument
   file_lacks "$T/curl.log" "eyJhbGciOiJFUzI1NiJ9"
   out_has "login: kade"
@@ -148,18 +149,16 @@ no_run() { test "$status" -ne 0 && lacks_out "kade-run-1a2b"; }
   grep -q "^session.login.degraded kade " "$T/spine.log"
 }
 
-@test "#4215→#4933 the security API refusing the row stops the start, and says so" {
+@test "#4517 the door refusing the login stops the start, says so, and reads refused" {
   echo 403 > "$T/curl.status"
   est kade
   run "$SCRIPT" establish kade --run 1a2b
   out_has "403"
   no_run
-  # #4215 — found in the live pair: this line used to say "recorded yes" two
-  # lines under the error. A start line that contradicts the error above it is
-  # worse than no line.
+  # #4215 — a start line that contradicts the error above it is worse than no line
   test -z "$(printf '%s' "$output" | grep -F "recorded yes" || true)"
   test -z "$(printf '%s' "$output" | grep -F " logged in " || true)"
-  grep -q "^session.login.degraded kade " "$T/spine.log"
+  grep -q "^session.login.refused kade " "$T/spine.log"
 }
 
 @test "#4215→#4933 an expired token stops the start: a stale credential, not someone else's" {
@@ -171,27 +170,22 @@ no_run() { test "$status" -ne 0 && lacks_out "kade-run-1a2b"; }
   no_run
 }
 
-@test "#4215 a 409 on a row this principal owns is a login, not a failure — the role starts" {
-  echo 409 > "$T/curl.status.identity_sessions"   # the session row is the one that collides
-  printf '{"name":"kade-0001-x","ownedBy":"principal-kade","sessionState":"open"}' > "$T/existing.json"
+@test "#4517 a repeat of the same login gets the door's same row, and the role starts" {
+  echo 200 > "$T/curl.status.identity_logins"
+  printf '{ "name": "session-kade-door1", "created": false }' > "$T/curl.reply.identity_logins"
   est kade
-  # #4933 (MOVE): "starts" is the wrapper's establish succeeding with a run to start on
   run "$SCRIPT" establish kade --run 1a2b
-  [ "$status" -eq 0 ]
-  out_has "already open and owned by principal-kade"
-  out_has "reusing it"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  out_has "session session-kade-door1"
   out_has "kade-run-1a2b"
 }
 
-@test "#4215 a 409 on ANOTHER principal's row still refuses, and says whose" {
-  echo 409 > "$T/curl.status"
-  printf '{"name":"kade-0001-x","ownedBy":"principal-silas","sessionState":"open"}' > "$T/existing.json"
+@test "#4517 NEGATIVE PROOF: a login the door refuses for its actsAs starts nothing" {
+  echo 403 > "$T/curl.status"
+  printf '{ "error": "authz", "message": "kade does not serve role-silas" }' > "$T/curl.reply"
   est kade
   run "$SCRIPT" establish kade --run 1a2b
-  test "$status" -eq 1
-  out_has "REFUSED"
-  out_has "is NOT yours"
-  out_has "principal-silas"
+  out_has "does not serve"
   no_run
   test -z "$(grep -F 'identity/sessionruns' "$T/curl.log" | grep -E -- '-X POST' || true)"
 }

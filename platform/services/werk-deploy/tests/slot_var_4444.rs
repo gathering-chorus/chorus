@@ -129,8 +129,9 @@ fn a_roles_own_account_or_an_opted_in_runner_runs_the_slot() {
 /// ever exported the opt-in, every shell would reach every slot again.
 #[test]
 fn negative_proof_the_shared_env_file_never_opts_in() {
-    let f = concat!(env!("CARGO_MANIFEST_DIR"), "/../../scripts/chorus-env-setup.sh");
-    let text = std::fs::read_to_string(f).expect("chorus-env-setup.sh is where the slot vars are exported");
+    // run-time manifest dir, never env!() (the #4030 guard): a compile-time path breaks in another checkout
+    let f = format!("{}/../../scripts/chorus-env-setup.sh", std::env::var("CARGO_MANIFEST_DIR").unwrap());
+    let text = std::fs::read_to_string(&f).expect("chorus-env-setup.sh is where the slot vars are exported");
     assert!(text.contains("WERK_SILAS_BIN"), "guard target moved: {f}");
     assert!(!text.contains("CHORUS_USE_SLOT"), "chorus-env-setup.sh must never set the slot opt-in");
 }

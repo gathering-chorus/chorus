@@ -147,6 +147,17 @@ chorus:principal-quartet a chorus:Principal ;
     chorus:hostAccount "jeffbridwell" ;
     chorus:canSignIn "false" .
 
+# #4517 AC5 (Jeff 2026-11-18 00:17, decision 3) — the door. It writes every Session row:
+# it creates a row when it verifies a login, stamps how a session ended, and supersedes a
+# role's older pane row. A STAMP, never a login (Silas 00:16): no webId, so no login can ever
+# resolve to it, no credential, no Permission row; the door writes with the caller's own
+# login and records itself as startedBy / endedBy.
+chorus:principal-door a chorus:Principal ;
+    rdfs:label "door (writes Session rows; a stamp, never a login)" ;
+    chorus:principalKind "service" ;
+    chorus:hostAccount "jeffbridwell" ;   # #4348: athena-make, the door, runs as this account (measured 2026-11-18)
+    chorus:canSignIn "false" .
+
 # #4154 — the crawler service principal. The walker writes CodeFile / Test rows
 # through the generated API; without a machine principal the door refuses
 # (POST /codefiles → 401 authn-missing, Wren 2026-09-12 17:44). Scope grant

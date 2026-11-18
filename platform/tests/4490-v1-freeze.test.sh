@@ -29,7 +29,28 @@
 #                       #4715 (+96 -37), #4774 (+31 -1), #4717 (+30 -1), #4728 (+26 -3),
 #                       #4762 (+9 -1). Raised to today's count so it measures new growth
 #                       again; shrinking v1 back to the old line is a separate card, not yet filed.
-FROZEN_LINES=10988  # #4965 decision 2 — see history above
+#    10996  2026-11-18  #4517 AC5 (Wren): +8, the door is the only writer of Session rows
+#                       (door_written + its refusal); an authz break fix, not a feature.
+#    11128  2026-11-18  #4517 AC5 (Wren, Jeff 00:17 decision 4: the logins route on v1 as a
+#                       security fix): +132, POST /identity/logins (src/logins.rs + its serve
+#                       block); the row decision lives outside in the identity-login crate.
+#    11209  2026-11-18  #4517 AC3 (Wren, Jeff 00:17 decision 1): +81, the claim branch
+#                       (src/claims.rs + its PATCH branch); the claim itself is the DAL's.
+#    11294  2026-11-18  #4517 AC6 (Wren): +85, POST /identity/logouts (owner ends its own
+#                       session; the door stamps endedAt/endedBy/sessionState) in src/logins.rs.
+#    11326  2026-11-18  #4517 AC6 (Wren): +32, a new pane login supersedes the role's older
+#                       open pane rows through the logouts path (replaces the sweep's PATCH).
+#    11386  2026-11-18  #4517 AC6 (Wren): +60, a repeat browser login touches lastSeenAt at
+#                       most once per 5 min (the browser keep-alive the deleted PATCH did).
+#    11431  2026-11-18  #4517 AC6 (Wren): +45, a refreshed browser login renews its own open
+#                       row (the rule is identity-login's plan_renewal; this is the wiring).
+#    11436  2026-11-18  #4517 AC6 (Wren): an expired row ends at its own expiresAt (logout reads it).
+#    11460  2026-11-18  #4517 AC5 (Wren): the door records a refused login on the spine (refusal_event).
+#    11466  2026-11-18  #4517 (Wren): older_open_panes_query split out so its scope is tested (ex-#4445).
+#    11568  2026-11-18  #4517 (Wren, Jeff yes 06:20): person at logins/logouts (#4412) and /identity/attendances (#4367).
+#    11578  2026-11-18  #4517 (Silas 06:46): Principal facts read from the Principal graph only.
+#    11580  2026-11-18  #4517 (Silas 07:57): a supervised agent login supersedes like a pane (Abby).
+FROZEN_LINES=11580  # #4517 AC6 — see history above
 set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 count() { cat "$1"/*.rs 2>/dev/null | wc -l | tr -d ' '; }

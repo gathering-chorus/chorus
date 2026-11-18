@@ -1,5 +1,7 @@
 // @test-type: unit — which pane sessions the sweep closes as superseded, against a fake door
 // @domain: identity
+//! #4517 AC6 — superseding moved to the door (see logins_4517.rs in athena-make); this file now
+//! proves the sweep leaves Session rows alone. Its history:
 //! #4950 AC2 — a role has one session, login to logout. On 2026-11-10 every role had two
 //! open pane sessions: the 11-08 one stayed open after the 11-09 login (and a seen-write
 //! run as Jeff kept bumping its lastSeenAt). The sweep closes a role's older open pane
@@ -28,10 +30,12 @@ fn closes(calls: &str) -> Vec<String> {
     calls.lines().filter(|l| l.contains("/identity/sessions/")).map(|l| l.to_string()).collect()
 }
 
-/// The 11-10 shape: an older session (fresh lastSeenAt from the stale seen-write) and the
-/// login's newer one. Only the older is closed, as superseded, by PATCH.
+/// #4517 AC6 — the sweep no longer closes superseded sessions: the door ends a role's older
+/// open pane rows when its next login is written (one writer; the sweep presented each
+/// role's own login from Jeff's account to do it). NEGATIVE PROOF that the path does not
+/// return: the 11-10 shape (an older and a newer open pane session) makes no Session write.
 #[test]
-fn ac2_the_older_pane_session_is_closed_as_superseded_newest_by_issued_at() {
+fn ac6_the_sweep_writes_no_session_row_even_with_a_superseded_one() {
     let home = tempdir("4950-sup");
     let sessions = format!(r#"{{"data":[{},{}]}}"#,
         sess("wren-old", "wren", "pane", "2026-11-08T16:00:00Z", "2026-11-11T10:50:00Z"),
@@ -41,13 +45,7 @@ fn ac2_the_older_pane_session_is_closed_as_superseded_newest_by_issued_at() {
     let (code, out) = sweep(&home);
     let c = closes(&read(home.join("calls.log")));
     assert_eq!(code, 0, "{out}");
-    assert_eq!(c.len(), 1, "exactly one close: {c:?}\n{out}");
-    assert!(c[0].starts_with("PATCH ") && c[0].contains("/identity/sessions/wren-old "), "{c:?}");
-    let body: serde_json::Value = serde_json::from_str(c[0].splitn(3, ' ').nth(2).unwrap()).unwrap();
-    assert_eq!(body["sessionState"], "closed", "{body}");
-    assert!(body.get("endedBy").is_none(), "a superseded close names no ender: {body}");
-    assert!(read(home.join("spine.log")).contains("session.superseded wren closed=wren-old by=sweep"), "{out}");
-    assert!(body["endedAt"].as_str().unwrap_or("").ends_with('Z'), "{body}");
+    assert!(c.iter().all(|l| !l.starts_with("PATCH ") && !l.starts_with("PUT ")), "the sweep wrote a Session row: {c:?}\n{out}");
 }
 
 /// NEGATIVE PROOF: one open pane session per role, another role's older session, and a
@@ -78,34 +76,4 @@ fn ac2_negative_an_older_session_with_an_open_run_is_kept() {
     live(&home, "wren");
     let (_, out) = sweep(&home);
     assert!(closes(&read(home.join("calls.log"))).is_empty(), "{out}\n{}", read(home.join("calls.log")));
-}
-
-/// Wren's guard (pair 4950): a seen-write from a stale cache (an open copy of a row the
-/// sweep has since closed) PATCHes only what it changed, lastSeenAt, and never sends
-/// sessionState or endedAt, so it can never PATCH a closed row back open.
-#[test]
-fn ac2_a_seen_write_never_reopens_a_superseded_session() {
-    let cached: serde_json::Value = serde_json::from_str(&sess("wren-old", "wren", "pane", "2026-11-08T16:00:00Z", "2026-11-11T10:50:00Z")).unwrap();
-    let after = chorus_principal::rows::seen_session(cached.clone(), "2026-11-11T11:00:00Z").unwrap();
-    let (_, body) = chorus_principal::rows::changed_fields(&cached, &after).unwrap();
-    let keys: Vec<&String> = body.as_object().unwrap().keys().collect();
-    assert!(keys.contains(&&"lastSeenAt".to_string()), "{body}");
-    for k in ["sessionState", "endedAt", "endedBy"] { assert!(!keys.iter().any(|x| x.as_str() == k), "{k} sent: {body}"); }
-}
-
-/// NEGATIVE PROOF (carried from #4838 AC5, whose expiry cases #4950 deleted): a door that
-/// refuses the close makes the sweep fail loudly, a non-zero exit with failed > 0, never a
-/// quiet 0.
-#[test]
-fn ac2_negative_a_refused_close_makes_the_sweep_fail_loudly() {
-    let home = tempdir("4950-refused");
-    let sessions = format!(r#"{{"data":[{},{}]}}"#,
-        sess("wren-old", "wren", "pane", "2026-11-08T16:00:00Z", "2026-11-11T10:50:00Z"),
-        sess("wren-new", "wren", "pane", "2026-11-09T16:15:00Z", "2026-11-11T10:40:00Z"));
-    door_with(&home, "wren", "422", r#"{"data":[]}"#, &sessions);
-    live(&home, "wren");
-    let (code, out) = sweep(&home);
-    assert_eq!(closes(&read(home.join("calls.log"))).len(), 1, "the close was tried: {out}");
-    assert_ne!(code, 0, "{out}");
-    assert!(out.contains("0 superseded session(s) closed, 1 failed"), "{out}");
 }

@@ -31,11 +31,13 @@ def in_tmux(pid):
         pid=ppid; seen+=1
     return False
 rows=[]; bad=[]
-for f in glob.glob(os.path.join(sys.argv[1],"*-[0-9]*.json")):
+files=glob.glob(os.path.join(sys.argv[1],"*-[0-9]*.json"))
+for f in files:
     try: r=json.load(open(f))
     except Exception: bad.append(os.path.basename(f)); continue   # an unreadable entry is never skipped
     if str(r.get("pid")) in procs: rows.append(r)                 # a dead pid is no live session
 bad+=[r.get("role") for r in rows if not in_tmux(str(r.get("pid")))]
+print(f"live sessions: {len(rows)} of {len(files)} entries; outside tmux or unreadable: {bad}", file=sys.stderr)   # the nightly names which failed
 sys.exit(0 if rows and not bad else 1)'
 
 @test "AC3: every live role session on this machine is in a tmux pane" {

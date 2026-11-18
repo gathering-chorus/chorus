@@ -1,55 +1,29 @@
 #!/usr/bin/env bats
-# @test-type: integration — drives the built chorus-principal binary in the shared login harness (stub curl answers the session listing); never reaches the identity API.
+# @test-type: unit — the door's supersede, through athena-make's logins tests; no live services
 # @domain: identity — the product domain this suite guards (#4334)
 #
 # #4445 — Jeff, 2026-10-08 08:03: "i now see 2 sessions for abby" / "i used our
-# chorus-principal commands 2x". The first `on` wrote its Session row and was
-# interrupted before it recorded it, so nothing ever closed that row. A login
-# now closes every other open session of the same role on the same channel: a
-# role has one session, login to logout (#4406). Rows are shaped like the real
-# listing (actsAs "role-<name>"): the first fixture used a bare name and passed
-# while prod (10:02, 10:04) never matched.
+# chorus-principal commands 2x". A role has one session, login to logout (#4406): a
+# new pane login closes the role's other open pane sessions on the same account.
+# Since #4517 the door does it, after the new row is written (chorus-principal writes no
+# Session row), so this suite runs the door's tests, and the old harness cases retired.
 #
-# Asserts are simple commands, never `[[ ]]` (bash 3.2 hollow-assert, 2026-09-16).
+# Covers: platform/services/athena-make/src/logins.rs
 
-setup() {
-  ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
-  SCRIPT="${CHORUS_PRINCIPAL_TEST_BIN:-$ROOT/platform/services/chorus-principal/target/release/chorus-principal}"
-  [ -x "$SCRIPT" ] || skip "chorus-principal not built at $SCRIPT"
-  T="$BATS_TEST_TMPDIR"
-  source "$ROOT/platform/tests/lib/login-harness.bash"
-  login_harness
-  # #4933 — each role's own wrapper establishes its session (as the account running
-  # the test); the launcher writes nothing, so every row below is the role's own
-  for r in silas kade wren; do est "$r"; done
+setup() { ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"; }
+
+one_ok() { # cargo test args — the named test ran and passed
+  run bash -c "cd '$ROOT/platform/services/athena-make' && cargo test --release --quiet --test logins_4517 $* 2>&1"
+  echo "$output" | tail -3
+  [ "$status" -eq 0 ] || return 1
+  echo "$output" | grep -qE "test result: ok\. 1 passed" || return 1
 }
 
-# the session listing the API answers: silas's orphan, a closed silas row, kade's
-# open row, and a silas agent-channel row — only the first is silas's stray pane session
-listing() {
-  printf '{"data":[%s]}\n' "$1" > "$T/existing.json"
-}
-ROW() { printf '{"name":"%s","actsAs":"role-%s","ownedBy":"principal-%s","tokenId":"jti-%s","channel":"%s","sessionState":"%s","startedAt":"2026-10-08T10:41:18Z"}' "$1" "$2" "$2" "$1" "$3" "$4"; }
-
-@test "a login closes the open session an interrupted login left behind" {
-  listing "$(ROW session-silas-orphan silas pane open),$(ROW session-silas-old silas pane closed),$(ROW session-kade-live kade pane open),$(ROW session-silas-agent silas agent open)"
-  run "$SCRIPT" on silas
-  test "$status" -eq 0
-  ls "$T/bodies" | grep -q 'PATCH-identity_sessions_session-silas-orphan'
-  grep -q '"sessionState":"closed"' "$T"/bodies/*-PATCH-identity_sessions_session-silas-orphan.json
-  # #4933 — the role's own establish closes it, so the line is in the role's output
-  grep -qF "closed 1 older open session" "$T/establish.log"
-  grep -q 'session.superseded silas' "$T/spine.log"
+@test "a new pane login closes the role's older open pane session, only after its own row is written" {
+  one_ok a_new_pane_login_supersedes_only_after_its_row_is_written
 }
 
 @test "NEGATIVE PROOF: another role's session, a closed row and another channel are never closed" {
-  listing "$(ROW session-silas-old silas pane closed),$(ROW session-kade-live kade pane open),$(ROW session-silas-agent silas agent open)"
-  run "$SCRIPT" on silas
-  test "$status" -eq 0
-  # not vacuous (#4933): silas's own establish ran and opened its session
-  ls "$T/bodies" | grep -q 'POST-identity_sessions.json'
-  test -z "$(ls "$T/bodies" | grep -E "(PUT|PATCH)-identity_sessions_" || true)"
-  test "$(grep -c 'session.superseded' "$T/spine.log" || true)" -eq 0
-  # #4950 — nothing matched is said, with what was listed: never a silent return
-  grep -q 'session.supersede.skipped silas why=none matched: 3 row(s) listed on channel pane' "$T/spine.log"
+  one_ok the_supersede_query_names_only_this_principals_open_pane_rows_on_this_account
+  one_ok negative_proofs_a_failed_create_or_a_browser_login_supersedes_nothing
 }

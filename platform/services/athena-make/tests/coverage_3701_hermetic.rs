@@ -567,7 +567,7 @@ fn world() -> &'static World {
         let dal = home.join("dal-stub.sh");
         let dal_batch_log = home.join("dal-add-batch.log");
         let dal_script = format!(
-            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{calls}'\nif [ \"$1\" = \"apply\" ]; then cat >> '{calls}'; fi\nif [ \"$1\" = \"add-batch\" ]; then\n  batch_input=$(cat)\n  {{\n    printf 'ARGV\\t%s\\n' \"$*\"\n    printf 'TOKEN\\t%s\\n' \"$CHORUS_IDENTITY_TOKEN\"\n    printf 'STDIN\\n%s\\nEND\\n' \"$batch_input\"\n  }} > '{}'\n  case \"$batch_input\" in\n    *testresult-existing*) echo \"add-batch: entity 'test-result:testresult-existing': already-exists\" >&2; exit 1;;\n    *\\\"name\\\":\\\"pulse\\\"*) echo \"add-batch: entity 'domain:pulse': already-exists: entity already exists\" >&2; exit 1;;\n    *shapefail*) echo 'shape-violation: comment missing' >&2; exit 1;;\n    *retiredstub*) echo 'chorus-model is RETIRED (#3718) - use athena-model instead.' >&2; exit 1;;\n  esac\nfi\ncase \"$*\" in\n  *shapefail*) echo 'shape-violation: comment missing' >&2; exit 1;;\n  *dalboom*) echo kaboom >&2; exit 1;;\n  *retiredstub*) echo 'chorus-model is RETIRED (#3718) - use athena-model instead.' >&2; exit 1;;\nesac\nexit 0\n",
+            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{calls}'\nif [ \"$1\" = \"apply\" ]; then cat >> '{calls}'; fi\nif [ \"$1\" = \"add-batch\" ]; then\n  batch_input=$(cat)\n  {{\n    printf 'ARGV\\t%s\\n' \"$*\"\n    printf 'TOKEN\\t%s\\n' \"$CHORUS_IDENTITY_TOKEN\"\n    printf 'STDIN\\n%s\\nEND\\n' \"$batch_input\"\n  }} > '{}'\n  case \"$batch_input\" in\n    *testresult-existing*) echo \"add-batch: entity 'test-result:testresult-existing': already-exists\" >&2; exit 1;;\n    *\\\"name\\\":\\\"pulse\\\"*) echo \"add-batch: entity 'domain:pulse': already-exists: entity already exists\" >&2; exit 1;;\n    *shapefail*) echo 'shape-violation: comment missing' >&2; exit 1;;\n    *\\\"principal\\\",\\\"principal-*|*\\\"role\\\",\\\"role-*) echo \"double-prefix: a link names its target bare; the mint adds the prefix (ADR-040 Rule 0)\" >&2; exit 1;;\n    *retiredstub*) echo 'chorus-model is RETIRED (#3718) - use athena-model instead.' >&2; exit 1;;\n  esac\nfi\ncase \"$*\" in\n  *shapefail*) echo 'shape-violation: comment missing' >&2; exit 1;;\n  *dalboom*) echo kaboom >&2; exit 1;;\n  *retiredstub*) echo 'chorus-model is RETIRED (#3718) - use athena-model instead.' >&2; exit 1;;\nesac\nexit 0\n",
             dal_batch_log.display(),
             calls = home.join("dal-calls.log").display(),
         );
@@ -1503,4 +1503,82 @@ fn negative_proof_4715_a_failed_patch_is_one_call_and_changes_nothing() {
     let mine: Vec<&str> = log.lines().filter(|l| l.contains("--name dalboom")).skip(before).collect();
     assert_eq!(mine.len(), 1, "one DAL call for the whole patch: {mine:?}");
     assert!(mine[0].starts_with("apply "), "{mine:?}");
+}
+
+/// #4517 AC1 — a refused caller gets 403 whatever the body. Before this card the
+/// three body checks (oversize, revision class, stamped field) answered 422 ahead
+/// of the row-owner verdict, so a caller with no right to the row learned the
+/// body's rules. NEGATIVE PROOF: the same stamped body is 422 to the owner (the
+/// body check still runs) and 403 to nobody (authz first).
+#[test]
+fn a_refused_caller_gets_403_before_the_body_checks_4517() {
+    let stamped = "{\"writeCount\":\"9\"}";
+    let nobody = bearer(&mint_token(NOBODY_WEBID, None));
+    let (c, _, b) = http("PUT", "/domains/pulse", &[("Authorization", nobody.as_str())], stamped);
+    assert_eq!(c, 403, "a non-owner must be refused before the stamp check: {}", b);
+    let wren = bearer(&mint_token(WREN_WEBID, None));
+    let (c, _, b) = http("PUT", "/domains/pulse", &[("Authorization", wren.as_str())], stamped);
+    assert_eq!(c, 422, "the owner still meets the stamp check: {}", b);
+}
+
+/// #4517 AC5 — the logins route is reached through the real serve loop, at both spellings,
+/// before any surface rewrite: an unverified call gets the route's own 401.
+#[test]
+fn the_logins_route_is_reached_and_refuses_an_unverified_call_4517() {
+    for p in ["/identity/logins", "/v1/identity/logins"] {
+        let (c, _, b) = http("POST", p, &[], "{\"channel\":\"pane\"}");
+        assert_eq!(c, 401, "{p}: {b}");
+        assert!(b.contains("a verified login is required to open a session"), "{p} did not reach the logins route: {b}");
+    }
+    for p in ["/identity/logouts", "/v1/identity/logouts"] {
+        let (c, _, b) = http("POST", p, &[], "{\"session\":\"x\"}");
+        assert_eq!(c, 401, "{p}: {b}");
+        assert!(b.contains("a verified login is required to end a session"), "{p} did not reach the logouts route: {b}");
+    }
+}
+
+/// #4517 AC3 — a claim through the real serve loop: wren holds Write on the domains
+/// graph and "orphan" has no owner, so {ownedBy: wren} reaches the DAL's claim-owner.
+/// NEGATIVE PROOFS: an extra field is 422 with no DAL call; on an owned row the body is
+/// not a claim, and the normal path's "cannot be patched" stands.
+#[test]
+fn a_claim_on_an_ownerless_row_reaches_the_dal_and_nothing_else_does_4517() {
+    let auth = bearer(&mint_token(WREN_WEBID, None));
+    let hdrs: &[(&str, &str)] = &[("Authorization", &auth)];
+    let calls = || std::fs::read_to_string(std::env::temp_dir()
+        .join(format!("owl3701-home-{}", std::process::id())).join("dal-calls.log")).unwrap_or_default();
+    let claimed = |log: &str| log.lines().any(|l| l.starts_with("claim-owner") && l.contains("--name orphan"));
+    let before = calls();
+    let (c, _, b) = http("PATCH", "/domains/orphan", hdrs, "{\"ownedBy\":\"wren\",\"comment\":\"x\"}");
+    assert_eq!(c, 422, "{b}");
+    assert_eq!(calls().matches("claim-owner").count(), before.matches("claim-owner").count(), "a refused claim must not reach the DAL");
+    let (_, _, b) = http("PATCH", "/domains/orphan", hdrs, "{\"ownedBy\":\"wren\"}");
+    assert!(claimed(&calls()), "the claim never reached the DAL: {b}\n{}", calls());
+    // AC1 (Silas 00:33): a caller with no Write gets 403 before its bad claim body is judged
+    let nobody = bearer(&mint_token(NOBODY_WEBID, None));
+    let (c, _, b) = http("PATCH", "/domains/orphan", &[("Authorization", nobody.as_str())], "{\"ownedBy\":\"nobody\",\"x\":1}");
+    assert_eq!(c, 403, "{b}");
+    let (c, _, b) = http("PATCH", "/domains/pulse", hdrs, "{\"ownedBy\":\"wren\"}");
+    assert_eq!(c, 422, "an owned row is not claimable: {b}");
+    assert!(b.contains("cannot be patched"), "{b}");
+}
+
+/// #4517 (Silas 01:45) — the stub DAL now refuses a doubled prefix on a link, as the real
+/// mint does, so a serve-level test can no longer pass a row the real DAL would refuse.
+/// NEGATIVE PROOF of the stub itself: a prefixed principal link is refused, a bare one passes.
+#[test]
+fn the_stub_dal_refuses_a_double_prefixed_link_like_the_real_mint_4517() {
+    let _ = world();
+    let dal = std::env::temp_dir().join(format!("owl3701-home-{}", std::process::id())).join("dal-stub.sh");
+    let run = |line: &str| {
+        let mut c = std::process::Command::new("sh").arg(&dal).arg("add-batch")
+            .stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::piped()).spawn().unwrap();
+        use std::io::Write as _;
+        c.stdin.take().unwrap().write_all(line.as_bytes()).unwrap();
+        c.wait_with_output().unwrap()
+    };
+    let prefixed = run(r#"{"kind":"session","name":"s1","fields":{},"edges":[["startedBy","principal","principal-door"]]}"#);
+    assert!(!prefixed.status.success() && String::from_utf8_lossy(&prefixed.stderr).contains("double-prefix"), "a prefixed link passed the stub");
+    let bare = run(r#"{"kind":"session","name":"s2","fields":{},"edges":[["startedBy","principal","door"]]}"#);
+    assert!(bare.status.success(), "{}", String::from_utf8_lossy(&bare.stderr));
 }

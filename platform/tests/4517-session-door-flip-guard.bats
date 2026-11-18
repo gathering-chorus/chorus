@@ -1,0 +1,71 @@
+#!/usr/bin/env bats
+# @test-type: unit — reads source and model files only; no live services
+# @domain: security
+# @card: #4517
+#
+# #4517 AC5/AC6 — the switch-on guard (Silas, 2026-11-18 00:11). Once a Session shape carries
+# writeAuthority "door", the door refuses every session write from a role, including logout's
+# PATCH endedAt and the sweep. So the shape may carry "door" only in the same land that removes
+# every role-side Session write. This fails if the shape says "door" while any remain.
+#
+# Role-side Session writes, measured 2026-11-18 00:15:
+#   chorus-principal lib.rs  do_login POST, patch_changed / patch_row on "identity/sessions"
+#   person_session.py        POST / PUT / PATCH on {api}/v1/identity/sessions (Jeff's browser session)
+
+setup() {
+  ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
+  SHAPES="$(grep -rlE 'SessionShape' "$ROOT/roles" "$ROOT/designing" 2>/dev/null | grep '\.ttl$' || true)"
+}
+
+# writes "<file>:<line>" for every role-side Session write site under $1 (a repo root)
+role_session_writes() {
+  local r="$1"
+  grep -nE 'format!\("\{\}/v1/identity/sessions", ctx\.api\)|patch_(changed|row)\([^)]*"identity/sessions"' \
+    "$r/platform/services/chorus-principal/src/"*.rs 2>/dev/null
+  grep -nE 'http\("(POST|PUT|PATCH|DELETE)", f"\{api\}/v1/identity/sessions' \
+    "$r/platform/scripts/lib/person_session.py" 2>/dev/null
+  return 0
+}
+
+shape_says_door() { # $@ shape files
+  [ "$#" -gt 0 ] && grep -qE 'writeAuthority[[:space:]]+"door"' "$@"
+}
+
+guard() { # $@ shape files — 1 (and the sites) when a shape says door while role writes remain
+  shape_says_door "$@" || return 0
+  local w; w="$(role_session_writes "${GUARD_ROOT:-$ROOT}")"
+  [ -z "$w" ] && return 0
+  echo "$w"; return 1
+}
+
+@test "AC5 guard: the finder sees a role-side Session write (it can go red), on a fixture tree" {
+  [ -n "$SHAPES" ] || { echo "no Session shape file found — the guard has nothing to read"; return 1; }
+  F="$BATS_TEST_TMPDIR/root"; mkdir -p "$F/platform/services/chorus-principal/src" "$F/platform/scripts/lib"
+  printf '    if patch_row(ctx, &role, "identity/sessions", "session", &name, &body) {\n' > "$F/platform/services/chorus-principal/src/lib.rs"
+  printf '        status, reply = http("POST", f"{api}/v1/identity/sessions", id_token, row)\n' > "$F/platform/scripts/lib/person_session.py"
+  n="$(role_session_writes "$F" | wc -l | tr -d ' ')"
+  [ "$n" -eq 2 ] || { echo "the finder saw $n of the 2 planted write sites"; return 1; }
+  echo "role-side Session write sites left in this tree: $(role_session_writes "$ROOT" | wc -l | tr -d ' ')"
+}
+
+@test "AC5 guard: a Session shape says writeAuthority door only once no role writes Session rows" {
+  # shellcheck disable=SC2086
+  run guard $SHAPES
+  echo "$output"
+  [ "$status" -eq 0 ] || return 1
+}
+
+@test "AC5 guard NEGATIVE PROOF: a shape flipped to door while a role write remains is red" {
+  T="$BATS_TEST_TMPDIR"; F="$T/root"
+  mkdir -p "$F/platform/services/chorus-principal/src" "$F/platform/scripts/lib"
+  printf '    let url = format!("{}/v1/identity/sessions", ctx.api);\n' > "$F/platform/services/chorus-principal/src/lib.rs"
+  : > "$F/platform/scripts/lib/person_session.py"
+  printf 'chorus:SessionShape chorus:writeAuthority "door" .\n' > "$T/shape.ttl"
+  GUARD_ROOT="$F" run guard "$T/shape.ttl"
+  [ "$status" -eq 1 ] || return 1
+  [[ "$output" == *"identity/sessions"* ]] || return 1
+  # and with no role write left in the tree, the same flipped shape passes
+  : > "$F/platform/services/chorus-principal/src/lib.rs"
+  GUARD_ROOT="$F" run guard "$T/shape.ttl"
+  [ "$status" -eq 0 ] || return 1
+}

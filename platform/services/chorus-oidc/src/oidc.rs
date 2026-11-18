@@ -470,7 +470,8 @@ impl OidcVerifier {
         // bridge only.
         let scope = self.scopes_for(&web_id, now_secs);
         let agent_id = self.role_for(&web_id, now_secs).unwrap_or_default();
-        Ok(Claims { agent_id, web_id, aud, exp, scope })
+        let jti = auth::json_string(payload, "jti").unwrap_or_default();
+        Ok(Claims { agent_id, web_id, aud, exp, scope, jti })
     }
 }
 
@@ -971,6 +972,18 @@ mod tests {
         let c = v.verify(&token_valid(), NOW).expect("valid CSS token verifies");
         assert_eq!(c.web_id, wren_webid());
         assert_eq!(c.agent_id, "wren", "role resolved from the graph, not any env stamp");
+    }
+
+    /// #4517 AC5 — the login's own id rides out of verify: one Session row per login is
+    /// keyed on it. NEGATIVE PROOF: a token without a jti verifies with an empty one,
+    /// which the door's login route then refuses (identity-login: no verified login).
+    #[test]
+    fn the_login_id_comes_back_from_verify_4517() {
+        let v = verifier();
+        let with = format!(r#"{{"iss":"{}","aud":"chorus","webid":"{}","exp":{},"jti":"login-7.a/b"}}"#, ISSUER, wren_webid(), NOW + 3600);
+        let c = v.verify(&mint_es256(&css_key(), KID, &with), NOW).expect("verifies");
+        assert_eq!(c.jti, "login-7.a/b");
+        assert_eq!(v.verify(&token_valid(), NOW).expect("verifies").jti, "", "no jti in the token, none invented");
     }
 
     // case 2 — forged-401: signature byte-tampered → refused, reason signature.

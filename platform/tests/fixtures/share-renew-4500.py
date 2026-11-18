@@ -108,9 +108,12 @@ def http_ok(method, url, bearer, body):
 rec = {"principal": "jeff", "row": {"name": SID, "sessionState": "open", "expiresAt": ps.iso(T + TTL)},
        "id_token": FAKE_JWT, "refresh_token": "rt-1", "exp": T + 2 * HOUR}
 out = ps.touch_session(dict(rec), T + 2 * HOUR - 30 * 60, T + 14 * HOUR, http_ok, "http://door", lambda rt: None, lambda m: None)
-check("renewal PUTs his row with lastSeenAt now and expiresAt the cookie's",
-      out and calls[-1][0] == "PUT" and calls[-1][3]["lastSeenAt"] == ps.iso(T + 2 * HOUR - 30 * 60)
-      and calls[-1][3]["expiresAt"] == ps.iso(T + 14 * HOUR))
+# #4517 AC6 — renewal asks the door with his login, naming the row; the door sets lastSeenAt
+# and the expiry (the login's own), so the caller sends neither
+check("renewal asks the door to renew his row by name, with his login, and sends no times",
+      out and calls[-1][0] == "POST" and calls[-1][1] == "http://door/v1/identity/logins"
+      and calls[-1][2] == FAKE_JWT and calls[-1][3] == {"channel": "browser", "renews": SID})
+check("NEGATIVE: renewal never writes the Session row itself", not [c for c in calls if c[0] in ("PUT", "PATCH")])
 fresh = {"id_token": FAKE_JWT + "x", "refresh_token": "rt-2", "expires_in": 3600}
 out = ps.touch_session(dict(rec), T + 3 * HOUR, T + 15 * HOUR, http_ok, "http://door", lambda rt: fresh, lambda m: None)
 check("an expired token is refreshed, used, and kept", out and calls[-1][2] == FAKE_JWT + "x" and out["refresh_token"] == "rt-2")

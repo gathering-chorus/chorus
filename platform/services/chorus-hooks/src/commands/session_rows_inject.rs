@@ -117,10 +117,8 @@ pub fn render(role: &str, reads: &Reads) -> String {
             )),
             Some(r) => {
                 out.push_str(&format!("Session: {} · started {}\n", s(r, "name"), s(r, "startedAt")));
-                let by = s(r, "attendedBy");
-                if !by.is_empty() {
-                    out.push_str(&format!("Attended by {by} · last {}\n", s(r, "lastAttendedAt")));
-                }
+                // #4517 AC6 — no "Attended by": only the door writes Sessions now and it cannot
+                // vouch for who attended a turn, so the line would go stale (a quiet lie, Silas).
             }
         },
     }
@@ -203,7 +201,8 @@ mod tests {
     fn names_the_open_session_that_acts_as_the_role() {
         let out = render("wren", &live_like());
         assert!(out.contains("Session: wren-0tl9 · started 2026-09-26T16:28:25Z"), "{out}");
-        assert!(out.contains("Attended by principal-jeff · last 2026-09-27T13:08:09Z"), "{out}");
+        // #4517 AC6 — NEGATIVE PROOF: a row still carrying the old attendance never prints it
+        assert!(!out.contains("Attended by"), "a stale attendance line came back: {out}");
         assert!(!out.contains("kade-hchb"), "another role's session leaked: {out}");
     }
 

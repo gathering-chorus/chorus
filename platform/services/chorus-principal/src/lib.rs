@@ -26,9 +26,10 @@
 //!      authn for agents"; "agents must login to chorus"; "and then follow
 //!      authz rules". Before the pane is started the role's token is obtained
 //!      (chorus-identity-token), checked to name THAT role's WebID and to be
-//!      unexpired, recorded as a Session row through the security API
-//!      (/v1/identity/sessions, owned by the principal), and announced on the
-//!      spine as session.login. The pane inherits CHORUS_SESSION_TOKEN_FILE —
+//!      unexpired, then the login asks the door (POST /v1/identity/logins);
+//!      the door writes the Session row itself, owned by the principal (#4517:
+//!      this tool writes no Session row), and it is announced on the spine as
+//!      session.login. The pane inherits CHORUS_SESSION_TOKEN_FILE —
 //!      the token file, never the token on a command line. No token, wrong
 //!      principal, expired, or row refused → REFUSED, nothing started.
 //!
@@ -898,15 +899,13 @@ fn do_login(ctx: &Ctx, role: &str) -> Result<LoginState, ()> {
             return Err(());
         }
     };
-    let start_id = format!("{:x}", now_ms());
-    let (session_name, body) = session_row(role, &login, &host_account, &start_id);
-    // #4328 — the row says which role it acts as and when it started
-    let body = rows::with_role_and_start(body, role, &iso_utc(now_ms() as u64 / 1000));
-    // #4412 — who started it, and where it lives
-    let mut body = body;
-    body["channel"] = Value::String(channel.into());
-    if let Ok(p) = env::var("CHORUS_STARTED_BY") { if !p.is_empty() { body["startedBy"] = Value::String(p); } }
-    // the row: POST through the security API with the token as a header FILE (0600), never an argv
+    // #4517 AC6 — the door writes the Session row (Jeff 11-18 00:17): this login only asks.
+    // The door verifies the login, checks hostAccount and actsAs against the model, and
+    // answers with the row's name (a repeat of the same login gets the same row).
+    let mut body = serde_json::json!({ "channel": channel, "actsAs": format!("role-{}", role) });
+    if channel == "pane" || channel == "agent" { body["hostAccount"] = Value::String(host_account.clone()); }
+    // #4412 — the person present, as person_signed_in found him; the door vouches or labels it
+    person_fields(&mut body, "CHORUS_STARTED_BY");
     let role_id_dir = PathBuf::from(&ctx.identity_dir).join(role);
     let _ = fs::create_dir_all(&role_id_dir);
     let hdr = role_id_dir.join("session.hdr");
@@ -914,27 +913,17 @@ fn do_login(ctx: &Ctx, role: &str) -> Result<LoginState, ()> {
     if let Err(e) = write_private(&hdr, &format!("Authorization: Bearer {}\n", token)).and_then(|_| write_private(&body_path, &body.to_string())) {
         return Ok(LoginState::Pending { why: format!("cannot write {}: {}", hdr.display(), e), pid: None });
     }
-    let url = format!("{}/v1/identity/sessions", ctx.api);
+    let url = format!("{}/v1/identity/logins", ctx.api);
     let hdr_arg = format!("@{}", hdr.display());
     let body_arg = format!("@{}", body_path.display());
     let answer = door(ctx, &["-s", "-w", "\n%{http_code}", "--max-time", "10", "-X", "POST", "-H", "Content-Type: application/json", "-H", &hdr_arg, "--data-binary", &body_arg, &url]).unwrap_or_else(|e| format!("curl failed: {}", e.trim()));
     let _ = fs::remove_file(&hdr);
     let (reply, code) = match answer.trim_end().rsplit_once('\n') { Some((b, c)) => (b.to_string(), c.trim().to_string()), None => (String::new(), answer.trim().to_string()) };
-    // #4295 — the stored name is the one the API hands back, not the one sent
-    let session_name = stored_name(&reply).unwrap_or(session_name);
-    // #4215 — a 409 on a per-start name means something real: ask WHOSE row it is.
-    if code == "409" {
-        let get = format!("{}/v1/identity/sessions/{}", ctx.api, session_name);
-        let existing = door(ctx, &["-s", "--max-time", "10", &get]).unwrap_or_default();
-        let mine = format!("principal-{}", role);
-        if existing.contains(&mine) {
-            eprintln!("chorus-principal: session {} already open and owned by {} — reusing it", session_name, mine);
-        } else {
-            let owner = existing.split("ownedBy").nth(1).map(|t| t.chars().take(60).collect::<String>()).unwrap_or_else(|| "unknown".into());
-            eprintln!("chorus-principal: REFUSED — session {} exists and is NOT yours (ownedBy{})", session_name, owner);
-            eprintln!("  nothing was started; starting under someone else's session would log your work as theirs.");
-            return Err(());
-        }
+    let session_name = login_reply_name(&reply).unwrap_or_default();
+    if code == "401" || code == "403" {
+        let why = format!("the door refused this login: HTTP {} {}", code, reply.trim());
+        ctx.spine(&["session.login.refused", role, &format!("reason={}", why)]);
+        return Ok(LoginState::Refused { why, pid: None });
     } else if !(code == "200" || code == "201") {
         // #4215 — degrade, do not block: the identity was verified above; what
         // failed is the bookkeeping write, and #4295 retries it on its own.
@@ -943,14 +932,22 @@ fn do_login(ctx: &Ctx, role: &str) -> Result<LoginState, ()> {
         if lifecycle::is_refusal(&why) { return Ok(LoginState::Refused { why, pid: None }); }
         return Ok(LoginState::Pending { why, pid: None });
     }
-    // #4295 — keep the full row: closing it is a whole-row PUT
-    let mut saved = body.clone();
-    saved["name"] = Value::String(session_name.clone());
-    let _ = write_private(&role_id_dir.join("session.row.json"), &saved.to_string());
+    // #4295 — keep the full row as the door wrote it: closing it is a whole-row PUT
+    let get = format!("{}/v1/identity/sessions/{}", ctx.api, session_name);
+    if let Some(row) = door(ctx, &["-s", "--max-time", "10", &get]).ok()
+        .and_then(|r| serde_json::from_str::<Value>(&r).ok()).and_then(|v| v.get("data").cloned()) {
+        let _ = write_private(&role_id_dir.join("session.row.json"), &row.to_string());
+    }
     ctx.spine(&["session.login", role, &format!("webid={}", login.webid), &format!("jti={}", login.jti), &format!("session={}", session_name), &format!("host_account={}", host_account), &format!("expires_at={}", iso_utc(login.exp))]);
     println!("login: {}  webid {}  jti {}  session {}  recorded yes", role, login.webid, login.jti, session_name);
-    close_superseded(ctx, role, channel, &session_name);
+    // #4517 AC6 — the door ends this role's older open pane rows when this login's row is written
     Ok(LoginState::Recorded { session: session_name, pid: None })
+}
+
+/// #4517 AC6 — the row name the door chose, from the logins reply ({"name": …}).
+pub fn login_reply_name(reply: &str) -> Option<String> {
+    let v: Value = serde_json::from_str(reply).ok()?;
+    v.get("name").and_then(|n| n.as_str()).filter(|n| !n.is_empty()).map(String::from)
 }
 
 /// The row name the API stored, from its create reply (data.name).
@@ -973,7 +970,8 @@ const CLEARING_SIGN_IN: &str = "https://clearing.lightlifeurbangardens.com";
 /// #4412 — Jeff 2026-09-30: "maybe we must bind chorus-principal to a human(s)"
 /// / "the login and logout". A role's session starts or ends only while a
 /// person is signed in: an open browser Session (his Clearing sign-in) owned by
-/// a person principal. Returns that person's bare name. The API not answering
+/// a person principal. Returns `<name>.browser` or `<name>.terminal` (#4517: how the door may
+/// record him — verified, or role-reported). The API not answering
 /// is a refusal too: nobody can be shown to be present.
 fn person_signed_in(ctx: &Ctx) -> Result<String, String> {
     let url = format!("{}/v1/identity/sessions?channel=browser&limit=1000", ctx.api);
@@ -983,12 +981,12 @@ fn person_signed_in(ctx: &Ctx) -> Result<String, String> {
     for who in rows::signed_in_owners(body, &iso_utc(now_ms() as u64 / 1000)) {
         let purl = format!("{}/v1/identity/principals/{}", ctx.api, who);
         let pa = door(ctx, &["-s", "-w", "\n%{http_code}", "--max-time", "5", &purl]).unwrap_or_default();
-        if pa.contains("\"principalKind\":\"person\"") { return Ok(who); }
+        if pa.contains("\"principalKind\":\"person\"") { return Ok(format!("{}.browser", who)); }
     }
     // #4412 — Jeff 2026-10-01: "both use cases are valid". A person typing in
     // their own Mac account is present too: not an agent session, and the OS
     // user is a person principal's hostAccount.
-    if let Some(p) = person_at_terminal(ctx) { return Ok(p); }
+    if let Some(p) = person_at_terminal(ctx) { return Ok(format!("{}.terminal", p)); }
     // #4412 — with CSS down nobody CAN sign in; say that, with its one fix
     if let Some((_, url)) = ctx.services.iter().find(|(n, _)| n == "identity") {
         let code = sh(&ctx.probe, &["-s", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "2", url]).unwrap_or_default();
@@ -1706,15 +1704,6 @@ fn create_row(ctx: &Ctx, role: &str, route: &str, kind: &str, mut body: Value) -
     Some(name)
 }
 
-/// #4944 — write only the fields our code changed on a saved row (PATCH), then keep the
-/// new copy. The cache is never sent back whole: once the door's row moves on, a stale
-/// whole row is refused (the Session 422s of 11-09/10). Nothing changed is no write.
-fn patch_changed(ctx: &Ctx, role: &str, route: &str, kind: &str, before: &Value, after: &Value) -> bool {
-    let Some((name, body)) = rows::changed_fields(before, after) else { return true };
-    if !patch_row(ctx, role, route, kind, &name, &body) { return false; }
-    save_row(ctx, role, kind, after);
-    true
-}
 
 /// Replace one saved row and keep the new copy.
 fn put_row(ctx: &Ctx, role: &str, route: &str, kind: &str, row: &Value) -> bool {
@@ -1997,18 +1986,16 @@ fn seen_write(ctx: &Ctx, role: &str, conv: &str, flag: &str) -> i32 {
         if !matches!(ctx.read_state(role), LoginState::Recorded { .. }) { return 0; }
     }
     let now = iso_utc(now_ms() as u64 / 1000);
-    let cached = read_row(ctx, role, "session");
-    // a login from before #4328 carries no role or start: add them on its first turn
-    let session = cached.clone().map(|s| {
-        if s.get("actsAs").and_then(|a| a.as_str()).unwrap_or("").is_empty() {
-            let started = s.get("issuedAt").and_then(|a| a.as_str()).unwrap_or(&now).to_string();
-            rows::with_role_and_start(s, role, &started)
-        } else { s }
-    });
-    // #4339 — a prompt from Jeff: the session records who attended it and when
-    let session = if flag == "jeff" { session.and_then(|s| rows::attended_session(s, "jeff", &now)) } else { session };
+    // #4367, #4517 (Jeff 11-18 "yes") — a prompt from Jeff: the door records that he attended
+    if flag == "jeff" {
+        if let LoginState::Recorded { session, .. } = ctx.read_state(role) {
+            let (code, reply) = api_call(ctx, role, "POST", &format!("{}/v1/identity/attendances", ctx.api), &serde_json::json!({"session": session, "person": "jeff"}), "attendance");
+            if !ok_code(&code) { ctx.spine(&["session.row.failed", role, "kind=attendance", &format!("row={}", session), &format!("http={}", code), &format!("why={}", rows::refusal_reason(&reply))]); }
+        }
+    }
     // #4948 — an agent session lasts from login to logout: a turn never renews its expiresAt
-    if let (Some(before), Some(s)) = (cached.as_ref(), session.clone().and_then(|s| rows::seen_session(s, &now))) { patch_changed(ctx, role, "identity/sessions", "session", before, &s); }
+    // #4517 AC6 (Silas 00:56) — a pane's Session row is no longer touched per turn: liveness
+    // takes the newer of lastSeenAt and the stream's last action, and only the door writes Sessions.
     // ... and no run: this running session gets its run, presence and boot context now
     let run_live = read_row(ctx, role, "run").map(|r| r.get("runEndedAt").and_then(|e| e.as_str()).unwrap_or("").is_empty()).unwrap_or(false);
     if !run_live {
@@ -2175,7 +2162,7 @@ fn sweep(ctx: &Ctx) -> i32 {
         Err(why) => { failed += 1; eprintln!("  keeping and ending nothing this pass: {}", why); None }
     };
     let kept = live.as_ref().map_or(0, |l| l.len());
-    let (mut ended, mut superseded) = (0, 0);
+    let (mut ended, superseded) = (0, 0);
     if let Some(live) = &live {
         // #4889 — an idle role is never woken by a nudge to a dead pane: keep its address current
         for role in live { refresh_pane(ctx, role); }
@@ -2192,21 +2179,8 @@ fn sweep(ctx: &Ctx) -> i32 {
             },
             Err(why) => { failed += 1; eprintln!("  ending nothing this pass: {}", why) }
         }
-        // #4950 — a role has one session, login to logout: close its older open pane
-        // sessions a newer login superseded (newest by issuedAt; a run-held one stays)
-        let sessions = door(ctx, &["-s", "--max-time", "20", &format!("{}/v1/identity/sessions?endedAt.absent=true&channel=pane&limit=5000", ctx.api)]).unwrap_or_default();
-        match rows::superseded_pane_sessions(&sessions, &runs, &roles) {
-            Ok(old) => for row in old {
-                // no endedBy: nobody ended it, and endedBy must name a Principal (#4950, prod 08:27
-                // refused "superseded" 5 times); the spine line below says the sweep closed it
-                let Some((role, name, body)) = rows::session_close(&row, &iso_utc(now_ms() as u64 / 1000), None) else { continue };
-                if patch_row(ctx, &role, "identity/sessions", "session", &name, &body) {
-                    superseded += 1;
-                    ctx.spine(&["session.superseded", &role, &format!("closed={}", name), "by=sweep"]);
-                } else { failed += 1; eprintln!("  {} not closed (the door refused the PATCH; see session.row.failed)", name) }
-            },
-            Err(why) => { failed += 1; eprintln!("  closing no superseded session this pass: {}", why) }
-        }
+        // #4517 AC6 — superseded pane sessions end at the door when the role's next login is
+        // written; the sweep presented each role's own login from Jeff's account to do it.
     }
     ctx.spine(&["session.sweep", &format!("kept={}", kept), &format!("ended={}", ended), &format!("superseded={}", superseded), &format!("failed={}", failed)]);
     println!("sweep: {} live session(s) kept open, {} crashed run(s) ended, {} superseded session(s) closed, {} failed", kept, ended, superseded, failed);
@@ -2348,41 +2322,16 @@ fn relogin(_ctx: &Ctx, role: &str) -> i32 {
     2
 }
 
-/// #4445 — close the role's other open sessions on this channel, left by a
-/// login that wrote its row and was interrupted before recording it. Loud, never
-/// a refusal: the new session is already recorded.
-fn close_superseded(ctx: &Ctx, role: &str, channel: &str, keep: &str) {
-    // #4950 — every way out names itself: on 11-09 four logins closed nothing and said
-    // nothing, and a silent return cannot be told from "there was nothing to close"
-    let skipped = |why: &str| {
-        eprintln!("login: closing older sessions skipped — {}", why);
-        ctx.spine(&["session.supersede.skipped", role, &format!("why={}", why), &format!("keep={}", keep)]);
-    };
-    let token = match sh(&ctx.token_bin, &[role]) { Ok(t) => t, Err(e) => return skipped(&format!("no token: {e}")) };
-    let role_id_dir = PathBuf::from(&ctx.identity_dir).join(role);
-    let hdr = role_id_dir.join("session.hdr");
-    if let Err(e) = write_private(&hdr, &format!("Authorization: Bearer {}\n", token.trim())) { return skipped(&format!("header file: {e}")); }
-    let url = format!("{}/v1/identity/sessions?channel={}&limit=1000", ctx.api, channel);
-    let list = door(ctx, &["-s", "--max-time", "10", "-H", &format!("@{}", hdr.display()), &url]);
-    let _ = fs::remove_file(&hdr);
-    let list = match list { Ok(l) => l, Err(e) => return skipped(&format!("listing unreadable: {e}")) };
-    let listed = match serde_json::from_str::<Value>(&list).ok().and_then(|v| v.get("data").and_then(|d| d.as_array()).map(|a| a.len())) {
-        Some(n) => n,
-        None => return skipped(&format!("listing has no data list: {}", list.chars().take(120).collect::<String>())),
-    };
-    let stale = rows::superseded_sessions(&list, role, channel, keep);
-    // #4950 — an empty match is a skip too: rows listed but none this role's open ones
-    if stale.is_empty() { return skipped(&format!("none matched: {listed} row(s) listed on channel {channel}")); }
-    let mut closed = Vec::new();
-    for name in &stale {
-        match close_row(ctx, role, name) {
-            Ok(()) => closed.push(name.clone()),
-            Err(why) => eprintln!("login: could not close older session {} — {}", name, why),
+
+/// #4412 — `<name>.<browser|terminal>` from the env (set by person_signed_in) as the door's
+/// person and personAt; nothing when unset (the roles-up launch has no person).
+fn person_fields(body: &mut Value, var: &str) {
+    let v = env::var(var).unwrap_or_default();
+    if let Some((who, at)) = v.rsplit_once('.') {
+        if !who.is_empty() && (at == "browser" || at == "terminal") {
+            body["person"] = Value::String(who.to_string());
+            body["personAt"] = Value::String(at.to_string());
         }
-    }
-    if !closed.is_empty() {
-        ctx.spine(&["session.superseded", role, &format!("closed={}", closed.join(",")), &format!("by={}", keep)]);
-        println!("login: closed {} older open session(s) an interrupted login left: {}", closed.len(), closed.join(", "));
     }
 }
 
@@ -2390,11 +2339,11 @@ fn close_superseded(ctx: &Ctx, role: &str, channel: &str, keep: &str) {
 /// endedBy (#4412: who ended it). The row is never read back and sent whole; a refusal
 /// is named on the spine by patch_row.
 fn close_row(ctx: &Ctx, role: &str, session: &str) -> Result<(), String> {
-    let ended = iso_utc(now_ms() as u64 / 1000);
-    let by = env::var("CHORUS_ENDED_BY").ok();
-    let row = serde_json::json!({"name": session, "ownedBy": format!("principal-{}", role)});
-    let (_, name, body) = rows::session_close(&row, &ended, by.as_deref()).ok_or_else(|| format!("session {} has no name", session))?;
-    if patch_row(ctx, role, "identity/sessions", "session", &name, &body) { Ok(()) } else { Err("the identity API refused the close (see session.row.failed)".into()) }
+    // #4517 AC6 — the owner asks the door to end its session; the door stamps how it ended
+    let (code, reply) = api_call(ctx, role, "POST", &format!("{}/v1/identity/logouts", ctx.api), &{ let mut b = serde_json::json!({"session": session}); person_fields(&mut b, "CHORUS_ENDED_BY"); b }, "logout");
+    if ok_code(&code) { return Ok(()); }
+    ctx.spine(&["session.row.failed", role, "kind=session", &format!("row={}", session), &format!("http={}", code), &format!("why={}", rows::refusal_reason(&reply))]);
+    Err(format!("the door refused the logout: HTTP {}", code))
 }
 
 /// `off <role>` — end the role and close its login. `--from-exit` is the
@@ -2442,7 +2391,7 @@ fn off(ctx: &Ctx, role: &str, from_exit: bool) -> i32 {
     if !from_exit && std::io::IsTerminal::is_terminal(&std::io::stdout()) { print!("\x1b[2J\x1b[3J\x1b[H"); }
     match closed {
         Some((s, Ok(()))) => println!("{} logged out: login closed (session {})", role, s),
-        Some((s, Err(why))) => println!("{} logged out: stopped; the login row {} could not be closed ({}); it stays open until the next login or sweep closes it as superseded", role, s, why),
+        Some((s, Err(why))) => println!("{} logged out: stopped; the login row {} could not be closed ({}); it stays open until the role's next login supersedes it", role, s, why),
         None => println!("{} logged out: stopped; it had no recorded login to close", role),
     }
     0

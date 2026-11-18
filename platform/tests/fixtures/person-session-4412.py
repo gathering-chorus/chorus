@@ -48,30 +48,30 @@ class Door:
                 {"name": "silas-pane-1", "actsAs": "role-silas", "sessionState": "open"},
                 {"name": "kade-pane-0", "actsAs": "role-kade", "sessionState": "closed"},
                 {"name": "jeff-browser-0", "actsAs": "jeff", "sessionState": "open"}]}
+        if method == "POST" and url.endswith("/v1/identity/logins"):
+            return self.post_status, ({"name": "jeff-9f2c", "created": True} if self.post_status == 201 else {"error": "refused"})
         if method == "POST":
-            return self.post_status, ({"name": body["name"]} if self.post_status == 201 else {"error": "refused"})
+            return 200, {}
         return 200, {}
 
 
 logs = []
 door = Door()
 rec = ps.open_session(JEFF, TOK, NOW, 12 * 3600, sparql_for("jeff"), door, "http://door", logs.append)
+# #4517 AC6 — sign-in asks the door with HIS verified login; the door writes the row
 posts = [c for c in door.calls if c[0] == "POST"]
-check("sign-in writes one Session row", len(posts) == 1)
-row = posts[0][3] if posts else {}
-check("the row is written with HIS token as the bearer", posts and posts[0][2] == TOK["id_token"])
-check("the row is his: ownedBy and actsAs jeff, browser, open",
-      row.get("ownedBy") == "jeff" and row.get("actsAs") == "jeff"
-      and row.get("channel") == "browser" and row.get("sessionState") == "open")
-check("it binds only the open ROLE sessions", row.get("binds") == ["silas-pane-1"])
-gets = [c[1] for c in door.calls if c[0] == "GET"]
-# #4948 — a role's expiresAt is never renewed: an expiry filter would empty binds an hour after its login
-check("it asks the door for open pane sessions with no expiry filter",
-      len(gets) == 1 and "channel=pane" in gets[0] and "endedAt.absent=true" in gets[0] and "expiresAt" not in gets[0])
-check("it names the token, never holds it", row.get("tokenId") == "tok-1" and TOK["id_token"] not in str(row))
-check("it carries the hostAccount the shape requires", row.get("hostAccount") == "jeffbridwell")
-check("it lasts as long as the door's cookie", row.get("expiresAt") == ps.iso(NOW + 12 * 3600))
-check("the record keeps what sign-out needs", rec and rec["row"]["name"] == row["name"] and rec["refresh_token"] == "rt-1")
+check("sign-in asks the door once, at the logins route", len(posts) == 1 and posts[0][1] == "http://door/v1/identity/logins")
+check("it asks with HIS token as the bearer, never a service credential", posts and posts[0][2] == TOK["id_token"])
+check("it names only the channel: owner, token id and expiry are the door's",
+      posts and posts[0][3] == {"channel": "browser"})
+check("NEGATIVE: it never writes a Session row itself", not [c for c in door.calls if c[0] in ("PUT", "PATCH") or c[1].endswith("/v1/identity/sessions")])
+check("the record keeps the name the door chose, and what sign-out needs",
+      rec and rec["row"]["name"] == "jeff-9f2c" and rec["refresh_token"] == "rt-1")
+
+# NEGATIVE PROOF (Silas 01:34): no verified login, no row
+door_n, logs_n = Door(), []
+nolog = ps.open_session(JEFF, dict(TOK, id_token=""), NOW, 3600, sparql_for("jeff"), door_n, "http://door", logs_n.append)
+check("NEGATIVE: no login -> nothing asked, no row", nolog is None and not [c for c in door_n.calls if c[0] == "POST"])
 
 # NEGATIVE PROOF: a WebID no Principal owns writes nothing
 door2, logs2 = Door(), []
@@ -91,18 +91,18 @@ refused = ps.open_session(JEFF, TOK, NOW, 3600, sparql_for("jeff"), door3, "http
 check("NEGATIVE: a refused write stores nothing and says so",
       refused is None and "NOT written: HTTP 403" in " ".join(logs3))
 
-# sign-out closes the row
+# sign-out asks the door to end the row; the door stamps how it ended
 door4 = Door()
 ok = ps.close_session(rec, NOW + 60, door4, "http://door", lambda rt: None, logs.append)
-puts = [c for c in door4.calls if c[0] == "PUT"]
-check("sign-out PUTs his row closed with endedAt",
-      ok and len(puts) == 1 and puts[0][3]["sessionState"] == "closed" and puts[0][3]["endedAt"] == ps.iso(NOW + 60))
+outs = [c for c in door4.calls if c[0] == "POST"]
+check("sign-out asks the door's logout for his row, by name only",
+      ok and len(outs) == 1 and outs[0][1] == "http://door/v1/identity/logouts" and outs[0][3] == {"session": "jeff-9f2c"})
 
 # NEGATIVE PROOF: an expired token with no refresh closes nothing
 door5, logs5 = Door(), []
 stale = dict(rec, exp=NOW - 10)
 closed = ps.close_session(stale, NOW, door5, "http://door", lambda rt: None, logs5.append)
-check("NEGATIVE: expired token, no refresh -> no PUT, said in the log",
+check("NEGATIVE: expired token, no refresh -> nothing asked, said in the log",
       closed is False and not door5.calls and "could not close" in " ".join(logs5))
 
 # the guard's fixed client identity

@@ -33,6 +33,16 @@ import json,sys; d=json.load(open(sys.argv[1])); d["lastSeenAt"]="2026-01-01T00:
 PY
 }
 
+
+# #4517, #4367 — the only Session change a turn may cause is the door's attendance record
+only_attendance_patches() {
+  local f
+  for f in "$T"/bodies/*PATCH-identity_sessions_*; do
+    [ -e "$f" ] || continue
+    python3 -c 'import json,sys; b=json.load(open(sys.argv[1])); sys.exit(0 if set(b) <= {"attendedBy","lastAttendedAt"} and b.get("attendedBy") else 1)' "$f" || { echo "a turn changed the Session row: $(cat "$f")"; return 1; }
+  done
+}
+
 @test "login writes the session with its role and start, then a run, a presence and a boot context" {
   run "$SCRIPT" on silas
   test "$status" -eq 0
@@ -67,7 +77,7 @@ PY
   age_seen silas
   echo '{"session_id":"conv-42","prompt":"work status"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen silas
   # #4944 — a PATCH of the fields that moved; the route names the row, the body never re-sends it
-  s=$(body PATCH "identity_sessions_$sess"); has "$s" '"lastSeenAt":"20'
+  only_attendance_patches   # #4517: a turn writes no Session row; the door wrote it, pulse reads the turn stream (#4367: the door may record attendance)
   r=$(bodies | grep -F "PUT-identity_sessionruns_" | tail -1); test -n "$r"
   has "$(cat "$T"/bodies/*"$r")" '"conversationId":"conv-42"'
   # throttled: a second turn inside a minute writes nothing. #4351: since #4339 a
@@ -127,7 +137,7 @@ PY
   printf '{"state":"recorded","session":"silas-old-1","pid":5150}' > "$T/identity/silas/login.json"
   printf '{"name":"silas-old-1","tokenId":"j","ownedBy":"principal-silas","sessionState":"open","issuedAt":"2026-09-25T14:54:06Z"}' > "$T/identity/silas/session.row.json"
   echo '{"session_id":"conv-7","prompt":"hi"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen silas
-  s=$(body PATCH identity_sessions_silas-old-1); has "$s" '"actsAs":"silas"'; has "$s" '"startedAt":"2026-09-25T14:54:06Z"'
+  only_attendance_patches   # #4517: a turn writes no Session row; the door wrote it, pulse reads the turn stream (#4367: the door may record attendance)
   r=$(body POST identity_sessionruns); has "$r" '"runOf":"silas-old-1"'; has "$r" '"conversationId":"conv-7"'
   has "$(body POST identity_presences)" '"presenceOf":"sessionrun-silas-run-'
   has "$(body POST memory_contexts)" '"contextKind":"boot"'
@@ -136,8 +146,9 @@ PY
 @test "NEGATIVE PROOF: a recorded login with nothing running gets no run" {
   printf '{"state":"recorded","session":"silas-old-1","pid":5150}' > "$T/identity/silas/login.json"
   printf '{"name":"silas-old-1","tokenId":"j","ownedBy":"principal-silas","sessionState":"open","issuedAt":"2026-09-25T14:54:06Z"}' > "$T/identity/silas/session.row.json"
-  echo '{"session_id":"conv-7","prompt":"hi"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen silas
-  test -n "$(bodies | grep -F PATCH-identity_sessions_ || true)"
+  run bash -c "echo '{\"session_id\":\"conv-7\",\"prompt\":\"hi\"}' | AWAKE_SEEN_SYNC=1 '$SCRIPT' seen silas"
+  test "$status" -eq 0   # not vacuous: the turn ran to the end (a crash would leave the absences below true)
+  only_attendance_patches   # #4517: a turn writes no Session row; the door wrote it, pulse reads the turn stream (#4367: the door may record attendance)
   test -z "$(bodies | grep -F POST-identity_sessionruns || true)"
 }
 
@@ -238,8 +249,9 @@ EOS
   mk_token silas $(( $(date +%s) + 3000 ))   # the token the next write carries
   age_seen silas
   echo '{"session_id":"c-4948","prompt":"what now"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen silas
-  s=$(body PATCH "identity_sessions_$sess"); has "$s" '"lastSeenAt":"20'   # not vacuous: the turn did write
-  test -z "$(printf '%s' "$s" | grep -F expiresAt || true)"
+  only_attendance_patches   # #4517: a turn writes no Session row; the door wrote it, pulse reads the turn stream (#4367: the door may record attendance)
+  r=$(bodies | grep -F "PUT-identity_sessionruns_" | tail -1); test -n "$r"   # not vacuous: the turn did write its run
+  test -z "$(cat "$T"/bodies/*"$r" | grep -F expiresAt || true)"
 }
 
 @test "#4367 Jeff attends a session and never owns one" {
@@ -271,7 +283,7 @@ EOS
   printf '{"error":"validation","message":"double-prefix: role-silas"}\n' > "$T/curl.reply"
   age_seen silas
   echo '{"session_id":"c-r","prompt":"<task-notification>x</task-notification>"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen silas
-  grep -q "session.row.failed silas kind=session" "$T/spine.log"
+  grep -q "session.row.failed silas kind=run" "$T/spine.log"   # #4517: a turn writes its run, never the Session row
   grep -q "why=double-prefix: role-silas" "$T/spine.log"
 }
 
@@ -299,14 +311,7 @@ PY
   p=$(cat "$T"/bodies/*PUT-memory_conversations_* | tail -1); has "$p" "\"conversationOf\":\"$newrun\""
 }
 
-@test "#4343 a login saved with actsAs role-wren is sent back as wren, so the update is not refused" {
-  running wren 5151
-  printf '{"state":"recorded","session":"wren-old","pid":5151}' > "$T/identity/wren/login.json"
-  printf '{"name":"wren-old","tokenId":"j","ownedBy":"principal-wren","sessionState":"open","issuedAt":"2026-09-26T15:06:25Z","actsAs":"role-wren","startedAt":"2026-09-26T15:06:25Z"}' > "$T/identity/wren/session.row.json"
-  echo '{"session_id":"c","prompt":"hi"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen wren
-  s=$(body PATCH identity_sessions_wren-old); has "$s" '"actsAs":"wren"'
-  test -z "$(printf '%s' "$s" | grep -F '"actsAs":"role-wren"' || true)"
-}
+# #4343 case retired by #4517: a turn writes no Session row, so no actsAs is re-sent (logins_4517 proves the door writes it bare)
 
 @test "#4344 #4447 credentials writes the role's credential files as rows that name the file and never carry the secret" {
   printf '{"secret":"SUPERSECRET-client-secret","issuer":"x"}' > "$T/identity/silas/cred.json"

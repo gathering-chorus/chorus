@@ -21,6 +21,8 @@ use std::process::Command;
 pub mod auth;
 pub mod reconcile; // #3723 — the model reconciliation readout
 pub mod oidc; // #3613 / ADR-052 — ES256/JWKS (Solid-OIDC via CSS) verify at the seam
+pub mod logins; // #4517 AC5 — POST /identity/logins: the door writes every Session row
+pub mod claims; // #4517 AC3 — a PATCH of exactly {ownedBy: caller} claims an ownerless row
 
 pub const NS: &str = "https://jeffbridwell.com/chorus#";
 pub const ONTOLOGY_GRAPH: &str = "urn:chorus:ontology";
@@ -877,6 +879,10 @@ pub fn row_owner_governed(fields: &[String]) -> bool {
 pub fn deploy_only(write_authority: &str) -> bool {
     write_authority.eq_ignore_ascii_case("deploy")
 }
+
+/// #4517 AC5 — "door": rows the door writes itself when it verifies a login (Session);
+/// no session may write them, whatever its grants.
+pub fn door_written(write_authority: &str) -> bool { write_authority.eq_ignore_ascii_case("door") }
 
 /// Authentication alone is not write authority. A model Principal may exist
 /// without a holdsRole edge (guest/service identity); such a principal gets an
@@ -3860,6 +3866,10 @@ pub fn handle_write_scoped(method: &str, path: &str, body: &str, table: &RouteTa
         Some(o) => o,
         None => return write_resp("not-found", "no such write route"),
     };
+    if door_written(&table.write_authority) {
+        emit_write_spine(caller_role, method, "", "", "authz");
+        return write_resp("authz", &format!("'{}' rows are written by the door when it verifies a login, never by a session", class_local));
+    }
     if let Some(refused) = create_refusal(&op, &table.instances_graph, scope, caller_role)
         .or_else(|| ownerless_edit_refusal(&op, &table.fields, &table.instances_graph, scope, caller_role)) {
         emit_write_spine(caller_role, method, "", "", "authz");
@@ -3869,20 +3879,6 @@ pub fn handle_write_scoped(method: &str, path: &str, body: &str, table: &RouteTa
     if let Some(refused) = acts_as_refusal(&table.class, &op, body, caller_role, teammate_serves) {
         emit_write_spine(caller_role, method, "", "", if refused.0 == 503 { "unavailable" } else { "authz" });
         return refused;
-    }
-    // #3573 (bounds) — cap the structured write body before any graph work. A single
-    // entity write is < 1 KiB; an unbounded body is the runaway/oversized vector.
-    if body.len() > MAX_WRITE_BYTES {
-        return write_resp("validation", &format!(
-            "write body {} bytes exceeds {}-byte cap", body.len(), MAX_WRITE_BYTES));
-    }
-    // #4102 — revisions are written by the door at replace, never by a caller
-    if table.class.ends_with("#Version") {
-        return write_resp("validation", "revisions are kept by the door when a row is replaced; they cannot be written directly");
-    }
-    // #4101 — the stamps are the door's, never the body's
-    if let Some(k) = body_sets_a_stamp(body) {
-        return write_resp("validation", &format!("'{}' is stamped by the door from the write itself; it cannot be set in the body", k));
     }
     // entity name (None for create/create-batch) + injection-safety
     let entity: Option<String> = match &op {
@@ -3897,6 +3893,23 @@ pub fn handle_write_scoped(method: &str, path: &str, body: &str, table: &RouteTa
     if let Some(e) = &entity {
         if !is_safe_local(e) {
             return write_resp("validation", "invalid entity name");
+        }
+        // #4517 AC3 — a claim: exactly {ownedBy: caller} on a PATCH. The DAL decides ownerless,
+        // Write-holder and conflict in one update; anything else in the body never gets here.
+        // Only a row with NO owner is claimable; an owned row keeps the normal path's answer.
+        if matches!(op, WriteOp::PatchEntity { .. }) {
+            if let Some(claim) = claims::claim_body(body, caller_role).filter(|_| matches!(read_owned_by(&table.class, e, &table.instances_graph), Ok(None))) {
+                // AC1 holds here too (Silas 00:33): no Write on the graph is 403 before the body is judged.
+                if !scope_allows(&table.instances_graph, scope) {
+                    emit_write_spine(caller_role, method, e, "", "authz");
+                    return write_resp("authz", &format!("only a Write holder on <{}> may claim its rows; {}", table.instances_graph, row_that_would_open(caller_role, &table.instances_graph)));
+                }
+                if let Err((code, why)) = claim { return (code, format!("{{ \"error\": \"{}\", \"message\": \"{}\" }}", if code == 422 { "validation" } else { "authz" }, json_escape(&why))); }
+                let args: Vec<String> = ["claim-owner", "--kind", &kind_of_class(class_local), "--name", e, "--graph", &table.instances_graph].iter().map(|s| s.to_string()).collect();
+                let (code, tag) = claims::claim_status(dal_run(&args, token));
+                emit_write_spine(caller_role, method, e, "", if code == 200 { "ok" } else { tag });
+                return (code, format!("{{ \"result\": \"{}\", \"row\": \"{}\" }}", tag, json_escape(e)));
+            }
         }
         // AC3 authZ — only the owning role writes this node's edges (fail-closed).
         // #4277 — the verdict names its state: a store that did not answer is
@@ -3920,6 +3933,20 @@ pub fn handle_write_scoped(method: &str, path: &str, body: &str, table: &RouteTa
                 return write_resp("authz", &format!("not this row's owner (ownedBy {}); {}", owned.as_deref().unwrap_or("absent — the row has no owner"), row_that_would_open(caller_role, &table.instances_graph)));
             }
         }
+    }
+    // #4517 AC1 — body checks run only after authz (a refused caller gets 403 whatever it sent).
+    // #3573 — cap the body: a single entity write is < 1 KiB; unbounded is the runaway vector.
+    if body.len() > MAX_WRITE_BYTES {
+        return write_resp("validation", &format!(
+            "write body {} bytes exceeds {}-byte cap", body.len(), MAX_WRITE_BYTES));
+    }
+    // #4102 — revisions are written by the door at replace, never by a caller
+    if table.class.ends_with("#Version") {
+        return write_resp("validation", "revisions are kept by the door when a row is replaced; they cannot be written directly");
+    }
+    // #4101 — the stamps are the door's, never the body's
+    if let Some(k) = body_sets_a_stamp(body) {
+        return write_resp("validation", &format!("'{}' is stamped by the door from the write itself; it cannot be set in the body", k));
     }
     match &op {
         WriteOp::AddEdge { name, edge } | WriteOp::RemoveEdge { name, edge } => {
@@ -6985,6 +7012,96 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                         }
                     } };
                     log.close(&principal, "create-linked", "", code, &body);
+                    let resp = http_response_ct(status_line(code), &body, "application/json");
+                    let _ = stream.write_all(resp.as_bytes());
+                    return;
+                }
+                // #4517 AC5 — the door writes every Session row: a verified login calls once.
+                if method == "POST" && (path == logins::LOGINS_PATH || path.strip_prefix("/v1") == Some(logins::LOGINS_PATH)) {
+                    let now_secs = unix_now_secs();
+                    let auth_hdr = header("authorization");
+                    let token = bearer_token(&auth_hdr);
+                    let mut refused_by = String::new();
+                    let (code, body) = match oidc::verify_any(token, &oidc_verifier, now_secs) {
+                        Err(_) => (401u16, "{ \"error\": \"authn-missing\", \"message\": \"a verified login is required to open a session\" }".to_string()),
+                        Ok(claims) => {
+                            let who = oidc_verifier.principal_for(&claims.web_id, now_secs).unwrap_or_else(|| claims.agent_id.clone());
+                            refused_by = who.clone();
+                            let caller = logins::Caller { principal: &who, jti: &claims.jti, expires_at: &logins::iso_from_secs(claims.exp) };
+                            let body_str = req.splitn(2, "\r\n\r\n").nth(1).unwrap_or("");
+                            match tables.iter().find(|t| t.class.ends_with("#Session")) {
+                                None => (503u16, "{ \"error\": \"unavailable\", \"message\": \"this door serves no Session class\" }".to_string()),
+                                Some(table) => {
+                                    let mut own = table.clone();
+                                    own.write_authority = String::new();
+                                    let now_iso = logins::iso_from_secs(now_secs);
+                                    // supersede: the role's older open pane rows end through the logouts path
+                                    let supersede = |keep: &str| {
+                                        let host = logins::principal_host_account(&who).ok().flatten().unwrap_or_default();
+                                        for old in logins::older_open_panes(&who, &host, keep).unwrap_or_default() {
+                                            let (c, _) = logins::handle_logout(&who, &format!("{{\"session\":\"{}\"}}", old), logins::session_facts,
+                                                |n, p| with_write_lock(|| handle_write_scoped("PATCH", &format!("/sessions/{}", n), p, &own, &who, token, "", &claims.scope)), logins::people_present, &now_iso);
+                                            emit_write_spine(&who, "supersede", &old, "", if c == 200 { "ok" } else { "failed" });
+                                        }
+                                    };
+                                    // a browser row's lastSeenAt, at most once per window (Silas 01:31)
+                                    let touch = |name: &str| {
+                                        let last = logins::session_last_seen(name).ok().flatten().and_then(|t| logins::secs_from_iso(&t));
+                                        if logins::touch_due(last, now_secs) {
+                                            let _ = with_write_lock(|| handle_write_scoped("PATCH", &format!("/sessions/{}", name), &format!("{{\"lastSeenAt\":\"{}\"}}", now_iso), &own, &who, token, "", &claims.scope));
+                                        }
+                                    };
+                                    // a refreshed browser login renews its own open row (Silas 01:34)
+                                    if serde_json::from_str::<serde_json::Value>(body_str).ok().and_then(|v| v.get("renews").cloned()).is_some() {
+                                        logins::handle_renewal(&caller, body_str, logins::renewed_row_facts,
+                                            |n, p| with_write_lock(|| handle_write_scoped("PATCH", &format!("/sessions/{}", n), p, &own, &who, token, "", &claims.scope)), &now_iso)
+                                    } else {
+                                    logins::handle_login(&caller, body_str, logins::principal_host_account,
+                                        |role| teammate_serves(&who, role), logins::session_for_login,
+                                        |row| with_write_lock(|| handle_create(row, table, &who, token, "")), supersede, touch, logins::people_present, &now_iso)
+                                    }
+                                }
+                            }
+                        }
+                    };
+                    // #4517 AC5 — the door records a refused login itself, with its reason
+                    if let Some(args) = logins::refusal_event(code, &refused_by, &body) {
+                        let home = std::env::var("CHORUS_HOME").unwrap_or_else(|_| format!("{}/CascadeProjects/chorus", std::env::var("HOME").unwrap_or_default()));
+                        let _ = Command::new("bash").arg(format!("{}/platform/scripts/chorus-log", home)).args(&args).output();
+                    }
+                    let resp = http_response_ct(status_line(code), &body, "application/json");
+                    let _ = stream.write_all(resp.as_bytes());
+                    return;
+                }
+                // #4517 AC6 — the owner ends its own session; the door stamps how.
+                // #4517 — a logout, or (#4367) an attendance: both patch the caller's own Session row
+                let own_session_path = |p: &str| path == p || path.strip_prefix("/v1") == Some(p);
+                if method == "POST" && (own_session_path(logins::LOGOUTS_PATH) || own_session_path(logins::ATTENDANCES_PATH)) {
+                    let now_secs = unix_now_secs();
+                    let auth_hdr = header("authorization");
+                    let token = bearer_token(&auth_hdr);
+                    let (code, body) = match oidc::verify_any(token, &oidc_verifier, now_secs) {
+                        Err(_) => (401u16, "{ \"error\": \"authn-missing\", \"message\": \"a verified login is required to end a session\" }".to_string()),
+                        Ok(claims) => {
+                            let who = oidc_verifier.principal_for(&claims.web_id, now_secs).unwrap_or_else(|| claims.agent_id.clone());
+                            let body_str = req.splitn(2, "\r\n\r\n").nth(1).unwrap_or("");
+                            match tables.iter().find(|t| t.class.ends_with("#Session")) {
+                                None => (503u16, "{ \"error\": \"unavailable\", \"message\": \"this door serves no Session class\" }".to_string()),
+                                Some(table) => {
+                                    // the door's own patch: the "door" write rule is for sessions, not for the door
+                                    let mut own = table.clone();
+                                    own.write_authority = String::new();
+                                    let patch_own = |name: &str, patch: &str| with_write_lock(|| handle_write_scoped("PATCH", &format!("/sessions/{}", name), patch, &own, &who, token, "", &claims.scope));
+                                    let now_iso = logins::iso_from_secs(now_secs);
+                                    if own_session_path(logins::ATTENDANCES_PATH) {
+                                        logins::handle_attendance(&who, body_str, logins::session_facts, patch_own, logins::people_present, &now_iso)
+                                    } else {
+                                        logins::handle_logout(&who, body_str, logins::session_facts, patch_own, logins::people_present, &now_iso)
+                                    }
+                                }
+                            }
+                        }
+                    };
                     let resp = http_response_ct(status_line(code), &body, "application/json");
                     let _ = stream.write_all(resp.as_bytes());
                     return;

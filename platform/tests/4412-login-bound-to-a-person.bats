@@ -75,12 +75,14 @@ posts() { ls "$T/bodies" 2>/dev/null | grep -c -- '-POST-identity_sessions.json$
   test "$status" -eq 0
 }
 
-@test "#4412 Jeff at his own terminal, not signed in to the Clearing: login works and says he started it" {
+@test "#4412 Jeff at his own terminal, not signed in to the Clearing: login works and the row says the role reported him" {
   touch "$T/nobody-signed-in" "$T/jeff-at-terminal"
   unset CLAUDECODE
   run "$SCRIPT" login wren
   test "$status" -eq 0
-  has "$(cat "$T"/bodies/*-POST-identity_sessions.json | tail -1)" '"startedBy":"jeff"'
+  s=$(cat "$T"/bodies/*-POST-identity_sessions.json | tail -1)
+  has "$s" '"startReportedBy":"jeff"'   # #4517 (Silas 06:22): the door cannot see his terminal, so it is labelled role-reported
+  test -z "$(printf '%s' "$s" | grep -F '"startedBy"' || true)"   # NEGATIVE: never startedBy
 }
 
 @test "#4412 NEGATIVE: the same terminal check from inside an agent session is refused" {

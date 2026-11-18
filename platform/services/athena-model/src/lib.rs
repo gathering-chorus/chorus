@@ -2441,6 +2441,56 @@ fn prove_create_only_commit(
 /// deliberately owned by the caller after this returns: single-add preserves
 /// its entity witness, while add-batch emits one aggregate rather than spawning
 /// chorus-log once per member inside the request's latency.
+/// #4517 AC3 (Jeff 11-18 00:17) — the role that holds Write on a graph may claim a row
+/// there that has NO owner, naming itself and nothing else. "Absent" is checked inside
+/// the same update (INSERT … WHERE NOT EXISTS), so there is no read-then-write race;
+/// the owner is then read back, because an update returns no count (Silas 00:28).
+/// Append is not enough, and a graph nobody holds Write on stays unclaimable.
+/// No changedAt/writeCount stamp, on purpose: a claim adds one edge, and the edge verb
+/// (`link`, add_edges_keeping) stamps none either; the spine's owner.claimed {row, by,
+/// graph} is the record of who claimed what and when (Silas 00:30).
+pub fn claim_owner(store: &dyn Store, kind: &str, name: &str, graph: &str, id: &Identity) -> R<String> {
+    if !granted_write_graphs().iter().any(|g| g == graph) {
+        witness("model.refused", &[("kind", kind), ("name", name), ("reason", "claim-needs-write")]);
+        return Err(format!("claim-needs-write: {} holds no Write row on <{}>; only a graph's Write holder may claim its rows", id.role(), graph));
+    }
+    assert_instance_graph(graph)?;
+    let subject = mint(kind, name)?;
+    let me = mint("principal", id.role())?;
+    store.update(&format!(
+        "PREFIX chorus: <{ns}> INSERT {{ GRAPH <{g}> {{ <{s}> chorus:ownedBy <{p}> }} }} WHERE {{ GRAPH <{g}> {{ <{s}> ?x ?y }} FILTER NOT EXISTS {{ GRAPH <{g}> {{ <{s}> chorus:ownedBy ?o }} }} }}",
+        ns = NS, g = graph, s = subject, p = me
+    ))?;
+    let owners = store.select_v(&format!(
+        "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ <{s}> chorus:ownedBy ?o . BIND(STR(?o) AS ?v) }} }}",
+        ns = NS, g = graph, s = subject
+    ))?;
+    match owners.as_slice() {
+        [one] if *one == me => {
+            witness("owner.claimed", &[("row", subject.as_str()), ("by", id.role()), ("graph", graph)]);
+            Ok(subject)
+        }
+        [] => Err(format!("claim-unconfirmed: <{}> has no owner after the claim — no such row in <{}>", subject, graph)),
+        _ => Err(format!("claim-conflict: <{}> is already owned by {}", subject, owners.join(", "))),
+    }
+}
+
+/// #4517 AC5 — a Session row names the verified login as its owner, never anyone else.
+/// The door writes Session rows with the caller's own login (Jeff 11-18 00:17); this
+/// rule holds even for a role that runs the DAL directly, so no session can be forged
+/// for another principal (Silas 00:17).
+pub fn session_owner_refusal(req: &WriteReq, id: &Identity) -> Option<String> {
+    if !req.kind.eq_ignore_ascii_case("Session") {
+        return None;
+    }
+    let owners: Vec<&str> = req.edges.iter().filter(|(p, _, _)| p == "ownedBy").map(|(_, _, n)| n.as_str()).collect();
+    match owners.as_slice() {
+        [one] if *one == id.role() => None,
+        [] => Some(format!("session-owner: Session '{}' names no owner; it must be owned by the login that writes it ({})", req.name, id.role())),
+        _ => Some(format!("session-owner: Session '{}' is owned by {}, not by the login that writes it ({})", req.name, owners.join(","), id.role())),
+    }
+}
+
 fn commit_writes(
     store: &dyn Store,
     plans: &[PlannedWrite<'_>],
@@ -2452,6 +2502,10 @@ fn commit_writes(
     also: Option<&str>,
 ) -> R<Vec<String>> {
     const DCT: &str = "http://purl.org/dc/terms/";
+    if let Some(why) = plans.iter().find_map(|p| session_owner_refusal(p.req, id)) {
+        witness("model.refused", &[("reason", "session-owner")]);
+        return Err(why);
+    }
     let created_by_subject = if replace_existing {
         existing_created(store, plans).map_err(|e| e.message)?
     } else {
@@ -6343,5 +6397,86 @@ mod seed_guard_4316 {
     fn negative_proof_a_claimed_kind_outside_the_namespace_is_refused() {
         let e = seed_iri_ok_with("tool", "<https://example.com/look>", &claims, &[]).unwrap_err();
         assert!(e.contains("outside the chorus namespace"), "{e}");
+    }
+}
+
+#[cfg(test)]
+mod session_owner_4517 {
+    use super::*;
+
+    fn session(owners: &[&str]) -> WriteReq {
+        let mut r: WriteReq = serde_json::from_str(r#"{"kind":"Session","name":"kade-1"}"#).unwrap();
+        r.edges = owners.iter().map(|o| ("ownedBy".to_string(), "principal".to_string(), o.to_string())).collect();
+        r
+    }
+
+    #[test]
+    fn a_session_owned_by_the_writing_login_passes() {
+        assert_eq!(session_owner_refusal(&session(&["kade"]), &Identity("kade".into())), None);
+    }
+
+    /// NEGATIVE PROOF: a role that runs the DAL directly cannot forge another's session.
+    #[test]
+    fn negative_proof_a_session_for_another_principal_or_no_one_is_refused() {
+        let kade = Identity("kade".into());
+        assert!(session_owner_refusal(&session(&["silas"]), &kade).is_some_and(|w| w.contains("silas")));
+        assert!(session_owner_refusal(&session(&[]), &kade).is_some());
+        assert!(session_owner_refusal(&session(&["kade", "silas"]), &kade).is_some());
+    }
+
+    #[test]
+    fn other_classes_are_not_held_by_this_rule() {
+        let mut r = session(&["silas"]);
+        r.kind = "Policy".into();
+        assert_eq!(session_owner_refusal(&r, &Identity("kade".into())), None);
+    }
+}
+
+#[cfg(test)]
+mod claim_owner_4517 {
+    use super::*;
+    use std::cell::RefCell;
+
+    /// A store whose one row starts with `owner`; the claim's update sets it only if absent.
+    struct OneRow { owner: RefCell<Option<String>>, exists: bool }
+    impl Store for OneRow {
+        fn ask(&self, _: &str) -> R<bool> { Ok(self.exists) }
+        fn select_v(&self, _: &str) -> R<Vec<String>> { Ok(self.owner.borrow().iter().cloned().collect()) }
+        fn update(&self, q: &str) -> R<()> {
+            assert!(q.contains("FILTER NOT EXISTS"), "the absent check must ride in the same update");
+            if self.exists && self.owner.borrow().is_none() {
+                let p = q.split("chorus:ownedBy <").nth(1).and_then(|t| t.split('>').next()).unwrap().to_string();
+                *self.owner.borrow_mut() = Some(p);
+            }
+            Ok(())
+        }
+    }
+    const G: &str = "urn:chorus:domains:code";
+    fn kade() -> Identity { Identity("kade".into()) }
+
+    #[test]
+    fn the_write_holder_claims_an_ownerless_row_for_itself() {
+        set_granted_write_graphs(vec![G.into()]);
+        let st = OneRow { owner: RefCell::new(None), exists: true };
+        assert!(claim_owner(&st, "code-kind", "asset", G, &kade()).is_ok());
+        assert!(st.owner.borrow().as_deref().is_some_and(|o| o.ends_with("principal-kade")));
+    }
+
+    /// NEGATIVE PROOFS: an owned row is a conflict and keeps its owner; no Write row
+    /// (Append is not Write) refuses before any update; a missing row is not claimed.
+    #[test]
+    fn negative_proofs_owned_unwritable_and_missing_rows_are_refused() {
+        set_granted_write_graphs(vec![G.into()]);
+        let owned = OneRow { owner: RefCell::new(Some(format!("{NS}principal-silas"))), exists: true };
+        let e = claim_owner(&owned, "code-kind", "asset", G, &kade()).unwrap_err();
+        assert!(e.starts_with("claim-conflict") && owned.owner.borrow().as_deref().unwrap().ends_with("principal-silas"), "{e}");
+        set_granted_write_graphs(vec![format!("append:{G}")]);
+        let free = OneRow { owner: RefCell::new(None), exists: true };
+        assert!(claim_owner(&free, "code-kind", "asset", G, &kade()).unwrap_err().starts_with("claim-needs-write"));
+        assert!(free.owner.borrow().is_none(), "nothing written without Write");
+        set_granted_write_graphs(vec![G.into()]);
+        let gone = OneRow { owner: RefCell::new(None), exists: false };
+        assert!(claim_owner(&gone, "code-kind", "asset", G, &kade()).unwrap_err().starts_with("claim-unconfirmed"));
+        set_granted_write_graphs(vec![]);
     }
 }

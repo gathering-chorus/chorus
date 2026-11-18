@@ -73,7 +73,7 @@ signins() { grep -c "token fx" "$T/token.log" 2>/dev/null || true; }
   echo "$output"
   test "$status" -eq 0
   test "$(signins)" -ge 1
-  grep -qE -- '-X POST.*/v1/identity/sessions' "$T/curl.log"
+  grep -qE -- '-X POST.*/v1/identity/logins' "$T/curl.log"
 }
 
 @test "establish after /exit goes back to the role's still-open session: one Session POST, not two (#4406)" {
@@ -84,7 +84,7 @@ signins() { grep -c "token fx" "$T/token.log" 2>/dev/null || true; }
   run "$SCRIPT" establish fx
   echo "$output"
   test "$status" -eq 0
-  test "$(grep -cE -- '-X POST.*/v1/identity/sessions' "$T/curl.log")" -eq 1
+  test "$(grep -cE -- '-X POST.*/v1/identity/logins' "$T/curl.log")" -eq 1
 }
 
 @test "RETIREMENT GATE: relogin is retired — exits 2, names its replacement, signs in as nobody" {

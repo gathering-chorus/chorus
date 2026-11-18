@@ -69,17 +69,17 @@ if not hasattr(ps, "close_expired_sessions"):
 logs = []
 door = Door(ROWS)
 n = ps.close_expired_sessions("jeff", FRESH, NOW, "jeff-browser-new", door, "http://door", logs.append)
-puts = [c for c in door.calls if c[0] == "PATCH"]
-closed = sorted(c[1].rsplit("/", 1)[-1] for c in puts)
+# #4517 AC6 — each close is his login asking the door's logout; the door stamps how it ended
+LOGOUTS = "http://door/v1/identity/logouts"
+def logouts(d): return [c for c in d.calls if c[0] == "POST" and c[1] == LOGOUTS]
+puts = logouts(door)
+closed = sorted(c[3]["session"] for c in puts)
 check("his two expired open browser sessions are closed, and nothing else", closed == ["jeff-browser-old-1", "jeff-browser-old-2"])
 check("it reports how many it closed", n == 2)
 check("each is closed with his NEW sign-in as the bearer", all(c[2] == FRESH for c in puts))
-check("each ends at its own expiresAt, the true end, not now",
-      sorted(c[3]["endedAt"] for c in puts) == sorted([PAST, PAST2]) and all(c[3]["sessionState"] == "closed" for c in puts))
-# Silas, measured 2026-11-15 18:36: the door refuses its own served row sent back (422, prefixed links)
-check("the close is a PATCH of exactly the two fields that change, never the served row",
-      all(sorted(c[3].keys()) == ["endedAt", "sessionState"] for c in puts))
-check("no whole-row write is made at all", not [c for c in door.calls if c[0] == "PUT"])
+check("each close names only its session: the caller cannot say how a session ended",
+      all(sorted(c[3].keys()) == ["session"] for c in puts))
+check("no Session row is written directly at all", not [c for c in door.calls if c[0] in ("PUT", "PATCH")])
 check("the list is read once, unsigned (reads are open)", [c[0] for c in door.calls].count("GET") == 1)
 # measured at the door 2026-11-15: this URL returns his 124 open browser rows; ?ownedBy=jeff returns 0 (Abby)
 get = [c for c in door.calls if c[0] == "GET"][0]
@@ -100,7 +100,7 @@ check("NEGATIVE: keep wins over an expiry on the new session", ps.close_expired_
 # the door still holds a session whose store row says expired (a renewal that never reached the store)
 door6 = Door([row("jeff-browser-held", "principal-jeff", "browser", "open", PAST), row("jeff-browser-old-9", "principal-jeff", "browser", "open", PAST)])
 ps.close_expired_sessions("jeff", FRESH, NOW, {"jeff-browser-new", "jeff-browser-held"}, door6, "http://door", logs.append)
-closed6 = sorted(c[1].rsplit("/", 1)[-1] for c in door6.calls if c[0] == "PATCH")
+closed6 = sorted(c[3]["session"] for c in logouts(door6))
 check("NEGATIVE: a session the door still holds live is never closed, though its row says expired", closed6 == ["jeff-browser-old-9"])
 # an expiresAt that is not the store's time form is not judged
 door7 = Door([row("jeff-browser-odd", "principal-jeff", "browser", "open", "yesterday"), row("jeff-browser-num", "principal-jeff", "browser", "open", 5)])
@@ -122,6 +122,6 @@ check("and the log says how many were not closed, and the door's status", any("2
 # a door that cannot be listed: nothing written, never raises
 door5 = Door(ROWS, get_status=500)
 check("a list that fails writes nothing", ps.close_expired_sessions("jeff", FRESH, NOW, "x", door5, "http://door", logs.append) == 0
-      and not [c for c in door5.calls if c[0] in ("PUT", "PATCH")])
+      and not [c for c in door5.calls if c[0] in ("PUT", "PATCH", "POST")])
 
 sys.exit(1 if FAILS else 0)

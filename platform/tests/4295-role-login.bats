@@ -216,7 +216,7 @@ stray() {
   : > "$T/curl.log"
   echo '{"prompt":"hi"}' | AWAKE_SEEN_SYNC=1 AWAKE_SEEN_EVERY=0 "$SCRIPT" seen silas
   state_is silas recorded
-  grep -qE -- '-X POST.*/v1/identity/sessions' "$T/curl.log"
+  grep -qE -- '-X POST.*/v1/identity/logins' "$T/curl.log"
 }
 
 @test "#4933 NEGATIVE PROOF: a turn by an account that is not the role's establishes nothing" {
@@ -225,11 +225,11 @@ stray() {
   mk_token fx; mkdir -p "$T/identity/fx"
   : > "$T/curl.log"
   echo '{"prompt":"hi"}' | AWAKE_SEEN_SYNC=1 AWAKE_SEEN_EVERY=0 AWAKE_ESTABLISH_EVERY=0 "$SCRIPT" seen fx
-  test -z "$(grep -E -- '-X POST.*/v1/identity/sessions' "$T/curl.log" || true)"
+  test -z "$(grep -E -- '-X POST.*/v1/identity/logins' "$T/curl.log" || true)"
   # and the same turn with fx's row naming this account does establish (the pair differs)
   printf '{"data":{"principalKind":"agent","hostAccount":"%s"}}\n200\n' "$(id -un)" > "$T/principal-fx.json"
   echo '{"prompt":"hi"}' | AWAKE_SEEN_SYNC=1 AWAKE_SEEN_EVERY=0 AWAKE_ESTABLISH_EVERY=0 "$SCRIPT" seen fx
-  grep -qE -- '-X POST.*/v1/identity/sessions' "$T/curl.log"
+  grep -qE -- '-X POST.*/v1/identity/logins' "$T/curl.log"
 }
 
 @test "a role session cannot start another role (Kade started Silas, 09:50)" {
@@ -262,12 +262,13 @@ stray() {
   run "$SCRIPT" off silas
   test "$status" -eq 0
   out_has "silas logged out: login closed (session silas-x-1)"
-  # #4944 — the close is a PATCH of the fields that change; the row is never read back and
-  # sent whole, so the owner and token never ride along (a stale copy cannot overwrite them)
-  grep -q -- "-X PATCH" "$T/curl.log"
-  test -z "$(grep -- "-X PUT" "$T/curl.log" || true)"
-  curlbody | grep -q '"sessionState":"closed"'
-  test -z "$(curlbody | grep -F -e '"ownedBy"' -e '"tokenId"' || true)"
+  # #4517 AC6 — the owner asks the door to end it, naming only the session; the door stamps
+  # how it ended, and the role writes nothing to the Session row itself
+  grep -qE -- "-X POST.*/v1/identity/logouts" "$T/curl.log" || return 1
+  test -z "$(grep -E -- "-X (PATCH|PUT).*/v1/identity/sessions" "$T/curl.log" || true)" || return 1
+  grep -q '"session":"silas-x-1"' "$T/identity/silas/logout.body" || return 1
+  test -z "$(grep -F -e '"ownedBy"' -e '"endedAt"' -e '"sessionState"' "$T/identity/silas/logout.body" || true)" || return 1
+  curlbody | grep -q '"sessionState":"closed"' || return 1
   grep -q "kill-session -t chorus-silas" "$T/tmux.log"
   state_is silas closed
   grep -q "^session.logout silas session=silas-x-1 how=off" "$T/spine.log"
@@ -279,11 +280,11 @@ stray() {
 @test "off: a row the door refuses to close still stops the role and says what closes it" {
   running silas 902
   printf '{"state":"recorded","session":"silas-x-2","pid":902}' > "$T/identity/silas/login.json"
-  echo 422 > "$T/curl.status.identity_sessions_silas-x-2"
+  echo 403 > "$T/curl.status.identity_logouts"
   run "$SCRIPT" off silas
   test "$status" -eq 0
   out_has "could not be closed"
-  out_has "until the next login or sweep closes it as superseded"
+  out_has "until the role's next login supersedes it"
   out_lacks "expires on its own"
   grep -q "kill-session -t chorus-silas" "$T/tmux.log"
 }
@@ -321,6 +322,8 @@ stray() {
 @test "status: one line per role, and never 'registered yes'" {
   running wren 5499
   printf '{"state":"recorded","session":"wren-x","pid":5499}' > "$T/identity/wren/login.json"
+  printf '{"name":"wren-x"}' > "$T/identity/wren/session.row.json"
+  printf '{"data":[{"name":"wren-x","ownedBy":"principal-wren"}]}' > "$T/open-sessions.json"
   running kade 4264
   printf '{"state":"pending","why":"identity not answering","pid":4264}' > "$T/identity/kade/login.json"
   run "$SCRIPT" status
@@ -329,6 +332,17 @@ stray() {
   out_has "kade   running  login pending  answering   (identity not answering, retrying)"
   out_has "silas  off"
   out_lacks "registered yes"
+}
+
+@test "#4997 NEGATIVE PROOF: a recorded login whose row is not open reads NOT logged in" {
+  running wren 5499
+  printf '{"state":"recorded","session":"wren-x","pid":5499}' > "$T/identity/wren/login.json"
+  printf '{"name":"wren-x"}' > "$T/identity/wren/session.row.json"
+  printf '{"data":[]}' > "$T/open-sessions.json"
+  run "$SCRIPT" status
+  out_has "wren   running  NOT logged in"
+  out_has "(session row closed)"
+  test -z "$(printf '%s' "$output" | grep -E '^wren +running +logged in' || true)"
 }
 
 # ------------------------------------------------------------------ up

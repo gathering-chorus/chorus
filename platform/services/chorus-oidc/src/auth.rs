@@ -41,6 +41,9 @@ pub struct Claims {
     pub aud: String,
     pub exp: u64,
     pub scope: Vec<String>, // #3564 — target graphs this token permits (empty = legacy/unscoped)
+    /// #4517 AC5 — the login's own id (the token's `jti`); one Session row per login.
+    /// Empty when the token carries none: the door then refuses to open a session.
+    pub jti: String,
 }
 
 /// #3573 — parse a flat JSON string-array (`"scope":["g1","g2"]`). Zero-dep, same
