@@ -136,7 +136,8 @@ PY
 @test "NEGATIVE PROOF: a recorded login with nothing running gets no run" {
   printf '{"state":"recorded","session":"silas-old-1","pid":5150}' > "$T/identity/silas/login.json"
   printf '{"name":"silas-old-1","tokenId":"j","ownedBy":"principal-silas","sessionState":"open","issuedAt":"2026-09-25T14:54:06Z"}' > "$T/identity/silas/session.row.json"
-  echo '{"session_id":"conv-7","prompt":"hi"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen silas
+  run bash -c "echo '{\"session_id\":\"conv-7\",\"prompt\":\"hi\"}' | AWAKE_SEEN_SYNC=1 '$SCRIPT' seen silas"
+  test "$status" -eq 0   # not vacuous: the turn ran to the end (a crash would leave the absences below true)
   test -z "$(bodies | grep -F PATCH-identity_sessions_ || true)"   # #4517: a turn writes no Session row; the door wrote it, pulse reads the turn stream
   test -z "$(bodies | grep -F POST-identity_sessionruns || true)"
 }
