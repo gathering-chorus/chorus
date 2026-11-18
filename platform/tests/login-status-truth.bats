@@ -12,6 +12,7 @@
 # Covers: platform/scripts/role-post
 # Covers: platform/scripts/role-post-all
 # Covers: platform/services/chorus-principal/src/lifecycle.rs
+# Covers: directing/clearing-v2/src/views.ts
 
 setup() {
   ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
@@ -59,4 +60,11 @@ signin() { printf '%s' "$1" > "$T/h/.chorus/identity/r/login.json"; }
   echo "$output" | tail -3
   [ "$status" -eq 0 ]
   echo "$output" | grep -qE "test result: ok\. 7 passed"
+}
+
+@test "AC1 the Teammates tile: open live row reads logged in, else not logged in, unread reads unverified" {
+  run bash -c "cd '$ROOT/directing/clearing-v2' && npx jest tests/teammates-login-4997.test.ts 2>&1"
+  echo "$output" | tail -3
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -qE "Tests: +3 passed, 3 total"
 }

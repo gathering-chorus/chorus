@@ -306,16 +306,26 @@ export function renderTodayPage(data: TodayData, sources: TrustStripSource[]): s
   return renderPageShell('Today', 'today', content, sources, { decisions: data.decisionsCount, alerts: data.alerts.length });
 }
 
+/** #4997 AC1 (Jeff 19:24) — "logged in" only when pulse lists an open, live Session row;
+ *  otherwise "not logged in" (the reason lives in `chorus-principal status`). Sessions that
+ *  could not be read say "unverified", never a stale "logged in". */
+export function loginWord(a: ActorRow, sessionsUnread: boolean): string {
+  if (sessionsUnread) return 'unverified';
+  return a.sessions.some((s) => s.endsWith(' · live')) ? 'logged in' : 'not logged in';
+}
+
 export function renderRolesPage(data: RolesData, sources: TrustStripSource[]): string {
+  const sessionsUnread = (data.unmeasured || '').includes('identity:sessions');
   const table = data.actors.length === 0 ? '' : `
         <table class="roles-table">
           <thead>
-            <tr><th>Teammate</th><th>State</th><th>Activity</th><th>Card</th><th>Sessions</th></tr>
+            <tr><th>Teammate</th><th>Login</th><th>State</th><th>Activity</th><th>Card</th><th>Sessions</th></tr>
           </thead>
           <tbody>
             ${data.actors.map(a => `
               <tr class="${a.id === 'jeff' ? 'you' : ''}">
                 <td><span class="row who"><span class="av a-${a.id}">${a.name.charAt(0)}</span><b>${a.name}</b></span></td>
+                <td class="login${sessionsUnread ? ' faint' : ''}">${loginWord(a, sessionsUnread)}</td>
                 <td>${renderStateBadge(a)}${renderActorDetail(a)}</td>
                 <td class="meta">${renderActivity(a)}</td>
                 <td>${renderCardRefs(a.cards, a.card, a.pair)}</td>
