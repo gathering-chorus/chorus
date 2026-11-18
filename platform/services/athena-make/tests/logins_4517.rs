@@ -135,6 +135,19 @@ mod supersede {
         assert!(o[1].starts_with("supersede kade-"), "{o:?}");
     }
 
+    /// Silas 07:57 — a supervised agent login (Abby) supersedes like a pane, after its write.
+    #[test]
+    fn a_new_agent_login_supersedes_like_a_pane() {
+        let order = RefCell::new(Vec::<String>::new());
+        let (c, _) = handle_login(&kade(), r#"{"channel":"agent","hostAccount":"chorus-kade"}"#, host, serves, |_| Ok(None),
+            |_| { order.borrow_mut().push("create".into()); (201, "{}".into()) },
+            |keep| order.borrow_mut().push(format!("supersede {keep}")), |_| {}, no_people, NOW);
+        assert_eq!(c, 201);
+        let o = order.borrow();
+        assert_eq!(o.len(), 2, "{o:?}");
+        assert!(o[1].starts_with("supersede kade-"), "{o:?}");
+    }
+
     /// NEGATIVE PROOFS (Silas 00:54): a failed create supersedes nothing (the role is never
     /// left with no open row), and a browser login never supersedes (phone and desktop).
     #[test]
@@ -266,6 +279,9 @@ fn the_supersede_query_names_only_this_principals_open_pane_rows_on_this_account
     let q = older_open_panes_query("silas", "chorus-silas").unwrap();
     assert!(q.contains("chorus:ownedBy <https://jeffbridwell.com/chorus#principal-silas>"), "{q}");
     assert!(q.contains(r#"STR(?c) = "pane""#) && q.contains(r#"STR(?h) = "chorus-silas""#));
+    // Silas 07:57 — agent rows are superseded too (Abby), browser rows never
+    assert!(q.contains(r#"STR(?c) = "agent""#), "agent rows must be superseded: {q}");
+    assert!(!q.contains("browser"), "a browser row is never superseded: {q}");
     assert!(q.contains("FILTER NOT EXISTS { ?s chorus:endedAt ?e }"), "a closed row is never superseded");
     assert!(!q.contains("principal-kade"));
     assert!(older_open_panes_query("silas> . ?x ?y ?z", "chorus-silas").is_none());

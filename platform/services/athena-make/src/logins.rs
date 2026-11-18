@@ -67,13 +67,15 @@ pub fn handle_login(
         Ok(Outcome::Create(name, mut row)) => {
             row["name"] = Value::String(name.clone());
             // The caller learns the row's name from the answer: the door chose it.
-            let pane = row["channel"] == "pane";
+            // a role's runtime row: a pane, or a supervised agent (Abby, #4424)
+            let runtime = row["channel"] == "pane" || row["channel"] == "agent";
             match create(&row.to_string()) {
                 (c, _) if (200..300).contains(&c) => {
-                    // #4517 AC6 (Silas 00:54) — one pane per role: only after the new row is
-                    // written, end the role's older open pane rows. A browser login never
+                    // #4517 AC6 (Silas 00:54, 07:57) — one runtime per role: only after the new
+                    // row is written, end the role's older open pane and agent rows (else agent
+                    // logins pile up, #4445's "2 sessions for abby"). A browser login never
                     // supersedes: Jeff's phone and desktop are both live.
-                    if pane { supersede(&name); }
+                    if runtime { supersede(&name); }
                     (201, format!("{{ \"name\": \"{}\", \"created\": true }}", crate::json_escape(&name)))
                 }
                 other => other,
@@ -211,8 +213,8 @@ pub fn session_facts(name: &str) -> Result<Option<SessionFacts>, String> {
 }
 
 
-/// The role's open pane rows on the same hostAccount other than `keep`: the ones a new
-/// pane login supersedes.
+/// The role's open pane and agent rows on the same hostAccount other than `keep`: the ones
+/// a new pane or agent login supersedes.
 pub fn older_open_panes(principal: &str, host: &str, keep: &str) -> Result<Vec<String>, String> {
     let Some(q) = older_open_panes_query(principal, host) else { return Ok(vec![]) };
     Ok(crate::select_v(&crate::sparql_json(&q)?).into_iter().filter(|n| n != keep).collect())
@@ -222,7 +224,7 @@ pub fn older_open_panes(principal: &str, host: &str, keep: &str) -> Result<Vec<S
 /// hostAccount, not ended. None for a name or host that could break out of the query.
 pub fn older_open_panes_query(principal: &str, host: &str) -> Option<String> {
     if principal.is_empty() || !principal.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') || host.contains('"') || host.contains('\\') { return None; }
-    Some(format!("PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <urn:chorus:domains:identity> {{ ?s a chorus:Session ; chorus:ownedBy <{ns}principal-{p}> ; chorus:channel ?c ; chorus:hostAccount ?h . FILTER(STR(?c) = \"pane\" && STR(?h) = \"{h}\") FILTER NOT EXISTS {{ ?s chorus:endedAt ?e }} BIND(REPLACE(STR(?s), '.*#session-', '') AS ?v) }} }}",
+    Some(format!("PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <urn:chorus:domains:identity> {{ ?s a chorus:Session ; chorus:ownedBy <{ns}principal-{p}> ; chorus:channel ?c ; chorus:hostAccount ?h . FILTER((STR(?c) = \"pane\" || STR(?c) = \"agent\") && STR(?h) = \"{h}\") FILTER NOT EXISTS {{ ?s chorus:endedAt ?e }} BIND(REPLACE(STR(?s), '.*#session-', '') AS ?v) }} }}",
         ns = crate::NS, p = principal, h = host))
 }
 

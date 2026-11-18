@@ -49,7 +49,8 @@
 #    11466  2026-11-18  #4517 (Wren): older_open_panes_query split out so its scope is tested (ex-#4445).
 #    11568  2026-11-18  #4517 (Wren, Jeff yes 06:20): person at logins/logouts (#4412) and /identity/attendances (#4367).
 #    11578  2026-11-18  #4517 (Silas 06:46): Principal facts read from the Principal graph only.
-FROZEN_LINES=11578  # #4517 AC6 — see history above
+#    11580  2026-11-18  #4517 (Silas 07:57): a supervised agent login supersedes like a pane (Abby).
+FROZEN_LINES=11580  # #4517 AC6 — see history above
 set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 count() { cat "$1"/*.rs 2>/dev/null | wc -l | tr -d ' '; }
