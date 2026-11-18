@@ -42,7 +42,9 @@
 #                       open pane rows through the logouts path (replaces the sweep's PATCH).
 #    11386  2026-11-18  #4517 AC6 (Wren): +60, a repeat browser login touches lastSeenAt at
 #                       most once per 5 min (the browser keep-alive the deleted PATCH did).
-FROZEN_LINES=11386  # #4517 AC6 — see history above
+#    11431  2026-11-18  #4517 AC6 (Wren): +45, a refreshed browser login renews its own open
+#                       row (the rule is identity-login's plan_renewal; this is the wiring).
+FROZEN_LINES=11431  # #4517 AC6 — see history above
 set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 count() { cat "$1"/*.rs 2>/dev/null | wc -l | tr -d ' '; }

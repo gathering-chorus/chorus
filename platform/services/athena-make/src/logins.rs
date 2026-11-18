@@ -239,3 +239,42 @@ mod touch_tests {
         assert!(touch_due(Some(1000), 1000 + TOUCH_WINDOW_SECS));
     }
 }
+
+/// What the door reads about a browser row a renewal names: owner, open, expiresAt.
+pub fn renewed_row_facts(name: &str) -> Result<Option<(String, bool, String)>, String> {
+    if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') { return Ok(None); }
+    let q = format!("PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <urn:chorus:domains:identity> {{ <{ns}session-{n}> a chorus:Session ; chorus:channel ?c . FILTER(STR(?c) = \"browser\") OPTIONAL {{ <{ns}session-{n}> chorus:ownedBy ?o }} OPTIONAL {{ <{ns}session-{n}> chorus:endedAt ?e }} OPTIONAL {{ <{ns}session-{n}> chorus:expiresAt ?x }} BIND(CONCAT(COALESCE(STR(?o), \"\"), \"|\", IF(BOUND(?e), \"ended\", \"open\"), \"|\", COALESCE(STR(?x), \"\")) AS ?v) }} }} LIMIT 1",
+        ns = crate::NS, n = name);
+    let rows = crate::select_v(&crate::sparql_json(&q)?);
+    Ok(rows.first().map(|r| {
+        let mut it = r.splitn(3, '|');
+        let (o, st, x) = (it.next().unwrap_or(""), it.next().unwrap_or("open"), it.next().unwrap_or(""));
+        (o.to_string(), st == "open", x.to_string())
+    }))
+}
+
+/// #4517 AC6 (Silas 01:34) — `POST /identity/logins {"channel":"browser","renews":<name>}`:
+/// his refreshed login renews his own open browser row instead of writing a new one.
+pub fn handle_renewal(
+    caller: &Caller,
+    body: &str,
+    read: impl Fn(&str) -> Result<Option<(String, bool, String)>, String>,
+    write: impl Fn(&str, &str) -> (u16, String),
+    now_iso: &str,
+) -> (u16, String) {
+    let parsed: Value = match serde_json::from_str(body) { Ok(v) => v, Err(e) => return (422, error("validation", &format!("the login body is not JSON: {e}"))) };
+    let name = parsed.get("renews").and_then(Value::as_str).unwrap_or("").to_string();
+    let facts = match read(&name) {
+        Ok(f) => f,
+        Err(e) => return (503, error("unavailable", &format!("could not read Session '{name}': {e}"))),
+    };
+    let row = facts.as_ref().map(|(o, open, x)| identity_login::RenewedRow { owner: o, open: *open, expires_at: x });
+    let login = VerifiedLogin { principal: caller.principal, token_id: caller.jti, expires_at: caller.expires_at };
+    match identity_login::plan_renewal(&login, &parsed, row.as_ref(), now_iso) {
+        Ok((name, patch)) => match write(&name, &patch.to_string()) {
+            (c, _) if (200..300).contains(&c) => (200, format!("{{ \"name\": \"{}\", \"renewed\": true }}", crate::json_escape(&name))),
+            other => other,
+        },
+        Err((code, why)) => (code, error(match code { 401 => "authn", 403 => "authz", 404 => "not-found", 409 => "conflict", _ => "validation" }, &why)),
+    }
+}

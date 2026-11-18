@@ -53,6 +53,14 @@ pub type Refusal = (u16, String);
 
 const ALLOWED: [&str; 3] = ["channel", "hostAccount", "actsAs"];
 
+/// What the door read about the browser row a renewal names.
+pub struct RenewedRow<'a> {
+    pub owner: &'a str,
+    pub open: bool,
+    /// the row's expiresAt as ISO UTC
+    pub expires_at: &'a str,
+}
+
 /// Decide the one Session row a verified login gets.
 ///
 /// `serves(role)` answers whether the caller's Teammate serves that Role (the door's
@@ -116,6 +124,32 @@ pub fn plan_login(
     row.insert("expiresAt".into(), json!(login.expires_at));
     row.insert("label".into(), json!(format!("{} {} login", login.principal, channel)));
     Ok(Outcome::Create(name, Value::Object(row)))
+}
+
+/// #4517 AC6 (Silas 01:34) — a browser sign-in renews its own open row when its login is
+/// refreshed: a fresh verified login, the body `{"channel":"browser","renews":<name>}`.
+/// Only the login's own principal's row, only a browser row, only while it is open and not
+/// yet expired (an expired row is never revived). The row's expiresAt becomes the new
+/// login's, never later, and its tokenId moves to the new login. Returns (name, patch).
+pub fn plan_renewal(login: &VerifiedLogin, body: &Value, row: Option<&RenewedRow>, now_iso: &str) -> Result<(String, Value), Refusal> {
+    if login.principal.is_empty() { return Err((401, "no verified login".into())); }
+    if login.token_id.is_empty() { return Err((401, "login has no id: a renewal moves the row to it".into())); }
+    let obj = body.as_object().ok_or((422, "the body must be a JSON object".to_string()))?;
+    if let Some(k) = obj.keys().find(|k| !["channel", "renews"].contains(&k.as_str())) {
+        return Err((422, format!("'{k}' is not the caller's to say on a renewal")));
+    }
+    if obj.get("channel").and_then(Value::as_str) != Some("browser") {
+        return Err((422, "only a browser sign-in renews; a pane logs in again".into()));
+    }
+    let name = obj.get("renews").and_then(Value::as_str).unwrap_or("");
+    let Some(r) = row else { return Err((404, format!("no Session row '{name}' to renew"))) };
+    if r.owner.rsplit('#').next().unwrap_or("") != format!("principal-{}", login.principal) {
+        return Err((403, format!("'{name}' is not {}'s to renew", login.principal)));
+    }
+    if !r.open || r.expires_at.is_empty() || r.expires_at <= now_iso {
+        return Err((409, format!("'{name}' has ended or expired; an expired row is never revived, sign in again")));
+    }
+    Ok((name.to_string(), json!({ "lastSeenAt": now_iso, "expiresAt": login.expires_at, "tokenId": login.token_id })))
 }
 
 #[cfg(test)]
@@ -216,5 +250,36 @@ mod tests {
         let (code, why) = plan_login(&no_id, &facts(), &json!({"channel":"pane","hostAccount":"chorus-kade"}), serves_kade, None, NOW).unwrap_err();
         assert_eq!(code, 401);
         assert!(why.contains("login has no id"), "{why}");
+    }
+
+    mod renewal {
+        use super::super::*;
+        const NOW: &str = "2026-11-18T06:40:00Z";
+        fn jeff() -> VerifiedLogin<'static> { VerifiedLogin { principal: "jeff", token_id: "b2", expires_at: "2026-11-18T07:40:00Z" } }
+        fn body() -> Value { json!({"channel":"browser","renews":"jeff-b"}) }
+        fn open_row(owner: &'static str) -> RenewedRow<'static> { RenewedRow { owner, open: true, expires_at: "2026-11-18T07:00:00Z" } }
+
+        #[test]
+        fn his_open_browser_row_takes_the_new_logins_expiry_and_id() {
+            let (name, patch) = plan_renewal(&jeff(), &body(), Some(&open_row("principal-jeff")), NOW).unwrap();
+            assert_eq!(name, "jeff-b");
+            assert_eq!(patch["expiresAt"], "2026-11-18T07:40:00Z", "the new login's exp, never later");
+            assert_eq!(patch["tokenId"], "b2");
+            assert_eq!(patch["lastSeenAt"], NOW);
+        }
+
+        /// NEGATIVE PROOFS (Silas 01:34): another's row, an expired or ended row, a pane,
+        /// a missing row and an extra field are all refused.
+        #[test]
+        fn negative_proofs_anothers_expired_ended_pane_missing_and_extra_are_refused() {
+            assert_eq!(plan_renewal(&jeff(), &body(), Some(&open_row("principal-kade")), NOW).unwrap_err().0, 403);
+            let expired = RenewedRow { owner: "principal-jeff", open: true, expires_at: "2026-11-18T06:39:59Z" };
+            assert_eq!(plan_renewal(&jeff(), &body(), Some(&expired), NOW).unwrap_err().0, 409);
+            let ended = RenewedRow { owner: "principal-jeff", open: false, expires_at: "2026-11-18T07:00:00Z" };
+            assert_eq!(plan_renewal(&jeff(), &body(), Some(&ended), NOW).unwrap_err().0, 409);
+            assert_eq!(plan_renewal(&jeff(), &json!({"channel":"pane","renews":"jeff-b"}), Some(&open_row("principal-jeff")), NOW).unwrap_err().0, 422);
+            assert_eq!(plan_renewal(&jeff(), &body(), None, NOW).unwrap_err().0, 404);
+            assert_eq!(plan_renewal(&jeff(), &json!({"channel":"browser","renews":"jeff-b","expiresAt":"2099"}), Some(&open_row("principal-jeff")), NOW).unwrap_err().0, 422);
+        }
     }
 }

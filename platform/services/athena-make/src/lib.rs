@@ -7049,9 +7049,15 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                                             let _ = with_write_lock(|| handle_write_scoped("PATCH", &format!("/sessions/{}", name), &format!("{{\"lastSeenAt\":\"{}\"}}", now_iso), &own, &who, token, "", &claims.scope));
                                         }
                                     };
+                                    // a refreshed browser login renews its own open row (Silas 01:34)
+                                    if serde_json::from_str::<serde_json::Value>(body_str).ok().and_then(|v| v.get("renews").cloned()).is_some() {
+                                        logins::handle_renewal(&caller, body_str, logins::renewed_row_facts,
+                                            |n, p| with_write_lock(|| handle_write_scoped("PATCH", &format!("/sessions/{}", n), p, &own, &who, token, "", &claims.scope)), &now_iso)
+                                    } else {
                                     logins::handle_login(&caller, body_str, logins::principal_host_account,
                                         |role| teammate_serves(&who, role), logins::session_for_login,
                                         |row| with_write_lock(|| handle_create(row, table, &who, token, "")), supersede, touch, &now_iso)
+                                    }
                                 }
                             }
                         }

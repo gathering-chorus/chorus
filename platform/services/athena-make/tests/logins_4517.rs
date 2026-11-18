@@ -170,3 +170,33 @@ mod browser_touch {
         assert_eq!(writes.get(), 1, "two touches 60 s apart wrote {} times", writes.get());
     }
 }
+
+mod renewal {
+    use athena_make::logins::{handle_renewal, Caller};
+    use std::cell::RefCell;
+    const NOW: &str = "2026-11-18T06:40:00Z";
+    fn jeff() -> Caller<'static> { Caller { principal: "jeff", jti: "b2", expires_at: "2026-11-18T07:40:00Z" } }
+    fn his(_: &str) -> Result<Option<(String, bool, String)>, String> { Ok(Some(("principal-jeff".into(), true, "2026-11-18T07:00:00Z".into()))) }
+    const RENEW: &str = r#"{"channel":"browser","renews":"jeff-b"}"#;
+
+    #[test]
+    fn his_refreshed_login_renews_his_row_and_writes_no_new_one() {
+        let sent = RefCell::new(String::new());
+        let (c, b) = handle_renewal(&jeff(), RENEW, his, |_, p| { *sent.borrow_mut() = p.into(); (200, "{}".into()) }, NOW);
+        assert_eq!(c, 200, "{b}");
+        let p: serde_json::Value = serde_json::from_str(&sent.borrow()).unwrap();
+        assert_eq!(p["tokenId"], "b2");
+        assert_eq!(p["expiresAt"], "2026-11-18T07:40:00Z");
+    }
+
+    /// NEGATIVE PROOFS: another's row and an expired row are refused, and nothing is written.
+    #[test]
+    fn negative_proofs_anothers_or_an_expired_row_is_refused_with_no_write() {
+        let never = |_: &str, _: &str| -> (u16, String) { panic!("a refused renewal must not write") };
+        let kades = |_: &str| Ok(Some(("principal-kade".into(), true, "2026-11-18T07:00:00Z".into())));
+        assert_eq!(handle_renewal(&jeff(), RENEW, kades, never, NOW).0, 403);
+        let expired = |_: &str| Ok(Some(("principal-jeff".into(), true, "2026-11-18T06:00:00Z".into())));
+        assert_eq!(handle_renewal(&jeff(), RENEW, expired, never, NOW).0, 409);
+        assert_eq!(handle_renewal(&jeff(), RENEW, |_| Err("timeout".into()), never, NOW).0, 503);
+    }
+}
