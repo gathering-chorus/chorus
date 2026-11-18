@@ -1,0 +1,15 @@
+[package]
+name = "identity-login"
+version = "0.1.0"
+edition = "2021"
+
+# #4517 AC5 — the pure half of "the door writes every Session row": given a login the
+# door has already verified, the facts it holds about that principal, and the body the
+# role sent, decide the one row to write (or why not). No I/O, so the route that wires
+# it can live in athena-make today or athena-gen later without a rewrite (Silas 00:13).
+[dependencies]
+serde_json = "1"
+
+[lib]
+name = "identity_login"
+path = "src/lib.rs"
