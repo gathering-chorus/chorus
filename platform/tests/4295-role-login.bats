@@ -321,6 +321,8 @@ stray() {
 @test "status: one line per role, and never 'registered yes'" {
   running wren 5499
   printf '{"state":"recorded","session":"wren-x","pid":5499}' > "$T/identity/wren/login.json"
+  printf '{"name":"wren-x"}' > "$T/identity/wren/session.row.json"
+  printf '{"data":[{"name":"wren-x","ownedBy":"principal-wren"}]}' > "$T/open-sessions.json"
   running kade 4264
   printf '{"state":"pending","why":"identity not answering","pid":4264}' > "$T/identity/kade/login.json"
   run "$SCRIPT" status
@@ -329,6 +331,17 @@ stray() {
   out_has "kade   running  login pending  answering   (identity not answering, retrying)"
   out_has "silas  off"
   out_lacks "registered yes"
+}
+
+@test "#4997 NEGATIVE PROOF: a recorded login whose row is not open reads NOT logged in" {
+  running wren 5499
+  printf '{"state":"recorded","session":"wren-x","pid":5499}' > "$T/identity/wren/login.json"
+  printf '{"name":"wren-x"}' > "$T/identity/wren/session.row.json"
+  printf '{"data":[]}' > "$T/open-sessions.json"
+  run "$SCRIPT" status
+  out_has "wren   running  NOT logged in"
+  out_has "(session row closed)"
+  test -z "$(printf '%s' "$output" | grep -E '^wren +running +logged in' || true)"
 }
 
 # ------------------------------------------------------------------ up

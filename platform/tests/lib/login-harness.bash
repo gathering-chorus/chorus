@@ -115,6 +115,8 @@ print(json.dumps({"data":list(rows.values())}))' "$T" "\$r"; exit 0 ;; esac
 case "\$* \${@: -1}" in *" PUT "*|*" POST "*|*" PATCH "*) ;; *"/v1/identity/sessionruns/"*) rn="\${@: -1}"; rn="\${rn##*/}"; hit=\$(grep -l "\"name\": *\"\$rn\"" "$T"/bodies/*-POST-identity_sessionruns.json 2>/dev/null | tail -1); if [ -n "\$hit" ]; then printf '{"data":%s}\n200\n' "\$(cat "\$hit")"; else printf '{"data":{}}\n404\n'; fi; exit 0 ;; *"/v1/identity/presences/"*) [ -f "$T/presence-door-down" ] && exit 22; last=\$(ls "$T/bodies" | grep -i presences | tail -1); if [ -n "\$last" ]; then printf '{"data":%s}\n' "\$(cat "$T/bodies/\$last")"; else printf '{"data":{}}\n'; fi; exit 0 ;; esac   # #4895: a Presence write reads the door's current row first; the door holds the last one written
 m=""; b=""; for a in "\$@"; do case "\$a" in POST|PUT|PATCH) m="\$a" ;; @*.body) b="\${a#@}" ;; esac; done
 url="\${@: -1}"
+# #4997 (Silas 00:48) — the open-sessions listing status reads: a case's own file, else none open
+if [ -z "\$m" ]; then case "\$url" in */v1/identity/sessions\?endedAt.absent=true\&limit=*) cat "$T/open-sessions.json" 2>/dev/null || printf '{"data":[]}\n'; exit 0 ;; esac; fi
 # #4517 AC6 — the door hands back the Session row it wrote, by the name its logins answer gave
 if [ -z "\$m" ]; then case "\$url" in */v1/identity/sessions/*) sn="\${url##*/}"
   python3 -c 'import json,sys,glob,os
