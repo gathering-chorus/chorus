@@ -10,83 +10,13 @@ Everything here takes its I/O as arguments, so the tests drive it without a
 network. A failed write never blocks a sign-in: the row is a record of the
 sign-in, and `chorus-principal login` refuses (naming the fix) without it.
 """
-import hashlib
 import json
 import time
-import urllib.parse
 
 
-
-def role_sessions_query():
-    """#4948 — the open role (pane) sessions his sign-in binds: no endedAt and no expiry
-    filter. A role's session lasts from login to logout; its expiresAt is written once at
-    login and never renewed, so an expiresAt.after filter (#4838) emptied binds an hour
-    after each role's login (Silas, pair 4948)."""
-    return "endedAt.absent=true&channel=pane&limit=5000"
 
 def iso(secs):
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(secs))
-
-
-def slug(s):
-    out, dash = [], False
-    for ch in s.lower():
-        if ch.isalnum():
-            out.append(ch)
-            dash = False
-        elif not dash:
-            out.append("-")
-            dash = True
-    return "".join(out).strip("-")
-
-
-def token_id(jwt):
-    """The token's jti, else a hash: the row names the token, never holds it."""
-    try:
-        part = jwt.split(".")[1]
-        claims = json.loads(base64url_decode(part))
-        if isinstance(claims.get("jti"), str) and claims["jti"]:
-            return claims["jti"]
-    except Exception:
-        pass
-    return hashlib.sha256(jwt.encode()).hexdigest()[:32]
-
-
-def base64url_decode(part):
-    import base64
-    return base64.urlsafe_b64decode(part + "=" * (-len(part) % 4)).decode()
-
-
-def open_role_sessions(listing):
-    """Names of the role Sessions open now, from a list reply in any envelope."""
-    items = listing if isinstance(listing, list) else next(
-        (listing.get(k) for k in ("items", "data", "rows") if isinstance(listing, dict) and isinstance(listing.get(k), list)), [])
-    return [str(r["name"]) for r in items
-            if isinstance(r, dict) and r.get("sessionState") == "open"
-            and str(r.get("actsAs", "")).startswith("role-") and r.get("name")]
-
-
-def session_row(principal, id_token, roles, now, lasts, name, host_account):
-    row = {
-        "name": name,
-        "label": f"{principal} signed in at the shared door {iso(now)}",
-        "ownedBy": principal,
-        "actsAs": principal,
-        "channel": "browser",
-        "tokenId": token_id(id_token),
-        "issuedAt": iso(now),
-        "expiresAt": iso(now + lasts),
-        "startedAt": iso(now),
-        "lastSeenAt": iso(now),
-        "sessionState": "open",
-        # SessionShape requires it (minCount 1): the account the session runs
-        # under. For a person it is their Principal's hostAccount (#4412: every
-        # sign-in row was refused without it, 2026-10-10 23:15).
-        "hostAccount": host_account,
-    }
-    if roles:
-        row["binds"] = roles
-    return row
 
 
 def principal_query(webid):
@@ -210,10 +140,12 @@ def close_expired_sessions(principal, id_token, now, keep, http, api, log):
 
     Closes only rows that are his (ownedBy), browser sessions (never an agent's pane session,
     #4948), open, with an expiresAt already past, and never `keep` (the session this sign-in
-    just made). Each ends at its own expiresAt, its true end, not now (Silas). The close is a
+    just made). Each ends at its own expiresAt, its true end, not now (Silas). The close was a
     PATCH of the two fields that change, never the row the door served: that row carries
     prefixed links (ownedBy principal-jeff, actsAs role-...), which the door refuses 422 when
-    sent back (Silas, measured 2026-11-15 18:36). Never raises; returns how many it closed.
+    sent back (Silas, measured 2026-11-15 18:36). #4517 AC6 — the close is now his logout at
+    the door, naming only the session; the door ends an expired row AT its expiresAt.
+    Never raises; returns how many it closed.
     """
     if not id_token:
         return 0
@@ -246,8 +178,8 @@ def close_expired_sessions(principal, id_token, now, keep, http, api, log):
             continue
         if exp > iso(now):
             continue
-        # #4517 AC6 — through the door's logout, as him: the door stamps endedAt (now, no
-        # longer the row's own expiresAt: the caller cannot say how a session ended)
+        # #4517 AC6 — through the door's logout, as him: the door stamps endedAt, the row's
+        # own expiresAt when that has passed (Silas 01:39), and the caller says nothing of it
         try:
             st, _ = http("POST", f"{api}/v1/identity/logouts", id_token, {"session": r["name"]})
         except Exception:

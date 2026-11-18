@@ -64,7 +64,7 @@ mod logouts {
     use athena_make::logins::{handle_logout, SessionFacts};
     use std::cell::RefCell;
     const NOW: &str = "2026-11-18T06:00:00Z";
-    fn kades(_: &str) -> Result<Option<SessionFacts>, String> { Ok(Some(SessionFacts { owner: "principal-kade".into(), ended: false })) }
+    fn kades(_: &str) -> Result<Option<SessionFacts>, String> { Ok(Some(SessionFacts { owner: "principal-kade".into(), ended: false, expires_at: String::new() })) }
 
     #[test]
     fn the_owner_ends_its_session_and_the_door_stamps_how() {
@@ -88,10 +88,22 @@ mod logouts {
         assert_eq!(handle_logout("kade", r#"{"session":"../x"}"#, kades, never, NOW).0, 422);
     }
 
+    /// #4966 rule (Silas 01:39): an expired row ends AT its expiresAt; an unexpired one now.
+    #[test]
+    fn an_expired_row_ends_at_its_expiry_and_a_live_one_ends_now() {
+        let sent = RefCell::new(String::new());
+        let expired = |_: &str| Ok(Some(SessionFacts { owner: "principal-kade".into(), ended: false, expires_at: "2026-11-18T05:00:00Z".into() }));
+        handle_logout("kade", r#"{"session":"kade-1"}"#, expired, |_, p| { *sent.borrow_mut() = p.into(); (200, "{}".into()) }, NOW);
+        assert!(sent.borrow().contains("\"endedAt\":\"2026-11-18T05:00:00Z\""), "{}", sent.borrow());
+        let live = |_: &str| Ok(Some(SessionFacts { owner: "principal-kade".into(), ended: false, expires_at: "2026-11-18T09:00:00Z".into() }));
+        handle_logout("kade", r#"{"session":"kade-1"}"#, live, |_, p| { *sent.borrow_mut() = p.into(); (200, "{}".into()) }, NOW);
+        assert!(sent.borrow().contains(&format!("\"endedAt\":\"{NOW}\"")), "never past now: {}", sent.borrow());
+    }
+
     #[test]
     fn a_repeat_or_a_missing_row_writes_nothing_and_an_unread_store_is_503() {
         let never = |_: &str, _: &str| -> (u16, String) { panic!("must not write") };
-        let ended = |_: &str| Ok(Some(SessionFacts { owner: "principal-kade".into(), ended: true }));
+        let ended = |_: &str| Ok(Some(SessionFacts { owner: "principal-kade".into(), ended: true, expires_at: String::new() }));
         assert_eq!(handle_logout("kade", r#"{"session":"kade-1"}"#, ended, never, NOW).0, 200);
         assert_eq!(handle_logout("kade", r#"{"session":"kade-1"}"#, |_| Ok(None), never, NOW).0, 404);
         assert_eq!(handle_logout("kade", r#"{"session":"kade-1"}"#, |_| Err("timeout".into()), never, NOW).0, 503);

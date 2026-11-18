@@ -132,6 +132,8 @@ pub struct SessionFacts {
     /// the row's owner, e.g. "principal-kade"
     pub owner: String,
     pub ended: bool,
+    /// the row's expiresAt (ISO UTC), empty when it has none
+    pub expires_at: String,
 }
 
 /// #4517 AC6 — `POST /identity/logouts {"session": <name>}`: the row's owner ends its own
@@ -165,7 +167,9 @@ pub fn handle_logout(
     if facts.ended {
         return (200, format!("{{ \"session\": \"{}\", \"ended\": false }}", crate::json_escape(name)));
     }
-    let patch = format!("{{\"endedAt\":\"{now_iso}\",\"endedBy\":\"door\",\"sessionState\":\"closed\"}}");
+    // an expired row ends AT its expiresAt, its true end, never later (#4966, Silas 01:39)
+    let ended_at = if !facts.expires_at.is_empty() && facts.expires_at.as_str() < now_iso { facts.expires_at.as_str() } else { now_iso };
+    let patch = format!("{{\"endedAt\":\"{ended_at}\",\"endedBy\":\"door\",\"sessionState\":\"closed\"}}");
     match end(name, &patch) {
         (c, _) if (200..300).contains(&c) => (200, format!("{{ \"session\": \"{}\", \"ended\": true }}", crate::json_escape(name))),
         other => other,
@@ -174,12 +178,13 @@ pub fn handle_logout(
 
 /// The door's own read of a Session row's owner and whether it has ended.
 pub fn session_facts(name: &str) -> Result<Option<SessionFacts>, String> {
-    let q = format!("PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <urn:chorus:domains:identity> {{ <{ns}session-{n}> a chorus:Session . OPTIONAL {{ <{ns}session-{n}> chorus:ownedBy ?o }} OPTIONAL {{ <{ns}session-{n}> chorus:endedAt ?e }} BIND(CONCAT(COALESCE(STR(?o), \"\"), \"|\", IF(BOUND(?e), \"ended\", \"open\")) AS ?v) }} }} LIMIT 1",
+    let q = format!("PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <urn:chorus:domains:identity> {{ <{ns}session-{n}> a chorus:Session . OPTIONAL {{ <{ns}session-{n}> chorus:ownedBy ?o }} OPTIONAL {{ <{ns}session-{n}> chorus:endedAt ?e }} OPTIONAL {{ <{ns}session-{n}> chorus:expiresAt ?x }} BIND(CONCAT(COALESCE(STR(?o), \"\"), \"|\", IF(BOUND(?e), \"ended\", \"open\"), \"|\", COALESCE(STR(?x), \"\")) AS ?v) }} }} LIMIT 1",
         ns = crate::NS, n = name);
     let rows = crate::select_v(&crate::sparql_json(&q)?);
     Ok(rows.first().map(|r| {
-        let (owner, state) = r.split_once('|').unwrap_or((r.as_str(), "open"));
-        SessionFacts { owner: owner.to_string(), ended: state == "ended" }
+        let mut it = r.splitn(3, '|');
+        let (owner, state, x) = (it.next().unwrap_or(""), it.next().unwrap_or("open"), it.next().unwrap_or(""));
+        SessionFacts { owner: owner.to_string(), ended: state == "ended", expires_at: x.to_string() }
     }))
 }
 
