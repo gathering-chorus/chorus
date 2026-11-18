@@ -206,6 +206,11 @@ chorus:binds a owl:ObjectProperty ;
 # --- Session grows (additive; issuedAt, expiresAt, hostAccount stay, ADR-059) ---
 
 chorus:SessionShape
+    # #4517 AC5/AC6 — the door is the only writer of Session rows (Jeff 2026-11-18 00:17):
+    # every session write from a role is refused (athena-make door_written); the door writes
+    # them itself at /identity/logins and /identity/logouts. Flipped in the same commit that
+    # left no role-side Session write (guard: 4517-session-door-flip-guard.bats).
+    chorus:writeAuthority "door" ;
     sh:property chorus:SessionShape-actsAs ;
     sh:property chorus:SessionShape-startedAt ;
     sh:property chorus:SessionShape-lastSeenAt ;
