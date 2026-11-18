@@ -937,7 +937,7 @@ fn do_login(ctx: &Ctx, role: &str) -> Result<LoginState, ()> {
     }
     ctx.spine(&["session.login", role, &format!("webid={}", login.webid), &format!("jti={}", login.jti), &format!("session={}", session_name), &format!("host_account={}", host_account), &format!("expires_at={}", iso_utc(login.exp))]);
     println!("login: {}  webid {}  jti {}  session {}  recorded yes", role, login.webid, login.jti, session_name);
-    close_superseded(ctx, role, channel, &session_name);
+    // #4517 AC6 — the door ends this role's older open pane rows when this login's row is written
     Ok(LoginState::Recorded { session: session_name, pid: None })
 }
 
@@ -1700,15 +1700,6 @@ fn create_row(ctx: &Ctx, role: &str, route: &str, kind: &str, mut body: Value) -
     Some(name)
 }
 
-/// #4944 — write only the fields our code changed on a saved row (PATCH), then keep the
-/// new copy. The cache is never sent back whole: once the door's row moves on, a stale
-/// whole row is refused (the Session 422s of 11-09/10). Nothing changed is no write.
-fn patch_changed(ctx: &Ctx, role: &str, route: &str, kind: &str, before: &Value, after: &Value) -> bool {
-    let Some((name, body)) = rows::changed_fields(before, after) else { return true };
-    if !patch_row(ctx, role, route, kind, &name, &body) { return false; }
-    save_row(ctx, role, kind, after);
-    true
-}
 
 /// Replace one saved row and keep the new copy.
 fn put_row(ctx: &Ctx, role: &str, route: &str, kind: &str, row: &Value) -> bool {
@@ -1991,18 +1982,9 @@ fn seen_write(ctx: &Ctx, role: &str, conv: &str, flag: &str) -> i32 {
         if !matches!(ctx.read_state(role), LoginState::Recorded { .. }) { return 0; }
     }
     let now = iso_utc(now_ms() as u64 / 1000);
-    let cached = read_row(ctx, role, "session");
-    // a login from before #4328 carries no role or start: add them on its first turn
-    let session = cached.clone().map(|s| {
-        if s.get("actsAs").and_then(|a| a.as_str()).unwrap_or("").is_empty() {
-            let started = s.get("issuedAt").and_then(|a| a.as_str()).unwrap_or(&now).to_string();
-            rows::with_role_and_start(s, role, &started)
-        } else { s }
-    });
-    // #4339 — a prompt from Jeff: the session records who attended it and when
-    let session = if flag == "jeff" { session.and_then(|s| rows::attended_session(s, "jeff", &now)) } else { session };
     // #4948 — an agent session lasts from login to logout: a turn never renews its expiresAt
-    if let (Some(before), Some(s)) = (cached.as_ref(), session.clone().and_then(|s| rows::seen_session(s, &now))) { patch_changed(ctx, role, "identity/sessions", "session", before, &s); }
+    // #4517 AC6 (Silas 00:56) — a pane's Session row is no longer touched per turn: liveness
+    // takes the newer of lastSeenAt and the stream's last action, and only the door writes Sessions.
     // ... and no run: this running session gets its run, presence and boot context now
     let run_live = read_row(ctx, role, "run").map(|r| r.get("runEndedAt").and_then(|e| e.as_str()).unwrap_or("").is_empty()).unwrap_or(false);
     if !run_live {
@@ -2169,7 +2151,7 @@ fn sweep(ctx: &Ctx) -> i32 {
         Err(why) => { failed += 1; eprintln!("  keeping and ending nothing this pass: {}", why); None }
     };
     let kept = live.as_ref().map_or(0, |l| l.len());
-    let (mut ended, mut superseded) = (0, 0);
+    let (mut ended, superseded) = (0, 0);
     if let Some(live) = &live {
         // #4889 — an idle role is never woken by a nudge to a dead pane: keep its address current
         for role in live { refresh_pane(ctx, role); }
@@ -2186,21 +2168,8 @@ fn sweep(ctx: &Ctx) -> i32 {
             },
             Err(why) => { failed += 1; eprintln!("  ending nothing this pass: {}", why) }
         }
-        // #4950 — a role has one session, login to logout: close its older open pane
-        // sessions a newer login superseded (newest by issuedAt; a run-held one stays)
-        let sessions = door(ctx, &["-s", "--max-time", "20", &format!("{}/v1/identity/sessions?endedAt.absent=true&channel=pane&limit=5000", ctx.api)]).unwrap_or_default();
-        match rows::superseded_pane_sessions(&sessions, &runs, &roles) {
-            Ok(old) => for row in old {
-                // no endedBy: nobody ended it, and endedBy must name a Principal (#4950, prod 08:27
-                // refused "superseded" 5 times); the spine line below says the sweep closed it
-                let Some((role, name, body)) = rows::session_close(&row, &iso_utc(now_ms() as u64 / 1000), None) else { continue };
-                if patch_row(ctx, &role, "identity/sessions", "session", &name, &body) {
-                    superseded += 1;
-                    ctx.spine(&["session.superseded", &role, &format!("closed={}", name), "by=sweep"]);
-                } else { failed += 1; eprintln!("  {} not closed (the door refused the PATCH; see session.row.failed)", name) }
-            },
-            Err(why) => { failed += 1; eprintln!("  closing no superseded session this pass: {}", why) }
-        }
+        // #4517 AC6 — superseded pane sessions end at the door when the role's next login is
+        // written; the sweep presented each role's own login from Jeff's account to do it.
     }
     ctx.spine(&["session.sweep", &format!("kept={}", kept), &format!("ended={}", ended), &format!("superseded={}", superseded), &format!("failed={}", failed)]);
     println!("sweep: {} live session(s) kept open, {} crashed run(s) ended, {} superseded session(s) closed, {} failed", kept, ended, superseded, failed);
@@ -2342,53 +2311,16 @@ fn relogin(_ctx: &Ctx, role: &str) -> i32 {
     2
 }
 
-/// #4445 — close the role's other open sessions on this channel, left by a
-/// login that wrote its row and was interrupted before recording it. Loud, never
-/// a refusal: the new session is already recorded.
-fn close_superseded(ctx: &Ctx, role: &str, channel: &str, keep: &str) {
-    // #4950 — every way out names itself: on 11-09 four logins closed nothing and said
-    // nothing, and a silent return cannot be told from "there was nothing to close"
-    let skipped = |why: &str| {
-        eprintln!("login: closing older sessions skipped — {}", why);
-        ctx.spine(&["session.supersede.skipped", role, &format!("why={}", why), &format!("keep={}", keep)]);
-    };
-    let token = match sh(&ctx.token_bin, &[role]) { Ok(t) => t, Err(e) => return skipped(&format!("no token: {e}")) };
-    let role_id_dir = PathBuf::from(&ctx.identity_dir).join(role);
-    let hdr = role_id_dir.join("session.hdr");
-    if let Err(e) = write_private(&hdr, &format!("Authorization: Bearer {}\n", token.trim())) { return skipped(&format!("header file: {e}")); }
-    let url = format!("{}/v1/identity/sessions?channel={}&limit=1000", ctx.api, channel);
-    let list = door(ctx, &["-s", "--max-time", "10", "-H", &format!("@{}", hdr.display()), &url]);
-    let _ = fs::remove_file(&hdr);
-    let list = match list { Ok(l) => l, Err(e) => return skipped(&format!("listing unreadable: {e}")) };
-    let listed = match serde_json::from_str::<Value>(&list).ok().and_then(|v| v.get("data").and_then(|d| d.as_array()).map(|a| a.len())) {
-        Some(n) => n,
-        None => return skipped(&format!("listing has no data list: {}", list.chars().take(120).collect::<String>())),
-    };
-    let stale = rows::superseded_sessions(&list, role, channel, keep);
-    // #4950 — an empty match is a skip too: rows listed but none this role's open ones
-    if stale.is_empty() { return skipped(&format!("none matched: {listed} row(s) listed on channel {channel}")); }
-    let mut closed = Vec::new();
-    for name in &stale {
-        match close_row(ctx, role, name) {
-            Ok(()) => closed.push(name.clone()),
-            Err(why) => eprintln!("login: could not close older session {} — {}", name, why),
-        }
-    }
-    if !closed.is_empty() {
-        ctx.spine(&["session.superseded", role, &format!("closed={}", closed.join(",")), &format!("by={}", keep)]);
-        println!("login: closed {} older open session(s) an interrupted login left: {}", closed.len(), closed.join(", "));
-    }
-}
 
 /// Close the Session row (#4944): a PATCH of sessionState, endedAt and, when set,
 /// endedBy (#4412: who ended it). The row is never read back and sent whole; a refusal
 /// is named on the spine by patch_row.
 fn close_row(ctx: &Ctx, role: &str, session: &str) -> Result<(), String> {
-    let ended = iso_utc(now_ms() as u64 / 1000);
-    let by = env::var("CHORUS_ENDED_BY").ok();
-    let row = serde_json::json!({"name": session, "ownedBy": format!("principal-{}", role)});
-    let (_, name, body) = rows::session_close(&row, &ended, by.as_deref()).ok_or_else(|| format!("session {} has no name", session))?;
-    if patch_row(ctx, role, "identity/sessions", "session", &name, &body) { Ok(()) } else { Err("the identity API refused the close (see session.row.failed)".into()) }
+    // #4517 AC6 — the owner asks the door to end its session; the door stamps how it ended
+    let (code, reply) = api_call(ctx, role, "POST", &format!("{}/v1/identity/logouts", ctx.api), &serde_json::json!({"session": session}), "logout");
+    if ok_code(&code) { return Ok(()); }
+    ctx.spine(&["session.row.failed", role, "kind=session", &format!("row={}", session), &format!("http={}", code), &format!("why={}", rows::refusal_reason(&reply))]);
+    Err(format!("the door refused the logout: HTTP {}", code))
 }
 
 /// `off <role>` — end the role and close its login. `--from-exit` is the
@@ -2436,7 +2368,7 @@ fn off(ctx: &Ctx, role: &str, from_exit: bool) -> i32 {
     if !from_exit && std::io::IsTerminal::is_terminal(&std::io::stdout()) { print!("\x1b[2J\x1b[3J\x1b[H"); }
     match closed {
         Some((s, Ok(()))) => println!("{} logged out: login closed (session {})", role, s),
-        Some((s, Err(why))) => println!("{} logged out: stopped; the login row {} could not be closed ({}); it stays open until the next login or sweep closes it as superseded", role, s, why),
+        Some((s, Err(why))) => println!("{} logged out: stopped; the login row {} could not be closed ({}); it stays open until the role's next login supersedes it", role, s, why),
         None => println!("{} logged out: stopped; it had no recorded login to close", role),
     }
     0

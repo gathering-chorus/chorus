@@ -12,8 +12,10 @@ fn run_seen(home: &std::path::Path, revoked: bool) -> i32 {
     std::fs::create_dir_all(&dir).unwrap();
     if revoked { std::fs::write(dir.join("revoked"), "revoked for the test").unwrap(); }
     // a curl that always fails: the door is unreachable
+    // the door names this account as abby-normal's, so establish goes on to ask for the credential
+    let me = String::from_utf8(Command::new("id").arg("-un").output().unwrap().stdout).unwrap();
     let curl = home.join("curl-down");
-    std::fs::write(&curl, "#!/bin/sh\nexit 7\n").unwrap();
+    std::fs::write(&curl, format!("#!/bin/sh\nprintf '{{\"data\":{{\"principalKind\":\"agent\",\"hostAccount\":\"{}\"}}}}\\n200\\n'\n", me.trim())).unwrap();
     Command::new("chmod").arg("+x").arg(&curl).status().unwrap();
     let mut child = Command::new(bin())
         .args(["seen", "abby-normal"])
@@ -62,14 +64,18 @@ fn the_row_write_outlives_the_hook_runner_killing_its_group() {
     let home = tempfile_dir("seen-group-kill");
     let dir = home.join("identity").join("abby-normal");
     std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join("session.row.json"), r#"{"name":"s1","actsAs":"abby-normal"}"#).unwrap();
+    // #4517 AC6 — a turn no longer patches the Session row (only the door writes it); the
+    // detached write still asks for a credential when the role has no session to name, so
+    // that establish is the write that must outlive the hook's process group.
     // the first thing the write does is ask for its credential: the fake marks that it ran
     let marker = home.join("write-ran");
     let token = home.join("token-bin");
     std::fs::write(&token, format!("#!/bin/sh\nsleep 0.3\ntouch '{}'\nexit 1\n", marker.display())).unwrap();
     Command::new("chmod").arg("+x").arg(&token).status().unwrap();
+    // the door names this account as abby-normal's, so establish goes on to ask for the credential
+    let me = String::from_utf8(Command::new("id").arg("-un").output().unwrap().stdout).unwrap();
     let curl = home.join("curl-down");
-    std::fs::write(&curl, "#!/bin/sh\nexit 7\n").unwrap();
+    std::fs::write(&curl, format!("#!/bin/sh\nprintf '{{\"data\":{{\"principalKind\":\"agent\",\"hostAccount\":\"{}\"}}}}\\n200\\n'\n", me.trim())).unwrap();
     Command::new("chmod").arg("+x").arg(&curl).status().unwrap();
     let mut child = Command::new(bin())
         .args(["seen", "abby-normal"])

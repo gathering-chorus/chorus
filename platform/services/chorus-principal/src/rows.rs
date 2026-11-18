@@ -112,16 +112,6 @@ pub fn credential_rows(role: &str, identity_dir: &str, mtimes: &[(String, String
     }).collect()
 }
 
-/// The session row as a login writes it now: #4202's row plus who it acts as
-/// and when it started.
-pub fn with_role_and_start(mut session: Value, role: &str, started: &str) -> Value {
-    // the BARE name: the mint adds "role-" and refuses a name that already has it
-    // (live 2026-09-26 09:30: 422 double-prefix on 'role-silas')
-    session["actsAs"] = Value::String(role.into());
-    session["startedAt"] = Value::String(started.into());
-    session["lastSeenAt"] = Value::String(started.into());
-    session
-}
 
 /// A run that ended: `reason` is exit, logout, restart, refusal or crash
 /// (the SessionRunShape pattern). None for any other word, so a typo cannot
@@ -134,13 +124,6 @@ pub fn ended_run(mut run: Value, ended: &str, reason: &str) -> Option<Value> {
     Some(run)
 }
 
-/// The session with this turn's time. One PUT, never a new row.
-pub fn seen_session(session: Value, now: &str) -> Option<Value> {
-    session.get("name")?;
-    let mut session = bare_role(session);
-    session["lastSeenAt"] = Value::String(now.into());
-    Some(session)
-}
 
 /// A delivery landed: the presence is reachable, and says when.
 pub fn delivered_presence(mut presence: Value, now: &str) -> Option<Value> {
@@ -337,17 +320,6 @@ pub fn speaker_of(prompt: &str) -> Speaker {
     Speaker::Jeff
 }
 
-/// Jeff spoke to this session now: say so on the session. One PUT. The edge
-/// goes as the bare name: the API adds "principal-" itself and refuses a
-/// value that already has it (#4346: 16:40 on 09-26, "double-prefix:
-/// 'principal-jeff' already starts with 'principal-'", 422 on every turn).
-pub fn attended_session(mut session: Value, principal: &str, now: &str) -> Option<Value> {
-    session.get("name")?;
-    let bare = principal.strip_prefix("principal-").unwrap_or(principal);
-    session["attendedBy"] = Value::String(bare.into());
-    session["lastAttendedAt"] = Value::String(now.into());
-    Some(session)
-}
 
 /// Is a human terminal showing `pane` right now? `clients` is
 /// `tmux list-clients -F '#{client_flags}|#{pane_id}'`: one line per attached
@@ -407,18 +379,6 @@ pub fn bare_role(mut row: Value) -> Value {
     row
 }
 
-/// #4944 — a Session write as a PATCH of only the fields our code changed: (name, body).
-/// `before` is the cached row, `after` the same row with our change applied. The cache
-/// is stale once the door's row moves on, so it is never sent back whole (the 422s of
-/// 11-09/10). None when nothing changed or the row has no name.
-pub fn changed_fields(before: &Value, after: &Value) -> Option<(String, Value)> {
-    let name = after.get("name")?.as_str()?.to_string();
-    let a = after.as_object()?;
-    let body: serde_json::Map<String, Value> = a.iter()
-        .filter(|(k, v)| k.as_str() != "name" && before.get(k.as_str()) != Some(*v))
-        .map(|(k, v)| (k.clone(), v.clone())).collect();
-    if body.is_empty() { None } else { Some((name, Value::Object(body))) }
-}
 
 /// #4948 — the open runs a crash ended: (role, run name) for each open SessionRun owned
 /// by an agent role with no live process in the registry, started more than `grace_secs`
@@ -472,16 +432,6 @@ pub fn crashed_runs(runs_listing: &str, agent_roles: &[String], live_roles: &[St
     Ok(out)
 }
 
-/// #4944 — closing a Session: (owner role, name, PATCH body). Only `sessionState` and
-/// `endedAt` (and `endedBy` when given) are sent; the listing row is never put back.
-/// None without a name or a `principal-` owner.
-pub fn session_close(row: &Value, ended_at: &str, ended_by: Option<&str>) -> Option<(String, String, Value)> {
-    let name = row.get("name")?.as_str()?.to_string();
-    let owner = row.get("ownedBy")?.as_str()?.strip_prefix("principal-")?.to_string();
-    let mut body = serde_json::json!({"sessionState": "closed", "endedAt": ended_at});
-    if let Some(by) = ended_by.filter(|b| !b.is_empty()) { body["endedBy"] = Value::String(by.into()); }
-    Some((owner, name, body))
-}
 
 /// #4934 AC2 — the domains a login establishes: the role's Principal's Permission
 /// rows (agent + accessTo + mode, #4183) from the door's listing, as

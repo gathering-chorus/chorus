@@ -112,19 +112,6 @@ fn exit_logs_out_and_clear_does_not() {
     assert!(!exit_reason_logs_out("other"));
 }
 
-/// #4944 — a close is a PATCH of its end, never the row put back: the single-row GET
-/// and a row without an owner give no close (the old closed_row's negative proof, kept).
-#[test]
-fn a_close_sends_only_its_end_and_needs_a_name_and_owner() {
-    let row = serde_json::json!({"name":"silas-x-1","ownedBy":"principal-silas","sessionState":"open","tokenId":"t","label":"l"});
-    let (owner, name, body) = chorus_principal::rows::session_close(&row, "2026-09-25T18:00:00Z", None).unwrap();
-    assert_eq!((owner.as_str(), name.as_str()), ("silas", "silas-x-1"));
-    assert_eq!(body, serde_json::json!({"sessionState":"closed","endedAt":"2026-09-25T18:00:00Z"}));
-    let get = serde_json::json!({"iri":"x","sessionState":"open","tokenId":"t"});
-    assert!(chorus_principal::rows::session_close(&get, "e", None).is_none(), "the GET has no name");
-    assert!(chorus_principal::rows::session_close(&serde_json::json!({"name":"silas-x-1"}), "e", None).is_none(), "no ownedBy, no close");
-}
-
 #[test]
 fn the_tmux_bar_says_the_login() {
     assert!(tmux_status_right("logged in").starts_with(" logged in |"));

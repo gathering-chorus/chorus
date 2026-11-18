@@ -85,14 +85,6 @@ fn the_boot_context_points_at_its_run() {
     assert_eq!(c["contextKind"], "boot");
 }
 
-#[test]
-fn the_session_says_its_role_and_start() {
-    let s = with_role_and_start(json!({"name":"session-silas-x","tokenId":"j"}), "silas", "2026-09-26T09:00:00Z");
-    // the bare role name: the API adds "role-" and refuses a name that has it (422, live 09-26)
-    assert_eq!(s["actsAs"], "silas");
-    assert_eq!(s["startedAt"], "2026-09-26T09:00:00Z");
-    assert_eq!(s["tokenId"], "j", "the rest of the row is kept for the whole-row PUT");
-}
 
 #[test]
 fn an_ended_run_says_why_and_a_bad_reason_is_refused() {
@@ -104,14 +96,6 @@ fn an_ended_run_says_why_and_a_bad_reason_is_refused() {
     assert!(ended_run(r, "t", "stopped").is_none());
 }
 
-#[test]
-fn seen_updates_the_same_row() {
-    let s = json!({"name":"session-silas-x","lastSeenAt":"2026-09-26T09:00:00Z"});
-    let s2 = seen_session(s, "2026-09-26T09:07:00Z").unwrap();
-    assert_eq!(s2["name"], "session-silas-x");
-    assert_eq!(s2["lastSeenAt"], "2026-09-26T09:07:00Z");
-    assert!(seen_session(json!({}), "t").is_none(), "no saved row, no write");
-}
 
 #[test]
 fn seen_is_throttled_but_a_delivery_always_writes() {
@@ -140,14 +124,6 @@ fn conversation_row_4342_only_for_a_known_transcript() {
     assert!(conversation_row("silas", "r", "").is_none());
 }
 
-#[test]
-fn a_login_saved_before_the_bare_name_fix_is_sent_back_bare_4343() {
-    // live 09-26: Wren's session saved at 11:06 said role-wren; every seen PUT answered 422
-    let old = json!({"name":"wren-s","actsAs":"role-wren","tokenId":"j","ownedBy":"principal-wren"});
-    assert_eq!(seen_session(old.clone(), "t").unwrap()["actsAs"], "wren");
-    // negative proof: an already-bare role is left alone
-    assert_eq!(seen_session(json!({"name":"s","actsAs":"kade"}), "t").unwrap()["actsAs"], "kade");
-}
 
 #[test]
 fn credential_rows_4344_name_the_file_never_the_value() {
@@ -174,17 +150,6 @@ fn a_prompt_is_jeff_unless_it_is_the_wake_line_or_the_harness() {
     assert_eq!(p(""), Speaker::Harness);
 }
 
-#[test]
-fn jeff_attending_writes_who_and_when_on_the_session() {
-    let s = json!({"name": "wren-login-1", "actsAs": "wren"});
-    let a = attended_session(s.clone(), "jeff", "2026-09-26T18:40:00Z").unwrap();
-    assert_eq!(a["attendedBy"], "jeff");
-    // #4346 NEGATIVE PROOF: the API refuses "principal-jeff" (double-prefix,
-    // 422); a prefixed name must still go out bare
-    assert_eq!(attended_session(s, "principal-jeff", "t").unwrap()["attendedBy"], "jeff");
-    assert_eq!(a["lastAttendedAt"], "2026-09-26T18:40:00Z");
-    assert!(attended_session(json!({}), "principal-jeff", "t").is_none(), "no name, no PUT");
-}
 
 #[test]
 fn his_terminal_on_the_pane_is_read_from_attached_tmux_clients() {
@@ -235,3 +200,6 @@ fn an_unchanged_focus_is_rechecked_after_ten_minutes() {
     assert!(focused_presence(p, true, "2026-09-27T08:05:00Z").is_none(), "5 minutes → no PUT");
 }
 
+// #4517 AC6 — the session-row tests that stood here (role and start on the row, the per-turn
+// seen PATCH, the 4343 bare-name repair, #4339 attendance) went with the code: only the door
+// writes Session rows now (identity-login, athena-make logins.rs, and their tests).

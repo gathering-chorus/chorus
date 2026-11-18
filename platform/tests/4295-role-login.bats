@@ -262,12 +262,13 @@ stray() {
   run "$SCRIPT" off silas
   test "$status" -eq 0
   out_has "silas logged out: login closed (session silas-x-1)"
-  # #4944 — the close is a PATCH of the fields that change; the row is never read back and
-  # sent whole, so the owner and token never ride along (a stale copy cannot overwrite them)
-  grep -q -- "-X PATCH" "$T/curl.log"
-  test -z "$(grep -- "-X PUT" "$T/curl.log" || true)"
-  curlbody | grep -q '"sessionState":"closed"'
-  test -z "$(curlbody | grep -F -e '"ownedBy"' -e '"tokenId"' || true)"
+  # #4517 AC6 — the owner asks the door to end it, naming only the session; the door stamps
+  # how it ended, and the role writes nothing to the Session row itself
+  grep -qE -- "-X POST.*/v1/identity/logouts" "$T/curl.log" || return 1
+  test -z "$(grep -E -- "-X (PATCH|PUT).*/v1/identity/sessions" "$T/curl.log" || true)" || return 1
+  grep -q '"session":"silas-x-1"' "$T/identity/silas/logout.body" || return 1
+  test -z "$(grep -F -e '"ownedBy"' -e '"endedAt"' -e '"sessionState"' "$T/identity/silas/logout.body" || true)" || return 1
+  curlbody | grep -q '"sessionState":"closed"' || return 1
   grep -q "kill-session -t chorus-silas" "$T/tmux.log"
   state_is silas closed
   grep -q "^session.logout silas session=silas-x-1 how=off" "$T/spine.log"
@@ -279,11 +280,11 @@ stray() {
 @test "off: a row the door refuses to close still stops the role and says what closes it" {
   running silas 902
   printf '{"state":"recorded","session":"silas-x-2","pid":902}' > "$T/identity/silas/login.json"
-  echo 422 > "$T/curl.status.identity_sessions_silas-x-2"
+  echo 403 > "$T/curl.status.identity_logouts"
   run "$SCRIPT" off silas
   test "$status" -eq 0
   out_has "could not be closed"
-  out_has "until the next login or sweep closes it as superseded"
+  out_has "until the role's next login supersedes it"
   out_lacks "expires on its own"
   grep -q "kill-session -t chorus-silas" "$T/tmux.log"
 }

@@ -125,6 +125,15 @@ for f in sorted(glob.glob(os.path.join(sys.argv[1],"bodies","*-POST-identity_ses
     except Exception: continue
     if sys.argv[2] in (b.get("name"), "session-"+str(b.get("name"))): print(json.dumps({"data": dict(b, name=sys.argv[2])})); sys.exit(0)
 print("{}")' "$T" "\$sn"; exit 0 ;; esac; fi
+# #4517 AC6 — a logout asks the door, which stamps how the session ended; kept as the close it wrote
+case "\$url" in */v1/identity/logouts) lc=\$(cat "$T/curl.status.identity_logouts" 2>/dev/null || echo 200)
+  if [ "\$lc" != 200 ]; then cat "$T/curl.reply.identity_logouts" 2>/dev/null || printf '{"error":"authz","message":"refused"}'; printf '\n%s\n' "\$lc"; exit 0; fi
+  n=\$(ls "$T/bodies" | wc -l | tr -d ' ')
+  python3 -c 'import json,sys
+b=json.load(open(sys.argv[1])); sn=b["session"]
+json.dump({"endedAt":"2026-11-18T06:00:00Z","endedBy":"door","sessionState":"closed"}, open(sys.argv[2]+"_"+sn+".json","w"), separators=(",",":"))
+print(json.dumps({"session": sn, "ended": True}))' "\$b" "$T/bodies/\$(printf %03d \$n)-PATCH-identity_sessions"
+  printf '200\n'; exit 0 ;; esac
 # #4517 AC6 — a login asks the door, which writes the Session row itself (owner = the login,
 # startedBy the door) and answers with its name; the row it wrote is kept like any POST body.
 case "\$url" in */v1/identity/logins) cp "\$b" "$T/curl.body"; lc=\$(cat "$T/curl.status.identity_logins" 2>/dev/null || cat "$T/curl.status" 2>/dev/null || echo 201)
@@ -132,8 +141,9 @@ case "\$url" in */v1/identity/logins) cp "\$b" "$T/curl.body"; lc=\$(cat "$T/cur
   n=\$(ls "$T/bodies" | wc -l | tr -d ' ')
   python3 -c 'import json,sys
 b=json.load(open(sys.argv[1])); role=b.get("actsAs","role-x").removeprefix("role-")
-row=dict(b, name=role+"-door1", ownedBy="principal-"+role, startedBy="principal-door", sessionState="open")
-json.dump(row, open(sys.argv[2],"w")); print(json.dumps({"name": "session-"+role+"-door1", "created": True}))' "\$b" "$T/bodies/\$(printf %03d \$n)-POST-identity_sessions.json"
+nm=role+"-door"+sys.argv[3]   # each new login gets its own row, as the door names it per login id
+row=dict(b, name=nm, ownedBy="principal-"+role, startedBy="principal-door", sessionState="open")
+json.dump(row, open(sys.argv[2],"w")); print(json.dumps({"name": "session-"+nm, "created": True}))' "\$b" "$T/bodies/\$(printf %03d \$n)-POST-identity_sessions.json" "\$n"
   printf '201\n'; exit 0 ;; esac
 if [ -n "\$m" ]; then
   n=\$(ls "$T/bodies" | wc -l | tr -d ' '); route=\$(echo "\$url" | sed -E 's#.*/v1/##; s#/#_#g')
