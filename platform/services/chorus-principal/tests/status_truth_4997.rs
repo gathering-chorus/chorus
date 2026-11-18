@@ -55,3 +55,21 @@ fn a_refusal_is_told_apart_from_a_retryable_failure() {
     assert!(!is_refusal("the identity API answered HTTP 503"));
     assert!(!is_refusal("identity not answering"));
 }
+
+#[test]
+fn another_accounts_login_reads_unverified_never_not_logged_in() {
+    // live 11-17 19:27: from silas's account kade read "NOT logged in" with its row open
+    let st = login_as_seen(LoginState::Unknown, false);
+    let line = status_line("kade", Some(4), &st, false, Some(true));
+    assert!(line.contains("unverified") && line.contains("own account"), "{line}");
+    assert!(!line.contains("NOT logged in") && !line.contains("running  logged in"), "{line}");
+}
+
+#[test]
+fn negative_proof_the_roles_own_missing_login_still_reads_not_logged_in() {
+    let st = login_as_seen(LoginState::Unknown, true);
+    assert_eq!(st, LoginState::Unknown);
+    assert!(status_line("silas", Some(5), &st, true, Some(true)).contains("NOT logged in"));
+    // and a login it can read is never masked
+    assert_eq!(login_as_seen(rec(), false), rec());
+}

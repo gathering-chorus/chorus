@@ -59,7 +59,7 @@ signin() { printf '%s' "$1" > "$T/h/.chorus/identity/r/login.json"; }
   run bash -c "cd '$ROOT/platform/services/chorus-principal' && cargo test --release --quiet --test status_truth_4997 2>&1"
   echo "$output" | tail -3
   [ "$status" -eq 0 ]
-  echo "$output" | grep -qE "test result: ok\. 7 passed"
+  echo "$output" | grep -qE "test result: ok\. 9 passed"
 }
 
 @test "AC1 the Teammates tile: open live row reads logged in, else not logged in, unread reads unverified" {

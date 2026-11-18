@@ -2459,13 +2459,17 @@ fn status(ctx: &Ctx) -> i32 {
     let listing = door(ctx, &["-s", "--max-time", "5", &format!("{}/v1/identity/sessions?endedAt.absent=true&limit=5000", ctx.api)]).unwrap_or_default(); // #4838
     let presences = door(ctx, &["-s", "--max-time", "5", &format!("{}/v1/identity/presences?limit=5000", ctx.api)]).unwrap_or_default();
     let roles = match agent_roles(ctx) { Ok(r) => r, Err(why) => { eprintln!("chorus-principal: REFUSED — {}", why); return 2; } };
+    let me = sh("id", &["-un"]).map(|u| u.trim().to_string()).unwrap_or_default();
     for role in roles.iter().map(String::as_str) {
         let live = live_entries(&ctx.sessions_dir, role, &ctx.ps);
         let pid = live.first().map(|l| l.pid);
         let answering = pid.is_some() && ctx.answered(role);
         // #4997 AC1 — "logged in" also needs the role's Session row open in the store, read here
         let session_open = session_row_open(&listing, read_row(ctx, role, "session").map(|v| row_name(&v)).as_deref());
-        println!("{}", lifecycle::status_line(role, pid, &ctx.read_state(role), answering, session_open));
+        // #4997 — another role's login file is out of this account's reach: unverified, not "NOT logged in"
+        let own = !me.is_empty() && role_host_account(ctx, role).map(|a| a == me).unwrap_or(false);
+        let st = lifecycle::login_as_seen(ctx.read_state(role), own);
+        println!("{}", lifecycle::status_line(role, pid, &st, answering, session_open));
         // #4328 — and what the store says, which is what everyone else reads
         if let Some(line) = store_line(&listing, read_row(ctx, role, "session").map(|v| row_name(&v)).as_deref()) { println!("       {}", line); }
         // #4339 — who is in the room, as the store has it

@@ -31,6 +31,9 @@ pub enum LoginState {
     Closed,
     /// no file, or a file this build cannot read
     Unknown,
+    /// #4997 — the login file is the role's own and this account cannot read it (another
+    /// role's account asked): unverified, never "NOT logged in". Never written to a file.
+    Unreadable,
 }
 
 impl LoginState {
@@ -66,7 +69,7 @@ pub fn login_state_json(st: &LoginState, at: &str) -> String {
         LoginState::Pending { why, pid } => serde_json::json!({"state":"pending","why":why,"pid":pid,"at":at}),
         LoginState::Refused { why, pid } => serde_json::json!({"state":"refused","why":why,"pid":pid,"at":at}),
         LoginState::Closed => serde_json::json!({"state":"closed","at":at}),
-        LoginState::Unknown => serde_json::json!({"state":"unknown","at":at}),
+        LoginState::Unknown | LoginState::Unreadable => serde_json::json!({"state":"unknown","at":at}),
     };
     v.to_string()
 }
@@ -87,6 +90,7 @@ pub fn login_word(st: &LoginState, live_pid: Option<u64>) -> &'static str {
         (LoginState::Recorded { .. }, Some(p)) if login_belongs_to(st, p) => "logged in",
         (LoginState::Pending { .. }, Some(p)) if login_belongs_to(st, p) => "login pending",
         (LoginState::Refused { .. }, Some(p)) if login_belongs_to(st, p) => "refused",
+        (LoginState::Unreadable, Some(_)) => "unverified",
         _ => "NOT logged in",
     }
 }
@@ -115,10 +119,17 @@ pub fn status_line(role: &str, live_pid: Option<u64>, st: &LoginState, answering
         LoginState::Pending { why, .. } if login_belongs_to(st, pid) && !why.is_empty() => line.push_str(&format!("   ({}, retrying)", why)),
         LoginState::Refused { why, .. } if login_belongs_to(st, pid) => line.push_str(&format!("   ({})", why)),
         _ if word == "NOT logged in" && session_open == Some(false) => line.push_str("   (session row closed)"),
+        LoginState::Unreadable => line.push_str("   (login readable only from its own account)"),
         _ if word == "unverified" => line.push_str("   (session row unread)"),
         _ => {}
     }
     line
+}
+
+/// #4997 — what `status` may say about a login it reads: from another role's account the
+/// login file is out of reach, so an absent state there is Unreadable, not Unknown.
+pub fn login_as_seen(st: LoginState, own_account: bool) -> LoginState {
+    match st { LoginState::Unknown if !own_account => LoginState::Unreadable, s => s }
 }
 
 /// #4933 — the launcher's read-back never hides why a start is pending: a pending
