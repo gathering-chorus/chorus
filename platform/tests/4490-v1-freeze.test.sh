@@ -34,7 +34,9 @@
 #    11128  2026-11-18  #4517 AC5 (Wren, Jeff 00:17 decision 4: the logins route on v1 as a
 #                       security fix): +132, POST /identity/logins (src/logins.rs + its serve
 #                       block); the row decision lives outside in the identity-login crate.
-FROZEN_LINES=11128  # #4517 AC5 — see history above
+#    11200  2026-11-18  #4517 AC3 (Wren, Jeff 00:17 decision 1): +72, the claim branch
+#                       (src/claims.rs + its PATCH branch); the claim itself is the DAL's.
+FROZEN_LINES=11200  # #4517 AC3 — see history above
 set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 count() { cat "$1"/*.rs 2>/dev/null | wc -l | tr -d ' '; }

@@ -22,6 +22,7 @@ pub mod auth;
 pub mod reconcile; // #3723 — the model reconciliation readout
 pub mod oidc; // #3613 / ADR-052 — ES256/JWKS (Solid-OIDC via CSS) verify at the seam
 pub mod logins; // #4517 AC5 — POST /identity/logins: the door writes every Session row
+pub mod claims; // #4517 AC3 — a PATCH of exactly {ownedBy: caller} claims an ownerless row
 
 pub const NS: &str = "https://jeffbridwell.com/chorus#";
 pub const ONTOLOGY_GRAPH: &str = "urn:chorus:ontology";
@@ -3892,6 +3893,18 @@ pub fn handle_write_scoped(method: &str, path: &str, body: &str, table: &RouteTa
     if let Some(e) = &entity {
         if !is_safe_local(e) {
             return write_resp("validation", "invalid entity name");
+        }
+        // #4517 AC3 — a claim: exactly {ownedBy: caller} on a PATCH. The DAL decides ownerless,
+        // Write-holder and conflict in one update; anything else in the body never gets here.
+        // Only a row with NO owner is claimable; an owned row keeps the normal path's answer.
+        if matches!(op, WriteOp::PatchEntity { .. }) {
+            if let Some(claim) = claims::claim_body(body, caller_role).filter(|_| matches!(read_owned_by(&table.class, e, &table.instances_graph), Ok(None))) {
+                if let Err((code, why)) = claim { return (code, format!("{{ \"error\": \"{}\", \"message\": \"{}\" }}", if code == 422 { "validation" } else { "authz" }, json_escape(&why))); }
+                let args: Vec<String> = ["claim-owner", "--kind", &kind_of_class(class_local), "--name", e, "--graph", &table.instances_graph].iter().map(|s| s.to_string()).collect();
+                let (code, tag) = claims::claim_status(dal_run(&args, token));
+                emit_write_spine(caller_role, method, e, "", if code == 200 { "ok" } else { tag });
+                return (code, format!("{{ \"result\": \"{}\", \"row\": \"{}\" }}", tag, json_escape(e)));
+            }
         }
         // AC3 authZ — only the owning role writes this node's edges (fail-closed).
         // #4277 — the verdict names its state: a store that did not answer is

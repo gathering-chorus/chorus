@@ -2446,6 +2446,9 @@ fn prove_create_only_commit(
 /// the same update (INSERT … WHERE NOT EXISTS), so there is no read-then-write race;
 /// the owner is then read back, because an update returns no count (Silas 00:28).
 /// Append is not enough, and a graph nobody holds Write on stays unclaimable.
+/// No changedAt/writeCount stamp, on purpose: a claim adds one edge, and the edge verb
+/// (`link`, add_edges_keeping) stamps none either; the spine's owner.claimed {row, by,
+/// graph} is the record of who claimed what and when (Silas 00:30).
 pub fn claim_owner(store: &dyn Store, kind: &str, name: &str, graph: &str, id: &Identity) -> R<String> {
     if !granted_write_graphs().iter().any(|g| g == graph) {
         witness("model.refused", &[("kind", kind), ("name", name), ("reason", "claim-needs-write")]);

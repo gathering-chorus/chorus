@@ -1531,3 +1531,25 @@ fn the_logins_route_is_reached_and_refuses_an_unverified_call_4517() {
         assert!(b.contains("a verified login is required to open a session"), "{p} did not reach the logins route: {b}");
     }
 }
+
+/// #4517 AC3 — a claim through the real serve loop: wren holds Write on the domains
+/// graph and "orphan" has no owner, so {ownedBy: wren} reaches the DAL's claim-owner.
+/// NEGATIVE PROOFS: an extra field is 422 with no DAL call; on an owned row the body is
+/// not a claim, and the normal path's "cannot be patched" stands.
+#[test]
+fn a_claim_on_an_ownerless_row_reaches_the_dal_and_nothing_else_does_4517() {
+    let auth = bearer(&mint_token(WREN_WEBID, None));
+    let hdrs: &[(&str, &str)] = &[("Authorization", &auth)];
+    let calls = || std::fs::read_to_string(std::env::temp_dir()
+        .join(format!("owl3701-home-{}", std::process::id())).join("dal-calls.log")).unwrap_or_default();
+    let claimed = |log: &str| log.lines().any(|l| l.starts_with("claim-owner") && l.contains("--name orphan"));
+    let before = calls();
+    let (c, _, b) = http("PATCH", "/domains/orphan", hdrs, "{\"ownedBy\":\"wren\",\"comment\":\"x\"}");
+    assert_eq!(c, 422, "{b}");
+    assert_eq!(calls().matches("claim-owner").count(), before.matches("claim-owner").count(), "a refused claim must not reach the DAL");
+    let (_, _, b) = http("PATCH", "/domains/orphan", hdrs, "{\"ownedBy\":\"wren\"}");
+    assert!(claimed(&calls()), "the claim never reached the DAL: {b}\n{}", calls());
+    let (c, _, b) = http("PATCH", "/domains/pulse", hdrs, "{\"ownedBy\":\"wren\"}");
+    assert_eq!(c, 422, "an owned row is not claimable: {b}");
+    assert!(b.contains("cannot be patched"), "{b}");
+}
