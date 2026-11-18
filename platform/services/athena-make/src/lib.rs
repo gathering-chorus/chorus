@@ -7029,9 +7029,23 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                             let body_str = req.splitn(2, "\r\n\r\n").nth(1).unwrap_or("");
                             match tables.iter().find(|t| t.class.ends_with("#Session")) {
                                 None => (503u16, "{ \"error\": \"unavailable\", \"message\": \"this door serves no Session class\" }".to_string()),
-                                Some(table) => logins::handle_login(&caller, body_str, logins::principal_host_account,
-                                    |role| teammate_serves(&who, role), logins::session_for_login,
-                                    |row| with_write_lock(|| handle_create(row, table, &who, token, "")), &logins::iso_from_secs(now_secs)),
+                                Some(table) => {
+                                    let mut own = table.clone();
+                                    own.write_authority = String::new();
+                                    let now_iso = logins::iso_from_secs(now_secs);
+                                    // supersede: the role's older open pane rows end through the logouts path
+                                    let supersede = |keep: &str| {
+                                        let host = logins::principal_host_account(&who).ok().flatten().unwrap_or_default();
+                                        for old in logins::older_open_panes(&who, &host, keep).unwrap_or_default() {
+                                            let (c, _) = logins::handle_logout(&who, &format!("{{\"session\":\"{}\"}}", old), logins::session_facts,
+                                                |n, p| with_write_lock(|| handle_write_scoped("PATCH", &format!("/sessions/{}", n), p, &own, &who, token, "", &claims.scope)), &now_iso);
+                                            emit_write_spine(&who, "supersede", &old, "", if c == 200 { "ok" } else { "failed" });
+                                        }
+                                    };
+                                    logins::handle_login(&caller, body_str, logins::principal_host_account,
+                                        |role| teammate_serves(&who, role), logins::session_for_login,
+                                        |row| with_write_lock(|| handle_create(row, table, &who, token, "")), supersede, &now_iso)
+                                }
                             }
                         }
                     };

@@ -27,6 +27,7 @@ pub fn handle_login(
     serves: impl Fn(&str) -> Result<bool, String>,
     existing: impl Fn(&str) -> Result<Option<String>, String>,
     create: impl Fn(&str) -> (u16, String),
+    supersede: impl Fn(&str),
     now_iso: &str,
 ) -> (u16, String) {
     let parsed: Value = match serde_json::from_str(if body.trim().is_empty() { "{}" } else { body }) {
@@ -57,8 +58,15 @@ pub fn handle_login(
         Ok(Outcome::Create(name, mut row)) => {
             row["name"] = Value::String(name.clone());
             // The caller learns the row's name from the answer: the door chose it.
+            let pane = row["channel"] == "pane";
             match create(&row.to_string()) {
-                (c, _) if (200..300).contains(&c) => (201, format!("{{ \"name\": \"{}\", \"created\": true }}", crate::json_escape(&name))),
+                (c, _) if (200..300).contains(&c) => {
+                    // #4517 AC6 (Silas 00:54) — one pane per role: only after the new row is
+                    // written, end the role's older open pane rows. A browser login never
+                    // supersedes: Jeff's phone and desktop are both live.
+                    if pane { supersede(&name); }
+                    (201, format!("{{ \"name\": \"{}\", \"created\": true }}", crate::json_escape(&name)))
+                }
                 other => other,
             }
         }
@@ -167,4 +175,14 @@ pub fn session_facts(name: &str) -> Result<Option<SessionFacts>, String> {
         let (owner, state) = r.split_once('|').unwrap_or((r.as_str(), "open"));
         SessionFacts { owner: owner.to_string(), ended: state == "ended" }
     }))
+}
+
+
+/// The role's open pane rows on the same hostAccount other than `keep`: the ones a new
+/// pane login supersedes.
+pub fn older_open_panes(principal: &str, host: &str, keep: &str) -> Result<Vec<String>, String> {
+    if !principal.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') || host.contains('"') { return Ok(vec![]); }
+    let q = format!("PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <urn:chorus:domains:identity> {{ ?s a chorus:Session ; chorus:ownedBy <{ns}principal-{p}> ; chorus:channel ?c ; chorus:hostAccount ?h . FILTER(STR(?c) = \"pane\" && STR(?h) = \"{h}\") FILTER NOT EXISTS {{ ?s chorus:endedAt ?e }} BIND(REPLACE(STR(?s), '.*#session-', '') AS ?v) }} }}",
+        ns = crate::NS, p = principal, h = host);
+    Ok(crate::select_v(&crate::sparql_json(&q)?).into_iter().filter(|n| n != keep).collect())
 }

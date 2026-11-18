@@ -38,7 +38,9 @@
 #                       (src/claims.rs + its PATCH branch); the claim itself is the DAL's.
 #    11294  2026-11-18  #4517 AC6 (Wren): +85, POST /identity/logouts (owner ends its own
 #                       session; the door stamps endedAt/endedBy/sessionState) in src/logins.rs.
-FROZEN_LINES=11294  # #4517 AC6 — see history above
+#    11326  2026-11-18  #4517 AC6 (Wren): +32, a new pane login supersedes the role's older
+#                       open pane rows through the logouts path (replaces the sweep's PATCH).
+FROZEN_LINES=11326  # #4517 AC6 — see history above
 set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 count() { cat "$1"/*.rs 2>/dev/null | wc -l | tr -d ' '; }
