@@ -7039,6 +7039,33 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                     let _ = stream.write_all(resp.as_bytes());
                     return;
                 }
+                // #4517 AC6 — the owner ends its own session; the door stamps how.
+                if method == "POST" && (path == logins::LOGOUTS_PATH || path.strip_prefix("/v1") == Some(logins::LOGOUTS_PATH)) {
+                    let now_secs = unix_now_secs();
+                    let auth_hdr = header("authorization");
+                    let token = bearer_token(&auth_hdr);
+                    let (code, body) = match oidc::verify_any(token, &oidc_verifier, now_secs) {
+                        Err(_) => (401u16, "{ \"error\": \"authn-missing\", \"message\": \"a verified login is required to end a session\" }".to_string()),
+                        Ok(claims) => {
+                            let who = oidc_verifier.principal_for(&claims.web_id, now_secs).unwrap_or_else(|| claims.agent_id.clone());
+                            let body_str = req.splitn(2, "\r\n\r\n").nth(1).unwrap_or("");
+                            match tables.iter().find(|t| t.class.ends_with("#Session")) {
+                                None => (503u16, "{ \"error\": \"unavailable\", \"message\": \"this door serves no Session class\" }".to_string()),
+                                Some(table) => {
+                                    // the door's own patch: the "door" write rule is for sessions, not for the door
+                                    let mut own = table.clone();
+                                    own.write_authority = String::new();
+                                    logins::handle_logout(&who, body_str, logins::session_facts,
+                                        |name, patch| with_write_lock(|| handle_write_scoped("PATCH", &format!("/sessions/{}", name), patch, &own, &who, token, "", &claims.scope)),
+                                        &logins::iso_from_secs(now_secs))
+                                }
+                            }
+                        }
+                    };
+                    let resp = http_response_ct(status_line(code), &body, "application/json");
+                    let _ = stream.write_all(resp.as_bytes());
+                    return;
+                }
                 if method == "POST" && path == "/batch" {
                     let now_secs = unix_now_secs();
                     let auth_hdr = header("authorization");

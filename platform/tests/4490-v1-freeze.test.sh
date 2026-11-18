@@ -36,7 +36,9 @@
 #                       block); the row decision lives outside in the identity-login crate.
 #    11209  2026-11-18  #4517 AC3 (Wren, Jeff 00:17 decision 1): +81, the claim branch
 #                       (src/claims.rs + its PATCH branch); the claim itself is the DAL's.
-FROZEN_LINES=11209  # #4517 AC3 — see history above
+#    11294  2026-11-18  #4517 AC6 (Wren): +85, POST /identity/logouts (owner ends its own
+#                       session; the door stamps endedAt/endedBy/sessionState) in src/logins.rs.
+FROZEN_LINES=11294  # #4517 AC6 — see history above
 set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 count() { cat "$1"/*.rs 2>/dev/null | wc -l | tr -d ' '; }

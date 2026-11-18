@@ -1530,6 +1530,11 @@ fn the_logins_route_is_reached_and_refuses_an_unverified_call_4517() {
         assert_eq!(c, 401, "{p}: {b}");
         assert!(b.contains("a verified login is required to open a session"), "{p} did not reach the logins route: {b}");
     }
+    for p in ["/identity/logouts", "/v1/identity/logouts"] {
+        let (c, _, b) = http("POST", p, &[], "{\"session\":\"x\"}");
+        assert_eq!(c, 401, "{p}: {b}");
+        assert!(b.contains("a verified login is required to end a session"), "{p} did not reach the logouts route: {b}");
+    }
 }
 
 /// #4517 AC3 — a claim through the real serve loop: wren holds Write on the domains

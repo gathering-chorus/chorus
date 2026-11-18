@@ -110,3 +110,61 @@ mod tests {
         assert_eq!(super::iso_from_secs(951_782_400), "2000-02-29T00:00:00Z");
     }
 }
+
+pub const LOGOUTS_PATH: &str = "/identity/logouts";
+
+/// What the door reads about a Session row before ending it.
+pub struct SessionFacts {
+    /// the row's owner, e.g. "principal-kade"
+    pub owner: String,
+    pub ended: bool,
+}
+
+/// #4517 AC6 — `POST /identity/logouts {"session": <name>}`: the row's owner ends its own
+/// session; the door stamps endedAt, endedBy door and sessionState closed. A repeat is 200
+/// with nothing written. `read(name)` reads the row; `end(name, patch)` is the door's own
+/// patch of it with the caller's login.
+pub fn handle_logout(
+    principal: &str,
+    body: &str,
+    read: impl Fn(&str) -> Result<Option<SessionFacts>, String>,
+    end: impl Fn(&str, &str) -> (u16, String),
+    now_iso: &str,
+) -> (u16, String) {
+    let v: Value = match serde_json::from_str(body) { Ok(v) => v, Err(e) => return (422, error("validation", &format!("the logout body is not JSON: {e}"))) };
+    let Some(obj) = v.as_object() else { return (422, error("validation", "the logout body must be a JSON object")) };
+    if let Some(k) = obj.keys().find(|k| k.as_str() != "session") {
+        return (422, error("validation", &format!("'{k}' is not the caller's to say; the door stamps how a session ends")));
+    }
+    let name = obj.get("session").and_then(Value::as_str).unwrap_or("");
+    if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+        return (422, error("validation", "a logout names one session by its row name"));
+    }
+    let facts = match read(name) {
+        Ok(Some(f)) => f,
+        Ok(None) => return (404, error("not-found", &format!("no Session row '{name}'"))),
+        Err(e) => return (503, error("unavailable", &format!("could not read Session '{name}': {e}"))),
+    };
+    if facts.owner.rsplit('#').next().unwrap_or("") != format!("principal-{principal}") {
+        return (403, error("authz", &format!("{principal} does not own session '{name}'; only its owner ends it")));
+    }
+    if facts.ended {
+        return (200, format!("{{ \"session\": \"{}\", \"ended\": false }}", crate::json_escape(name)));
+    }
+    let patch = format!("{{\"endedAt\":\"{now_iso}\",\"endedBy\":\"door\",\"sessionState\":\"closed\"}}");
+    match end(name, &patch) {
+        (c, _) if (200..300).contains(&c) => (200, format!("{{ \"session\": \"{}\", \"ended\": true }}", crate::json_escape(name))),
+        other => other,
+    }
+}
+
+/// The door's own read of a Session row's owner and whether it has ended.
+pub fn session_facts(name: &str) -> Result<Option<SessionFacts>, String> {
+    let q = format!("PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <urn:chorus:domains:identity> {{ <{ns}session-{n}> a chorus:Session . OPTIONAL {{ <{ns}session-{n}> chorus:ownedBy ?o }} OPTIONAL {{ <{ns}session-{n}> chorus:endedAt ?e }} BIND(CONCAT(COALESCE(STR(?o), \"\"), \"|\", IF(BOUND(?e), \"ended\", \"open\")) AS ?v) }} }} LIMIT 1",
+        ns = crate::NS, n = name);
+    let rows = crate::select_v(&crate::sparql_json(&q)?);
+    Ok(rows.first().map(|r| {
+        let (owner, state) = r.split_once('|').unwrap_or((r.as_str(), "open"));
+        SessionFacts { owner: owner.to_string(), ended: state == "ended" }
+    }))
+}

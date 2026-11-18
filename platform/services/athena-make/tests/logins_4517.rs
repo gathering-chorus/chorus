@@ -59,3 +59,41 @@ fn an_unread_store_is_503_not_a_refusal() {
     let (c, b) = handle_login(&kade(), PANE, host, |_| Err("timeout".into()), |_| Ok(None), never, NOW);
     assert_eq!(c, 503, "{b}");
 }
+
+mod logouts {
+    use athena_make::logins::{handle_logout, SessionFacts};
+    use std::cell::RefCell;
+    const NOW: &str = "2026-11-18T06:00:00Z";
+    fn kades(_: &str) -> Result<Option<SessionFacts>, String> { Ok(Some(SessionFacts { owner: "principal-kade".into(), ended: false })) }
+
+    #[test]
+    fn the_owner_ends_its_session_and_the_door_stamps_how() {
+        let sent = RefCell::new(String::new());
+        let (c, b) = handle_logout("kade", r#"{"session":"kade-1"}"#, kades, |_, p| { *sent.borrow_mut() = p.to_string(); (200, "{}".into()) }, NOW);
+        assert_eq!(c, 200, "{b}");
+        assert!(b.contains("\"ended\": true"));
+        let p: serde_json::Value = serde_json::from_str(&sent.borrow()).unwrap();
+        assert_eq!(p["endedAt"], NOW);
+        assert_eq!(p["endedBy"], "door");
+        assert_eq!(p["sessionState"], "closed");
+    }
+
+    /// NEGATIVE PROOFS (Silas 00:51): a role ending another role's session is 403; the
+    /// caller cannot say how it ended; nothing is written for either.
+    #[test]
+    fn negative_proof_another_roles_session_and_caller_stamps_are_refused() {
+        let never = |_: &str, _: &str| -> (u16, String) { panic!("a refused logout must not write") };
+        assert_eq!(handle_logout("silas", r#"{"session":"kade-1"}"#, kades, never, NOW).0, 403);
+        assert_eq!(handle_logout("kade", r#"{"session":"kade-1","endedBy":"silas"}"#, kades, never, NOW).0, 422);
+        assert_eq!(handle_logout("kade", r#"{"session":"../x"}"#, kades, never, NOW).0, 422);
+    }
+
+    #[test]
+    fn a_repeat_or_a_missing_row_writes_nothing_and_an_unread_store_is_503() {
+        let never = |_: &str, _: &str| -> (u16, String) { panic!("must not write") };
+        let ended = |_: &str| Ok(Some(SessionFacts { owner: "principal-kade".into(), ended: true }));
+        assert_eq!(handle_logout("kade", r#"{"session":"kade-1"}"#, ended, never, NOW).0, 200);
+        assert_eq!(handle_logout("kade", r#"{"session":"kade-1"}"#, |_| Ok(None), never, NOW).0, 404);
+        assert_eq!(handle_logout("kade", r#"{"session":"kade-1"}"#, |_| Err("timeout".into()), never, NOW).0, 503);
+    }
+}
