@@ -2441,6 +2441,22 @@ fn prove_create_only_commit(
 /// deliberately owned by the caller after this returns: single-add preserves
 /// its entity witness, while add-batch emits one aggregate rather than spawning
 /// chorus-log once per member inside the request's latency.
+/// #4517 AC5 — a Session row names the verified login as its owner, never anyone else.
+/// The door writes Session rows with the caller's own login (Jeff 11-18 00:17); this
+/// rule holds even for a role that runs the DAL directly, so no session can be forged
+/// for another principal (Silas 00:17).
+pub fn session_owner_refusal(req: &WriteReq, id: &Identity) -> Option<String> {
+    if !req.kind.eq_ignore_ascii_case("Session") {
+        return None;
+    }
+    let owners: Vec<&str> = req.edges.iter().filter(|(p, _, _)| p == "ownedBy").map(|(_, _, n)| n.as_str()).collect();
+    match owners.as_slice() {
+        [one] if *one == id.role() => None,
+        [] => Some(format!("session-owner: Session '{}' names no owner; it must be owned by the login that writes it ({})", req.name, id.role())),
+        _ => Some(format!("session-owner: Session '{}' is owned by {}, not by the login that writes it ({})", req.name, owners.join(","), id.role())),
+    }
+}
+
 fn commit_writes(
     store: &dyn Store,
     plans: &[PlannedWrite<'_>],
@@ -2452,6 +2468,10 @@ fn commit_writes(
     also: Option<&str>,
 ) -> R<Vec<String>> {
     const DCT: &str = "http://purl.org/dc/terms/";
+    if let Some(why) = plans.iter().find_map(|p| session_owner_refusal(p.req, id)) {
+        witness("model.refused", &[("reason", "session-owner")]);
+        return Err(why);
+    }
     let created_by_subject = if replace_existing {
         existing_created(store, plans).map_err(|e| e.message)?
     } else {
@@ -6343,5 +6363,37 @@ mod seed_guard_4316 {
     fn negative_proof_a_claimed_kind_outside_the_namespace_is_refused() {
         let e = seed_iri_ok_with("tool", "<https://example.com/look>", &claims, &[]).unwrap_err();
         assert!(e.contains("outside the chorus namespace"), "{e}");
+    }
+}
+
+#[cfg(test)]
+mod session_owner_4517 {
+    use super::*;
+
+    fn session(owners: &[&str]) -> WriteReq {
+        let mut r: WriteReq = serde_json::from_str(r#"{"kind":"Session","name":"kade-1"}"#).unwrap();
+        r.edges = owners.iter().map(|o| ("ownedBy".to_string(), "principal".to_string(), o.to_string())).collect();
+        r
+    }
+
+    #[test]
+    fn a_session_owned_by_the_writing_login_passes() {
+        assert_eq!(session_owner_refusal(&session(&["kade"]), &Identity("kade".into())), None);
+    }
+
+    /// NEGATIVE PROOF: a role that runs the DAL directly cannot forge another's session.
+    #[test]
+    fn negative_proof_a_session_for_another_principal_or_no_one_is_refused() {
+        let kade = Identity("kade".into());
+        assert!(session_owner_refusal(&session(&["silas"]), &kade).is_some_and(|w| w.contains("silas")));
+        assert!(session_owner_refusal(&session(&[]), &kade).is_some());
+        assert!(session_owner_refusal(&session(&["kade", "silas"]), &kade).is_some());
+    }
+
+    #[test]
+    fn other_classes_are_not_held_by_this_rule() {
+        let mut r = session(&["silas"]);
+        r.kind = "Policy".into();
+        assert_eq!(session_owner_refusal(&r, &Identity("kade".into())), None);
     }
 }
