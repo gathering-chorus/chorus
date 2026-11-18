@@ -28,6 +28,7 @@ pub fn handle_login(
     existing: impl Fn(&str) -> Result<Option<String>, String>,
     create: impl Fn(&str) -> (u16, String),
     supersede: impl Fn(&str),
+    touch: impl Fn(&str),
     now_iso: &str,
 ) -> (u16, String) {
     let parsed: Value = match serde_json::from_str(if body.trim().is_empty() { "{}" } else { body }) {
@@ -54,7 +55,12 @@ pub fn handle_login(
     };
     let login = VerifiedLogin { principal: caller.principal, token_id: caller.jti, expires_at: caller.expires_at };
     match plan_login(&login, &PrincipalFacts { host_account: host.as_deref() }, &parsed, |r| r == acts_as && served, found.as_deref(), now_iso) {
-        Ok(Outcome::Existing(name)) => (200, format!("{{ \"name\": \"{}\", \"created\": false }}", crate::json_escape(&name))),
+        Ok(Outcome::Existing(name)) => {
+            // #4517 AC6 (Silas 00:56) — a browser sign-in stays live by its lastSeenAt: its
+            // repeat login asks the door to touch it (at most once per window, see touch_due)
+            if parsed.get("channel").and_then(Value::as_str) == Some("browser") { touch(&name); }
+            (200, format!("{{ \"name\": \"{}\", \"created\": false }}", crate::json_escape(&name)))
+        }
         Ok(Outcome::Create(name, mut row)) => {
             row["name"] = Value::String(name.clone());
             // The caller learns the row's name from the answer: the door chose it.
@@ -185,4 +191,51 @@ pub fn older_open_panes(principal: &str, host: &str, keep: &str) -> Result<Vec<S
     let q = format!("PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <urn:chorus:domains:identity> {{ ?s a chorus:Session ; chorus:ownedBy <{ns}principal-{p}> ; chorus:channel ?c ; chorus:hostAccount ?h . FILTER(STR(?c) = \"pane\" && STR(?h) = \"{h}\") FILTER NOT EXISTS {{ ?s chorus:endedAt ?e }} BIND(REPLACE(STR(?s), '.*#session-', '') AS ?v) }} }}",
         ns = crate::NS, p = principal, h = host);
     Ok(crate::select_v(&crate::sparql_json(&q)?).into_iter().filter(|n| n != keep).collect())
+}
+
+
+/// The window a browser row's lastSeenAt is touched in, at most once (Silas 01:31).
+pub const TOUCH_WINDOW_SECS: u64 = 300;
+
+/// Is a touch due: the row was last seen at `last_secs` (None = never), now is `now_secs`.
+pub fn touch_due(last_secs: Option<u64>, now_secs: u64) -> bool {
+    last_secs.is_none_or(|l| now_secs.saturating_sub(l) >= TOUCH_WINDOW_SECS)
+}
+
+/// Seconds since the epoch from an ISO UTC instant (`2026-11-18T05:30:00Z`); None if not one.
+pub fn secs_from_iso(iso: &str) -> Option<u64> {
+    let b = iso.as_bytes();
+    if b.len() < 20 || b[4] != b'-' || b[10] != b'T' { return None; }
+    let n = |r: std::ops::Range<usize>| iso.get(r)?.parse::<i64>().ok();
+    let (y, m, d, hh, mm, ss) = (n(0..4)?, n(5..7)?, n(8..10)?, n(11..13)?, n(14..16)?, n(17..19)?);
+    let y2 = if m <= 2 { y - 1 } else { y };
+    let era = y2.div_euclid(400);
+    let yoe = y2 - era * 400;
+    let mp = (m + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146_097 + doe - 719_468;
+    u64::try_from(days * 86_400 + hh * 3600 + mm * 60 + ss).ok()
+}
+
+/// The browser row's lastSeenAt, read by the door.
+pub fn session_last_seen(name: &str) -> Result<Option<String>, String> {
+    if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') { return Ok(None); }
+    let q = format!("PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <urn:chorus:domains:identity> {{ <{ns}session-{n}> chorus:lastSeenAt ?t . BIND(STR(?t) AS ?v) }} }} LIMIT 1",
+        ns = crate::NS, n = name);
+    crate::sparql_json(&q).map(|b| crate::select_v(&b).into_iter().next())
+}
+
+#[cfg(test)]
+mod touch_tests {
+    use super::*;
+    #[test]
+    fn iso_round_trips_and_the_window_holds() {
+        assert_eq!(secs_from_iso("2026-11-18T05:10:00Z"), Some(1_794_978_600));
+        assert_eq!(secs_from_iso(&iso_from_secs(951_782_400)), Some(951_782_400));
+        assert_eq!(secs_from_iso("not a time"), None);
+        assert!(touch_due(None, 10));
+        assert!(!touch_due(Some(1000), 1000 + TOUCH_WINDOW_SECS - 1), "inside the window: no write");
+        assert!(touch_due(Some(1000), 1000 + TOUCH_WINDOW_SECS));
+    }
 }

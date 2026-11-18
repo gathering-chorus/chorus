@@ -7042,9 +7042,16 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                                             emit_write_spine(&who, "supersede", &old, "", if c == 200 { "ok" } else { "failed" });
                                         }
                                     };
+                                    // a browser row's lastSeenAt, at most once per window (Silas 01:31)
+                                    let touch = |name: &str| {
+                                        let last = logins::session_last_seen(name).ok().flatten().and_then(|t| logins::secs_from_iso(&t));
+                                        if logins::touch_due(last, now_secs) {
+                                            let _ = with_write_lock(|| handle_write_scoped("PATCH", &format!("/sessions/{}", name), &format!("{{\"lastSeenAt\":\"{}\"}}", now_iso), &own, &who, token, "", &claims.scope));
+                                        }
+                                    };
                                     logins::handle_login(&caller, body_str, logins::principal_host_account,
                                         |role| teammate_serves(&who, role), logins::session_for_login,
-                                        |row| with_write_lock(|| handle_create(row, table, &who, token, "")), supersede, &now_iso)
+                                        |row| with_write_lock(|| handle_create(row, table, &who, token, "")), supersede, touch, &now_iso)
                                 }
                             }
                         }

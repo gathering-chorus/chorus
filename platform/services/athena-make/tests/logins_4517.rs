@@ -16,7 +16,7 @@ const PANE: &str = r#"{"channel":"pane","hostAccount":"chorus-kade","actsAs":"ro
 fn a_new_login_is_created_by_the_door_as_the_caller() {
     let wrote = RefCell::new(String::new());
     let (code, body) = handle_login(&kade(), PANE, host, serves, |_| Ok(None),
-        |b| { *wrote.borrow_mut() = b.to_string(); (201, "{}".into()) }, |_| {}, NOW);
+        |b| { *wrote.borrow_mut() = b.to_string(); (201, "{}".into()) }, |_| {}, |_| {}, NOW);
     assert_eq!(code, 201);
     assert!(body.contains("\"created\": true") && body.contains("\"name\": \"kade-"), "the answer names the row: {body}");
     let row: serde_json::Value = serde_json::from_str(&wrote.borrow()).unwrap();
@@ -29,7 +29,7 @@ fn a_new_login_is_created_by_the_door_as_the_caller() {
 #[test]
 fn a_repeat_of_the_same_login_answers_200_with_its_row_and_writes_nothing() {
     let (code, body) = handle_login(&kade(), PANE, host, serves, |j| Ok((j == "j1").then(|| "kade-abc".to_string())),
-        |_| panic!("a repeat must not write"), |_| panic!("a repeat supersedes nothing"), NOW);
+        |_| panic!("a repeat must not write"), |_| panic!("a repeat supersedes nothing"), |_| {}, NOW);
     assert_eq!(code, 200);
     assert!(body.contains("kade-abc") && body.contains("\"created\": false"), "{body}");
 }
@@ -38,12 +38,12 @@ fn a_repeat_of_the_same_login_answers_200_with_its_row_and_writes_nothing() {
 #[test]
 fn negative_proof_foreign_acts_as_and_wrong_account_are_refused_and_nothing_is_written() {
     let never = |_: &str| -> (u16, String) { panic!("a refused login must not write") };
-    let (c, _) = handle_login(&kade(), r#"{"channel":"pane","hostAccount":"chorus-kade","actsAs":"role-silas"}"#, host, serves, |_| Ok(None), never, |_| panic!("a refused login supersedes nothing"), NOW);
+    let (c, _) = handle_login(&kade(), r#"{"channel":"pane","hostAccount":"chorus-kade","actsAs":"role-silas"}"#, host, serves, |_| Ok(None), never, |_| panic!("a refused login supersedes nothing"), |_| {}, NOW);
     assert_eq!(c, 403);
-    let (c, _) = handle_login(&kade(), r#"{"channel":"pane","hostAccount":"chorus-silas"}"#, host, serves, |_| Ok(None), never, |_| panic!("a refused login supersedes nothing"), NOW);
+    let (c, _) = handle_login(&kade(), r#"{"channel":"pane","hostAccount":"chorus-silas"}"#, host, serves, |_| Ok(None), never, |_| panic!("a refused login supersedes nothing"), |_| {}, NOW);
     assert_eq!(c, 403);
     let no_id = Caller { principal: "kade", jti: "", expires_at: "x" };
-    let (c, b) = handle_login(&no_id, PANE, host, serves, |_| Ok(None), never, |_| panic!("a refused login supersedes nothing"), NOW);
+    let (c, b) = handle_login(&no_id, PANE, host, serves, |_| Ok(None), never, |_| panic!("a refused login supersedes nothing"), |_| {}, NOW);
     assert_eq!(c, 401, "{b}");
 }
 
@@ -51,12 +51,12 @@ fn negative_proof_foreign_acts_as_and_wrong_account_are_refused_and_nothing_is_w
 #[test]
 fn an_unread_store_is_503_not_a_refusal() {
     let never = |_: &str| -> (u16, String) { panic!("no write on an unread store") };
-    let (c, _) = handle_login(&kade(), PANE, |_| Err("timeout".into()), serves, |_| Ok(None), never, |_| panic!("a refused login supersedes nothing"), NOW);
+    let (c, _) = handle_login(&kade(), PANE, |_| Err("timeout".into()), serves, |_| Ok(None), never, |_| panic!("a refused login supersedes nothing"), |_| {}, NOW);
     assert_eq!(c, 503);
-    let (c, _) = handle_login(&kade(), PANE, host, serves, |_| Err("timeout".into()), never, |_| panic!("a refused login supersedes nothing"), NOW);
+    let (c, _) = handle_login(&kade(), PANE, host, serves, |_| Err("timeout".into()), never, |_| panic!("a refused login supersedes nothing"), |_| {}, NOW);
     assert_eq!(c, 503);
     // NEGATIVE PROOF (Silas 00:27): a Teammate read that failed is 503, not "does not serve"
-    let (c, b) = handle_login(&kade(), PANE, host, |_| Err("timeout".into()), |_| Ok(None), never, |_| panic!("a refused login supersedes nothing"), NOW);
+    let (c, b) = handle_login(&kade(), PANE, host, |_| Err("timeout".into()), |_| Ok(None), never, |_| panic!("a refused login supersedes nothing"), |_| {}, NOW);
     assert_eq!(c, 503, "{b}");
 }
 
@@ -111,7 +111,7 @@ mod supersede {
         let order = RefCell::new(Vec::<String>::new());
         let (c, _) = handle_login(&kade(), r#"{"channel":"pane","hostAccount":"chorus-kade"}"#, host, serves, |_| Ok(None),
             |_| { order.borrow_mut().push("create".into()); (201, "{}".into()) },
-            |keep| order.borrow_mut().push(format!("supersede {keep}")), NOW);
+            |keep| order.borrow_mut().push(format!("supersede {keep}")), |_| {}, NOW);
         assert_eq!(c, 201);
         let o = order.borrow();
         assert_eq!(o.len(), 2);
@@ -124,11 +124,49 @@ mod supersede {
     #[test]
     fn negative_proofs_a_failed_create_or_a_browser_login_supersedes_nothing() {
         let (c, _) = handle_login(&kade(), r#"{"channel":"pane","hostAccount":"chorus-kade"}"#, host, serves, |_| Ok(None),
-            |_| (502, "{}".into()), |_| panic!("a failed create must not supersede"), NOW);
+            |_| (502, "{}".into()), |_| panic!("a failed create must not supersede"), |_| {}, NOW);
         assert_eq!(c, 502);
         let jeff = Caller { principal: "jeff", jti: "b1", expires_at: "x" };
         let (c, _) = handle_login(&jeff, r#"{"channel":"browser"}"#, |_| Ok(None), serves, |_| Ok(None),
-            |_| (201, "{}".into()), |_| panic!("a browser login must not supersede"), NOW);
+            |_| (201, "{}".into()), |_| panic!("a browser login must not supersede"), |_| {}, NOW);
         assert_eq!(c, 201);
+    }
+}
+
+mod browser_touch {
+    use athena_make::logins::{handle_login, touch_due, Caller};
+    use std::cell::{Cell, RefCell};
+    const NOW: &str = "2026-11-18T06:30:00Z";
+
+    /// A repeat browser login touches its row; a repeat pane login does not.
+    #[test]
+    fn a_repeat_browser_login_touches_and_a_pane_does_not() {
+        let jeff = Caller { principal: "jeff", jti: "b1", expires_at: "x" };
+        let touched = RefCell::new(Vec::<String>::new());
+        let (c, _) = handle_login(&jeff, r#"{"channel":"browser"}"#, |_| Ok(None), |_| Ok(false), |_| Ok(Some("jeff-b".into())),
+            |_| panic!("a repeat writes no new row"), |_| panic!("a repeat supersedes nothing"), |n| touched.borrow_mut().push(n.into()), NOW);
+        assert_eq!(c, 200);
+        assert_eq!(touched.borrow().as_slice(), ["jeff-b"]);
+        let kade = Caller { principal: "kade", jti: "p1", expires_at: "x" };
+        let (c, _) = handle_login(&kade, r#"{"channel":"pane","hostAccount":"chorus-kade"}"#, |_| Ok(Some("chorus-kade".into())), |_| Ok(true), |_| Ok(Some("kade-p".into())),
+            |_| panic!("no new row"), |_| panic!("no supersede"), |_| panic!("a pane is never touched"), NOW);
+        assert_eq!(c, 200);
+    }
+
+    /// NEGATIVE PROOF (Silas 01:31): two touches inside the window make one write. The serve
+    /// block's touch writes only when touch_due on the row's own lastSeenAt.
+    #[test]
+    fn negative_proof_two_touches_inside_the_window_write_once() {
+        let jeff = Caller { principal: "jeff", jti: "b1", expires_at: "x" };
+        let last = Cell::new(Some(1_000u64));
+        let writes = Cell::new(0);
+        let now = Cell::new(1_000 + 400);
+        let touch = |_: &str| if touch_due(last.get(), now.get()) { writes.set(writes.get() + 1); last.set(Some(now.get())); };
+        for step in [0u64, 60] {
+            now.set(1_400 + step);
+            handle_login(&jeff, r#"{"channel":"browser"}"#, |_| Ok(None), |_| Ok(false), |_| Ok(Some("jeff-b".into())),
+                |_| (201, String::new()), |_| {}, touch, NOW);
+        }
+        assert_eq!(writes.get(), 1, "two touches 60 s apart wrote {} times", writes.get());
     }
 }
