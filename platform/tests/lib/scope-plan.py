@@ -8,13 +8,20 @@ write should be let in. This compares that with what the door actually does.
   plan    <permissions.json> <class-graphs.json> <role>
           prints one line per class: "deny <Class>" for every class the rows
           refuse the role, "append <Class>" for every class on a graph the role
-          holds acl:Append on, then "allow <Class>" for ONE class it may write.
+          holds acl:Append on, then "allow <Class>" for every class it may write.
           A class whose serving graph could not be read is "unknown" (red).
   expect  <class-graphs.json> <refused graph> ...
           the single API walk's plan (#4022): "deny" for every class on a graph
           the walking identity must be refused, "allow" for every other class.
   graphs  <api>
           prints {class: servedFrom graph} for every class the door serves.
+  collections <api>
+          prints "<Class> <collection path>" for every class the door serves.
+  classify <Class> <http code> <body file>
+          #4517 AC2 — reads the door's answer to ONE fixed, deliberately invalid
+          create body: 403 = the door refuses, 422 = the door allows (the body
+          was judged, so authz passed), anything else = unmeasured, named.
+          Nothing is ever written. Prints a runner-format line for verdict.
   verdict <plan.txt> <runner.out>
           reads the 4267 runner's lines for those classes and prints every class
           where the door disagrees with the rows. Exit 1 if any, 0 if none.
@@ -46,7 +53,7 @@ def plan(perms, graphs, role):
     append = sorted(c for c, g in known.items() if g in appendable)
     allow = sorted(c for c, g in known.items() if g in writable)
     return ([("unknown", c) for c in unknown] + [("deny", c) for c in deny]
-            + [("append", c) for c in append] + [("allow", c) for c in allow[:1]])
+            + [("append", c) for c in append] + [("allow", c) for c in allow])
 
 
 def expect(graphs, refused):
@@ -65,6 +72,21 @@ def fetch_graphs(api):
         except Exception:
             out[p["kind"]] = ""
     return out
+
+
+def fetch_collections(api):
+    import urllib.request
+    return [(p["kind"], p["collection"]) for p in json.load(urllib.request.urlopen(api + "/", timeout=20))["primitives"]]
+
+
+def classify(cls, code, body):
+    """#4517 AC2 — the door's decision, read off its answer to an invalid body."""
+    body = " ".join(body.split())[:200]
+    if code == "403":
+        return f"{cls} NOT-PERM {body}"
+    if code == "422":
+        return f"{cls} PASS door allows (422: the invalid body was judged, so authz let it in)"
+    return f"{cls} UNMEASURED door answered {code or 'nothing'} {body}".rstrip()
 
 
 def runner_results(lines):
@@ -112,6 +134,13 @@ def main(argv):
         return 0
     if len(argv) == 3 and argv[1] == "graphs":
         json.dump(fetch_graphs(argv[2]), sys.stdout)
+        return 0
+    if len(argv) == 3 and argv[1] == "collections":
+        for cls, path in fetch_collections(argv[2]):
+            print(cls, path)
+        return 0
+    if len(argv) == 5 and argv[1] == "classify":
+        print(classify(argv[2], argv[3], open(argv[4]).read()))
         return 0
     if len(argv) == 4 and argv[1] == "verdict":
         planned = [tuple(l.split()) for l in open(argv[2]) if l.strip()]

@@ -17,7 +17,7 @@
 # CHORUS_CONTEXT=prod). Proofs without prod: 4022-role-write-scope-proofs.bats.
 
 ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
-RUNNER="$ROOT/platform/tests/lib/quartet-walk.sh"
+RUNNER="$ROOT/platform/tests/lib/quartet-walk.sh"  # prod gate reads it
 PLAN="$ROOT/platform/tests/lib/scope-plan.py"
 API="${QUARTET_API:-http://localhost:3360}"
 ROLES="${SCOPE_ROLES:-kade wren silas}"
@@ -32,16 +32,21 @@ setup_file() {
   local d="$BATS_FILE_TMPDIR"
   curl -sf --max-time 20 "$API/v1/security/permissions?limit=1000" > "$d/perms.json"
   python3 "$PLAN" graphs "$API" > "$d/graphs.json"
-  local run_id; run_id="scope-$(date -u +%Y%m%dt%H%M%Sz)"
+  python3 "$PLAN" collections "$API" > "$d/paths.txt"
+  # #4517 AC2 — one fixed, deliberately invalid create body per class: since AC1 the door
+  # judges the body only after authz, so 403 = refuses and 422 = allows, and nothing is
+  # ever written. Replaces the full create cycle, which went UNMEASURED wherever no served
+  # row gave a value a shape's pattern takes.
   for role in $ROLES; do
     python3 "$PLAN" plan "$d/perms.json" "$d/graphs.json" "$role" > "$d/$role.plan"
     : > "$d/$role.out"
-    # One runner call per planned class (QUARTET_ONLY), so the shared runner
-    # stays as it is; the verdict reads every class's line from one file.
+    local tok; tok="$("$ROOT/platform/scripts/chorus-identity-token" "$role" 2>/dev/null || true)"
     while read -r _ cls; do
-      API_BASE="$API" CHORUS_CONTEXT=prod QUARTET_PROD=1 QUARTET_RECORD=0 CHORUS_ROLE="$role" \
-        QUARTET_RUN_ID="$run_id-$$-$role" QUARTET_ONLY="$cls" \
-        bash "$RUNNER" >> "$d/$role.out" 2>&1 || true
+      local path; path="$(awk -v c="$cls" '$1==c{print $2}' "$d/paths.txt")"
+      local code; code="$(curl -s -o "$d/body" -w '%{http_code}' --max-time 20 -X POST \
+        -H "Authorization: Bearer $tok" -H 'Content-Type: application/json' \
+        --data '{"zz-4517-invalid":1}' "$API$path" || true)"
+      python3 "$PLAN" classify "$cls" "${tok:+$code}" "$d/body" >> "$d/$role.out"
     done < "$d/$role.plan"
   done
 }
@@ -55,6 +60,6 @@ scope_case() { # $1 role
   [ "$status" -eq 0 ]
 }
 
-@test "kade: the door refuses every class the Permission rows refuse, and lets one allowed write through" { scope_case kade; }
-@test "wren: the door refuses every class the Permission rows refuse, and lets one allowed write through" { scope_case wren; }
-@test "silas: the door refuses every class the Permission rows refuse, and lets one allowed write through" { scope_case silas; }
+@test "kade: the door refuses every class the Permission rows refuse and allows every class they allow" { scope_case kade; }
+@test "wren: the door refuses every class the Permission rows refuse and allows every class they allow" { scope_case wren; }
+@test "silas: the door refuses every class the Permission rows refuse and allows every class they allow" { scope_case silas; }

@@ -20,12 +20,13 @@ EOF
   printf '{"CodeFile":"urn:g:code","Language":"urn:g:code","Credential":"urn:g:security","Policy":"urn:g:security"}\n' > "$T/graphs.json"
 }
 
-@test "plan: every class the rows refuse is denied, plus one allowed class" {
+@test "plan: every class the rows refuse is denied, every class they allow is allowed" {
   run python3 "$PLAN" plan "$T/perms.json" "$T/graphs.json" kade
   [ "$status" -eq 0 ]
   [ "$output" = "deny Credential
 deny Policy
-allow CodeFile" ]
+allow CodeFile
+allow Language" ]
 }
 
 @test "plan: a Read row is not a write grant" {
