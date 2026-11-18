@@ -137,3 +137,77 @@ PY
   run unreadable_named "$g" "$BATS_TEST_TMPDIR/un"
   [ "$status" -eq 1 ] || { echo "an unanswered read is never counted as readable"; return 1; }
 }
+
+# #5002 AC4 — $1 listed rows ("Class<TAB>name<TAB>servedFrom" lines): no zz-probe row is left
+# outside the security graph (Silas takes those 5 himself, 10:33).
+probes_left() {
+  python3 - "$1" <<'PY'
+import sys
+left = [f"{c}/{n}" for c, n, g in (l.rstrip("\n").split("\t") for l in open(sys.argv[1]) if l.strip())
+        if n.startswith("zz-probe-") and g != "urn:chorus:domains:security"]
+print(f"zz-probe rows left: {len(left)}" + (": " + ", ".join(left[:10]) if left else ""))
+sys.exit(1 if left else 0)
+PY
+}
+
+listed_names() { # every listed row name per collection, Version aside (its probe rows go by ofRow, AC4's ledger line)
+  python3 - "$DOOR" <<'PY'
+import json, sys, urllib.request
+door = sys.argv[1]
+for p in json.load(urllib.request.urlopen(door + "/", timeout=20))["primitives"]:
+    if p["kind"] == "Version":
+        continue
+    cur = p["collection"] + "?limit=1000"
+    while cur:
+        d = json.load(urllib.request.urlopen(door + cur, timeout=60))
+        for r in d.get("data", []):
+            print(f"{p['kind']}\t{r.get('name','')}\t{d.get('servedFrom','')}")
+        cur = (d.get("links") or {}).get("next")
+PY
+}
+
+# #5002 AC5 — $1 Permission rows json: the quartet holds Append and no Write row at all.
+quartet_append_only() {
+  python3 - "$1" <<'PY'
+import json, sys
+rows = [r for r in json.loads(sys.argv[1]).get("data", []) if (r.get("agent") or "").endswith("principal-quartet")]
+w = [r.get("name") for r in rows if (r.get("mode") or "").endswith("Write")]
+a = [r for r in rows if (r.get("mode") or "").endswith("Append")]
+print(f"quartet: {len(a)} Append, {len(w)} Write" + (": " + ", ".join(w) if w else ""))
+sys.exit(1 if w or not a else 0)
+PY
+}
+
+@test "AC4 no zz-probe row is left outside the security graph" {
+  in_werk && skip "after-land check: a card's werk has not landed"
+  listed_names > "$BATS_TEST_TMPDIR/names"
+  [ -s "$BATS_TEST_TMPDIR/names" ] || { echo "the door listed nothing"; return 1; }
+  run probes_left "$BATS_TEST_TMPDIR/names"
+  echo "$output"
+  [ "$status" -eq 0 ] || return 1
+}
+
+@test "AC5 the quartet test principal holds Append and no Write row" {
+  in_werk && skip "after-land check: a card's werk has not landed"
+  run quartet_append_only "$(curl -sf --max-time 20 "$DOOR/v1/security/permissions?limit=1000")"
+  echo "$output"
+  [ "$status" -eq 0 ] || return 1
+}
+
+@test "AC4/AC5 NEGATIVE PROOF: a probe row present is red (security's are not), a quartet Write row is red, no Append is red" {
+  printf 'Language\trust\turn:chorus:domains:code\nPrincipal\tzz-probe-x\turn:chorus:domains:security\n' > "$BATS_TEST_TMPDIR/clean"
+  run probes_left "$BATS_TEST_TMPDIR/clean"
+  [ "$status" -eq 0 ] || return 1
+  printf 'Language\tzz-probe-1-language\turn:chorus:domains:code\n' > "$BATS_TEST_TMPDIR/probe"
+  run probes_left "$BATS_TEST_TMPDIR/probe"
+  [ "$status" -eq 1 ] || return 1
+  A='{"name":"q-a","agent":"chorus:principal-quartet","mode":"Append"}'
+  W='{"name":"quartet-write-values","agent":"chorus:principal-quartet","mode":"Write"}'
+  run quartet_append_only "{\"data\":[$A]}"
+  [ "$status" -eq 0 ] || return 1
+  run quartet_append_only "{\"data\":[$A,$W]}"
+  [ "$status" -eq 1 ] || return 1
+  [[ "$output" == *"quartet-write-values"* ]] || return 1
+  run quartet_append_only '{"data":[]}'
+  [ "$status" -eq 1 ] || return 1
+}
