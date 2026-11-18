@@ -2,20 +2,24 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>Label</key>
-    <string>com.gathering.promtail</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/Users/jeffbridwell/bin/promtail</string>
-        <string>-config.file=/Users/jeffbridwell/CascadeProjects/shared-observability/config/promtail/promtail-native.yaml</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>StandardOutPath</key>
-    <string>/tmp/promtail.log</string>
-    <key>StandardErrorPath</key>
-    <string>/tmp/promtail.log</string>
+	<key>KeepAlive</key>
+	<true/>
+	<key>Label</key>
+	<string>com.gathering.promtail</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/jeffbridwell/bin/promtail</string>
+		<string>-config.file=/Users/jeffbridwell/CascadeProjects/chorus/platform/config/promtail/promtail-native.yaml</string>
+		<string>-file-watch.min_poll_frequency=1s</string>
+		<string>-file-watch.max_poll_frequency=5s</string>
+		<string>-positions.sync-period=30s</string>
+		<string>-target.sync-period=30s</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>/Users/jeffbridwell/Library/Logs/Gathering/promtail.log</string>
+	<key>StandardOutPath</key>
+	<string>/Users/jeffbridwell/Library/Logs/Gathering/promtail.log</string>
 </dict>
 </plist>

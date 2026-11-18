@@ -49,7 +49,7 @@
 <ul style="margin-top: 6px;">
   <li><a href="http://localhost:3340/athena/domain-detail.html?id=logs-domain"><code>/athena/domain-detail.html?id=logs-domain</code></a> — pending creation; this doc is the spec until the subdomain entry lands.</li>
   <li><code>designing/schemas/spine-events.json</code> — canonical event type registry.</li>
-  <li><code>shared-observability/config/promtail/promtail-native.yaml</code> — scrape configuration.</li>
+  <li><code>platform/config/promtail/promtail-native.yaml</code> — scrape configuration.</li>
 </ul>
 This doc narrates <em>structure, contracts, and intent</em>. Field-level event schema lives in <code>spine-events.json</code>; promtail scrape definitions live in the YAML. Both are referenced by name, not duplicated here.
 </div>
@@ -160,7 +160,7 @@ flowchart LR
 </div>
 
 <h2>Aggregation — Promtail + Loki</h2>
-<p><strong>Promtail</strong> scrapes JSON lines from <code>~/Library/Logs/Chorus/*.log</code>. Scrape jobs in <code>shared-observability/config/promtail/promtail-native.yaml</code>:</p>
+<p><strong>Promtail</strong> scrapes JSON lines from <code>~/Library/Logs/Chorus/*.log</code>. Scrape jobs in <code>platform/config/promtail/promtail-native.yaml</code>:</p>
 <table>
 <thead><tr><th>Job label</th><th>Source files</th><th>Purpose</th></tr></thead>
 <tbody>
@@ -323,7 +323,7 @@ chorus_logs_missing_field({ field: "card_id" | "trace_id", time_window })
   <li>ADR-028 — completeness contract for governed-record domains (the framework this design honors).</li>
   <li>ADR-026 — quality layers (logs as the Loki-side audit surface).</li>
   <li><code>designing/schemas/spine-events.json</code> — canonical event-type registry (138 entries).</li>
-  <li><code>shared-observability/config/promtail/promtail-native.yaml</code> — scrape config.</li>
+  <li><code>platform/config/promtail/promtail-native.yaml</code> — scrape config.</li>
   <li><code>designing/docs/trace-id-propagation.html</code> — companion doc, full trace_id contract (#2839).</li>
 </ul>
 

@@ -12,7 +12,7 @@
         <string>job</string>
         <string>/bin/sh</string>
         <string>-c</string>
-        <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/log-archive dagu --apply; r=$?; /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/log-archive chorus-log --over 1073741824 --apply || r=$?; exit $r</string>
+        <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/log-archive dagu --apply; r=$?; /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/log-archive ops-logs --apply || r=$?; /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/log-archive chorus-log --over 1073741824 --apply || r=$?; exit $r</string>
     </array>
     <key>StartCalendarInterval</key>
     <dict>

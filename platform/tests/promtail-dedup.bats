@@ -17,11 +17,15 @@ load test_helper
 # check is gated to RUN_LIVE_INTEGRATION. The config and binary live outside this
 # repo (shared-observability, ~/bin), so their absence reports UNMEASURED, not red.
 
-PROMTAIL_CONFIG="${HOME}/CascadeProjects/shared-observability/config/promtail/promtail-native.yaml"
-PROMTAIL_BIN="${HOME}/bin/promtail"
+# #4994: the config lives in this repo (a role's $HOME is not jeffbridwell's, so the old path read UNMEASURED there)
+PROMTAIL_CONFIG="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)/platform/config/promtail/promtail-native.yaml"
+# #4994: promtail runs as jeffbridwell (gui/501); a role's $HOME is not his
+# the binary comes from its LaunchAgent in this repo; its home is two levels up (~/bin/promtail)
+PROMTAIL_BIN="${PROMTAIL_BIN:-$(plutil -extract ProgramArguments.0 raw "$(cd "$BATS_TEST_DIRNAME/../.." && pwd)/platform/scripts/launchagents-canonical/com.gathering.promtail.plist" 2>/dev/null)}"
+PROMTAIL_HOME="${PROMTAIL_HOME:-$(dirname "$(dirname "$PROMTAIL_BIN")")}"
 LOKI="http://localhost:3102"
 ROUTES="${BATS_TEST_DIRNAME}/fixtures/4336/promtail-routes.rb"
-LOGS="${HOME}/Library/Logs"
+LOGS="${PROMTAIL_HOME}/Library/Logs"
 
 need_config() {
   [ -f "$PROMTAIL_CONFIG" ] || skip "UNMEASURED — promtail config not on this box ($PROMTAIL_CONFIG) (#4336)"
@@ -63,7 +67,7 @@ routes() { ruby "$ROUTES" "$1" "$2" | paste -sd, -; }
 @test "no recent daemon-logs entries for chorus-api.log (last 1 min)" {
   [ "${RUN_LIVE_INTEGRATION:-}" = "true" ] || skip "UNMEASURED — queries the live Loki on :3102; set RUN_LIVE_INTEGRATION=true (#4336)"
   count=$(curl -s "${LOKI}/loki/api/v1/query" \
-    --data-urlencode "query=count_over_time({job=\"daemon-logs\",filename=\"${HOME}/Library/Logs/Chorus/chorus-api.log\"}[1m])" \
+    --data-urlencode "query=count_over_time({job=\"daemon-logs\",filename=\"${PROMTAIL_HOME}/Library/Logs/Chorus/chorus-api.log\"}[1m])" \
     2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); vals=d.get('data',{}).get('result',[]); print(sum(int(v['value'][1]) for v in vals))" 2>/dev/null)
   [ -n "$count" ]
   [ "$count" -eq 0 ]

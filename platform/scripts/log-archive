@@ -11,6 +11,8 @@ manifest (path, size, sha256) written BEFORE the move and checked AFTER it.
 A file missing or changed in the archive fails the run, loudly.
 
   log-archive dagu [--days N] [--apply]   runs whose last activity is older than N days (default 3)
+  log-archive ops-logs [--days N] [--apply]
+                                          dated ops/logs/<name>-YYYYMMDD.jsonl files older than N days (default 2; #4994)
   log-archive chorus-log [--over BYTES] [--apply]
                                           rename ~/.chorus/chorus.log, compress it to the archive, verify, then remove the raw copy
                                           (--over: only when it is larger than BYTES)
@@ -25,6 +27,8 @@ HOME = os.path.expanduser("~")
 DAGU_LOGS = os.environ.get("LOG_ARCHIVE_DAGU_LOGS", f"{HOME}/Library/Logs/Chorus/dagu")
 DAGU_DATA = os.environ.get("LOG_ARCHIVE_DAGU_DATA", f"{HOME}/.chorus/dagu/data/dag-runs")
 ARCHIVE = os.environ.get("LOG_ARCHIVE_ROOT", f"{HOME}/.chorus/log-archive")
+OPS_LOGS = os.environ.get("LOG_ARCHIVE_OPS_LOGS", f"{HOME}/CascadeProjects/chorus/ops/logs")
+DATED = re.compile(r"^.+-\d{8}\.jsonl$")
 CHORUS_LOG = os.environ.get("LOG_ARCHIVE_CHORUS_LOG", f"{HOME}/.chorus/chorus.log")
 RUN_ID = re.compile(r"^(?:dag-)?run_\d{8}[._]\d+.*?_([A-Za-z0-9]+)(?:\.log)?$")
 
@@ -75,11 +79,12 @@ def units():
             yield top
 
 
-def manifest_of(rels):
+def manifest_of(rels, root=None):
+    root = root or DAGU_LOGS
     out = []
     for rel in rels:
-        for f in files_under(os.path.join(DAGU_LOGS, rel)):
-            out.append({"path": os.path.relpath(f, DAGU_LOGS), "size": os.path.getsize(f), "sha256": sha256(f)})
+        for f in files_under(os.path.join(root, rel)):
+            out.append({"path": os.path.relpath(f, root), "size": os.path.getsize(f), "sha256": sha256(f)})
     return out
 
 
@@ -109,12 +114,26 @@ def dagu(days, apply):
     if not apply or not old:
         print("dry run: nothing moved" if not apply else "nothing to move")
         return 0
+    return move_verified("dagu", DAGU_LOGS, manifest, total, after=lambda: prune_empty(old))
+
+
+def prune_empty(old):
+    for rel in old:  # the run dirs are empty now; leave nothing for promtail to watch
+        p = os.path.join(DAGU_LOGS, rel)
+        for d, _, _ in sorted(os.walk(p), key=lambda w: -len(w[0])):
+            if os.path.isdir(d) and not os.listdir(d):
+                os.rmdir(d)
+
+
+def move_verified(kind, root, manifest, total, after=None):
+    """Move every manifest file from root to ARCHIVE/<kind>, proven: the manifest is written
+    first; a file already archived with the same bytes is a proven duplicate and its source
+    goes, other bytes go beside it under a stamped name; then no file may be left in root
+    and every one must match its size and sha256 in the archive. Shared by dagu and ops-logs
+    (#4994: one move path, not two)."""
     stamp = time.strftime("%Y%m%dT%H%M%S")
-    dest = os.path.join(ARCHIVE, "dagu")
-    # a file already in the archive (a twin run, an earlier partial move): the
-    # same bytes are already safe, so the source is a proven duplicate; other
-    # bytes go beside it under a stamped name. Decided before the manifest is
-    # written, so the manifest names where every file will be.
+    dest = os.path.join(ARCHIVE, kind)
+    # decided before the manifest is written, so the manifest names where every file will be
     for e in manifest:
         t = os.path.join(dest, e["path"])
         if os.path.exists(t):
@@ -123,25 +142,22 @@ def dagu(days, apply):
             else:
                 e["source"], e["path"] = e["path"], f"{e['path']}.{stamp}"
     os.makedirs(os.path.join(ARCHIVE, "manifests"), exist_ok=True)
-    mpath = os.path.join(ARCHIVE, "manifests", f"dagu-{stamp}.json")
+    mpath = os.path.join(ARCHIVE, "manifests", f"{kind}-{stamp}.json")
     with open(mpath, "w") as f:
-        json.dump({"from": DAGU_LOGS, "to": dest, "files": manifest}, f)
+        json.dump({"from": root, "to": dest, "files": manifest}, f)
     for e in manifest:
-        src = os.path.join(DAGU_LOGS, e.get("source", e["path"]))
+        src = os.path.join(root, e.get("source", e["path"]))
         if e.get("duplicate"):
             os.remove(src)  # its bytes are in the archive, proven by sha256 above
             continue
         t = os.path.join(dest, e["path"])
         os.makedirs(os.path.dirname(t), exist_ok=True)
         shutil.move(src, t)
-    for rel in old:  # the run dirs are empty now; leave nothing for promtail to watch
-        p = os.path.join(DAGU_LOGS, rel)
-        for d, _, _ in sorted(os.walk(p), key=lambda w: -len(w[0])):
-            if os.path.isdir(d) and not os.listdir(d):
-                os.rmdir(d)
-    left = [e["path"] for e in manifest if os.path.exists(os.path.join(DAGU_LOGS, e.get("source", e["path"])))]
+    if after:
+        after()
+    left = [e["path"] for e in manifest if os.path.exists(os.path.join(root, e.get("source", e["path"])))]
     if left:
-        print(f"LOG-ARCHIVE FAILED: {len(left)} file(s) still in {DAGU_LOGS} after the move; manifest {mpath}", file=sys.stderr)
+        print(f"LOG-ARCHIVE FAILED: {len(left)} file(s) still in {root} after the move; manifest {mpath}", file=sys.stderr)
         return 1
     bad = verify(manifest, dest)
     if bad:
@@ -151,6 +167,26 @@ def dagu(days, apply):
         return 1
     print(f"moved and verified {len(manifest)} file(s) ({total} bytes) → {dest}; manifest {mpath}")
     return 0
+
+
+def ops_logs(days, apply):
+    """#4994 — athena-make and owl-api write one dated jsonl a day into ops/logs and nothing
+    ever retired them: 173 files, every one held open by promtail's *.jsonl target. Those
+    older than N days move to the archive through the same move_verified as dagu runs. Undated files (werk-*.jsonl) are live: never moved."""
+    if not os.path.isdir(OPS_LOGS):
+        print(f"log-archive ops-logs: no folder {OPS_LOGS}; nothing to move")
+        return 0
+    cutoff = time.time() - days * 86400
+    old = sorted(n for n in os.listdir(OPS_LOGS)
+                 if DATED.match(n) and os.path.isfile(os.path.join(OPS_LOGS, n))
+                 and os.path.getmtime(os.path.join(OPS_LOGS, n)) < cutoff)
+    manifest = manifest_of(old, OPS_LOGS)
+    total = sum(e["size"] for e in manifest)
+    print(f"log-archive ops-logs: {len(old)} dated file(s), {total} bytes older than {days} day(s)")
+    if not apply or not old:
+        print("dry run: nothing moved" if not apply else "nothing to move")
+        return 0
+    return move_verified("ops-logs", OPS_LOGS, manifest, total)
 
 
 def fresh_log(path):
@@ -221,13 +257,15 @@ def chorus_log(apply, over=0):
     return 0
 
 def main(argv):
-    if not argv or argv[0] not in ("dagu", "chorus-log"):
+    if not argv or argv[0] not in ("dagu", "ops-logs", "chorus-log"):
         print(__doc__.strip().split("\n\n")[1], file=sys.stderr)
         return 2
     apply = "--apply" in argv
     if argv[0] == "dagu":
         days = float(argv[argv.index("--days") + 1]) if "--days" in argv else 3.0
         return dagu(days, apply)
+    if argv[0] == "ops-logs":
+        return ops_logs(float(argv[argv.index("--days") + 1]) if "--days" in argv else 2.0, apply)
     return chorus_log(apply, int(argv[argv.index("--over") + 1]) if "--over" in argv else 0)
 
 

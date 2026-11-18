@@ -1,0 +1,795 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+  # #4994 AC2: warn, not info — at info every create in a watched folder (~/.chorus lock and
+  # tmp churn) wrote a "received file watcher event" line; promtail.log reached 1.72 GB
+  log_level: warn
+
+positions:
+  # #4994 AC2: out of every watched folder. In Library/Logs/Gathering (tailed by the
+  # daemon-logs glob) each 10 s positions write woke promtail's own watcher. ~/.chorus/state
+  # is a subfolder; promtail watches folders one level deep, never their subfolders.
+  filename: /Users/jeffbridwell/.chorus/state/promtail-positions.yaml
+
+clients:
+  - url: http://localhost:3102/loki/api/v1/push
+    tenant_id: default
+    batchwait: 1s
+    batchsize: 1048576
+    timeout: 10s
+
+scrape_configs:
+  # All Chorus daemon logs — glob catches every .log in the directory
+  # __path_exclude__ prevents duplicates with dedicated scrape jobs (#1986)
+  # #2824: extended to scrape *.err alongside *.log so launchd-redirected stderr
+  # streams (com.chorus.foo.err pattern) are queryable in Loki. Same job/label
+  # scheme; separate target stanzas because Promtail allows one __path__ per
+  # labels block.
+  - job_name: chorus-daemon-logs
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: daemon-logs
+          __path__: /Users/jeffbridwell/Library/Logs/Chorus/*.log
+          # #4994: each file below has its own job; the glob must not tail it too
+          __path_exclude__: /Users/jeffbridwell/Library/Logs/Chorus/{alert-delivery-test.log,alert-notifier.log,alert-runner.log,bridge-subscriber-kade.log,bridge-subscriber-silas.log,bridge-subscriber-wren.log,chorus-api.log,chorus-bridge.log,chorus-hooks.log,chorus-ops.log,chorus.log,clearing-probe-stderr.log,clearing-probe-stdout.log,context-cache-5min.log,context-cache-daily.log,context-cache-hourly.log,crawler-index.log,cruft-scan.log,deep-health.log,fuseki-compact.log,jeff-input-monitor.log,launchagent-metrics.log,nudge-health.log,perf-baseline-nightly.log,posture-capture.log,session-health.log,watchdog.log}
+      - targets:
+          - localhost
+        labels:
+          job: daemon-logs
+          __path__: /Users/jeffbridwell/Library/Logs/Chorus/*.err
+          # #4994: each file below has its own job; the glob must not tail it too
+          __path_exclude__: /Users/jeffbridwell/Library/Logs/Chorus/{context-cache-5min.err,context-cache-daily.err,session-health.err}
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<content>.+)$'
+      - output:
+          source: content
+
+  # #4994 (Jeff 17:25 via Wren): dagu's run and step logs are NOT tailed. Jeff wants to use
+  # dagu more, so its run count must never drive promtail's load (9,295 files held open on
+  # 11-17). The logs stay on disk under ~/Library/Logs/Chorus/dagu (log-archive moves runs
+  # older than 3 days); step results reach the spine. Nothing queried job="dagu" in Loki.
+  # dagu's own process log (~/Library/Logs/Chorus/dagu.log) is still tailed by daemon-logs.
+
+  # All Gathering daemon logs
+  # __path_exclude__ prevents duplicates with dedicated scrape jobs (#1986)
+  - job_name: gathering-daemon-logs
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: daemon-logs
+          __path__: /Users/jeffbridwell/Library/Logs/Gathering/*.log
+          # 2026-10-21 (Jeff go, Silas+Kade load review): loki.log and promtail.log excluded —
+          # Loki logged every query into a file promtail shipped back into Loki (11.9 GB in 26 h
+          # vs 1.9 GB of real logs). Their health is read from /metrics, not their own log.
+          # #4994: each file below has its own job; the glob must not tail it too
+          __path_exclude__: /Users/jeffbridwell/Library/Logs/Gathering/{bedroom-health.log,cloudflared.log,daily-review-ops.log,daily-review-quality.log,daily-review-summary.log,daily-signal-scan.log,gathering-app.log,heartbeat.log,loki.log,perf-baseline.log,promtail.log,seed-probe.log,standards-surface.log,tm-thin.log,vikunja.log}
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<content>.+)$'
+      - output:
+          source: content
+
+  # The live ~/.chorus daemon logs that have no job of their own
+  # #4994 AC2: named files, never *.log — ~/.chorus is runtime state, and a wildcard tailed any
+  # new .log there. chorus.log (the spine, platform-chorus-log job), embed-worker.log and
+  # watcher.log have their own jobs. Note: promtail 2.9.2 still watches ~/.chorus itself (it
+  # watches each tailed file's folder, measured 11-17), so lock/tmp churn still raises watcher
+  # events; log_level warn above keeps them out of promtail.log.
+  - job_name: chorus-home-logs
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: daemon-logs
+          __path__: /Users/jeffbridwell/.chorus/{heartbeat-probe.log,heartbeat-probe.stderr.log,heartbeat-probe.stdout.log,reindex-worker.log}
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<content>.+)$'
+      - output:
+          source: content
+
+  # Platform operational logs
+  - job_name: platform-logs
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: platform-logs
+          __path__: /Users/jeffbridwell/CascadeProjects/chorus/platform/logs/*.log
+          # #4994: each file below has its own job; the glob must not tail it too
+          __path_exclude__: /Users/jeffbridwell/CascadeProjects/chorus/platform/logs/{command-errors.log,permission-prompts.log}
+      # #4994: the proving/logs/*.log target is gone — its only .log files (chorus, handoffs,
+      # permission-prompts) each have their own proving-* job
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<content>.+)$'
+      - output:
+          source: content
+
+  # Werk verb witness — ADR-032 §6 "Borg/Loki ingest downstream".
+  # The v2 werk verbs (pull/commit/build/deploy/push/demo/accept) write a
+  # best-effort per-step JSONL witness to $CHORUS_HOME/ops/logs/werk-<verb>.jsonl
+  # (zero-dep by design: the verbs NEVER call chorus-log). This stanza IS the
+  # downstream ingest the ADR specced and that was never wired — #3119. One
+  # stable canonical path (home=CHORUS_HOME), not ephemeral werk dirs.
+  # Query: {job="werk-verbs"} | json   then filter event=, role=, card_id=, trace_id=.
+  - job_name: werk-verbs
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: werk-verbs
+          __path__: /Users/jeffbridwell/CascadeProjects/chorus/ops/logs/*.jsonl
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<content>.+)$'
+      - output:
+          source: content
+
+  # Performance baseline
+  - job_name: perf-baseline
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: perf-baseline
+          __path__: /Users/jeffbridwell/Library/Logs/Gathering/perf-baseline.log
+    pipeline_stages:
+      - json:
+          expressions:
+            timestamp: timestamp
+            function: function
+            durationMs: durationMs
+            status: status
+            detail: detail
+      - labels:
+          function:
+          status:
+      - timestamp:
+          source: timestamp
+          format: '2006-01-02T15:04:05.000Z'
+
+  # Session watcher log
+  - job_name: session-watcher
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: session-watcher
+          daemon: session-watcher
+          __path__: /Users/jeffbridwell/.chorus/watcher.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<content>.+)$'
+      - output:
+          source: content
+
+  # Chorus API log
+  - job_name: chorus-api
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: chorus-api
+          daemon: chorus-api
+          __path__: /Users/jeffbridwell/Library/Logs/Chorus/chorus-api.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<content>.+)$'
+      - output:
+          source: content
+
+  # Fuseki compaction log
+  - job_name: fuseki-compact
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: fuseki-compact
+          daemon: fuseki-compact
+          # #4994: com.chorus.fuseki-compact writes under Logs/Chorus, never Logs/Gathering
+          __path__: /Users/jeffbridwell/Library/Logs/Chorus/fuseki-compact.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<content>.+)$'
+      - output:
+          source: content
+
+  # Alert notifier log
+  - job_name: alert-notifier
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: alert-notifier
+          daemon: alert-notifier
+          # #4994: com.chorus.alert-notifier writes under Logs/Chorus, never Logs/Gathering
+          __path__: /Users/jeffbridwell/Library/Logs/Chorus/alert-notifier.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<content>.+)$'
+      - output:
+          source: content
+
+  # SOLID audit logs — DISABLED 2026-05-15 (silas).
+  # 46 dead files tailed; audit endpoint stopped writing 2026-04-02.
+  # Re-enable by uncommenting if the audit endpoint comes back.
+  # - job_name: audit
+  #   static_configs:
+  #     - targets:
+  #         - localhost
+  #       labels:
+  #         job: audit
+  #         __path__: /Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/data/audit/audit-*.jsonl
+  #   pipeline_stages:
+  #     - json:
+  #         expressions:
+  #           timestamp: timestamp
+  #           eventType: eventType
+  #           actor: actor
+  #           podId: podId
+  #           resource: resource
+  #           action: action
+  #           success: success
+  #     - labels:
+  #         eventType:
+  #         podId:
+  #         action:
+  #     - timestamp:
+  #         source: timestamp
+  #         format: '2006-01-02T15:04:05.000Z'
+
+  # Cloudflare tunnel log
+  - job_name: cloudflared
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: cloudflared
+          daemon: cloudflared
+          __path__: /Users/jeffbridwell/Library/Logs/Gathering/cloudflared.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<ts>\S+)\s+(?P<level>\S+)\s+(?P<content>.+)$'
+      - labels:
+          level:
+      - output:
+          source: content
+
+  # Native app log (LaunchAgent output)
+  - job_name: gathering-app
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: gathering-app
+          container_name: gathering-app
+          __path__: /Users/jeffbridwell/Library/Logs/Gathering/gathering-app.log
+    pipeline_stages:
+      - json:
+          expressions:
+            timestamp: timestamp
+            level: level
+            appName: appName
+            component: component
+      - labels:
+          level:
+          appName:
+          component:
+      - timestamp:
+          source: timestamp
+          format: '2006-01-02T15:04:05.000Z'
+      - output:
+          source: message
+
+  # Vikunja board service (#1856)
+  - job_name: vikunja
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: vikunja
+          machine: library
+          __path__: /Users/jeffbridwell/Library/Logs/Gathering/vikunja.log
+
+  # ============================================================
+  # Chorus LaunchAgent logs — added 2026-04-12 by Wren (#1984)
+  # 48 log files not previously routed to Loki (6% → 100%)
+  # ============================================================
+
+  # Alert subsystem
+  - job_name: alert-runner
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: alert-runner
+          daemon: alert-runner
+          __path__: /Users/jeffbridwell/Library/Logs/Chorus/alert-runner.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<content>.+)$'
+      - output:
+          source: content
+
+  - job_name: alert-delivery-test
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: alert-delivery-test
+          daemon: alert-delivery-test
+          __path__: /Users/jeffbridwell/Library/Logs/Chorus/alert-delivery-test.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<content>.+)$'
+      - output:
+          source: content
+
+  # Bridge subscribers (one per role)
+  - job_name: bridge-subscribers
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: bridge-subscriber
+          role: kade
+          __path__: /Users/jeffbridwell/Library/Logs/Chorus/bridge-subscriber-kade.log
+      - targets: [localhost]
+        labels:
+          job: bridge-subscriber
+          role: silas
+          __path__: /Users/jeffbridwell/Library/Logs/Chorus/bridge-subscriber-silas.log
+      - targets: [localhost]
+        labels:
+          job: bridge-subscriber
+          role: wren
+          __path__: /Users/jeffbridwell/Library/Logs/Chorus/bridge-subscriber-wren.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<content>.+)$'
+      - output:
+          source: content
+
+  # Chorus infrastructure services
+  - job_name: chorus-bridge
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: chorus-bridge
+          daemon: chorus-bridge
+          __path__: /Users/jeffbridwell/Library/Logs/Chorus/chorus-bridge.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<content>.+)$'
+      - output:
+          source: content
+
+  - job_name: chorus-hooks
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: chorus-hooks
+          daemon: chorus-hooks
+          __path__: /Users/jeffbridwell/Library/Logs/Chorus/chorus-hooks.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<content>.+)$'
+      - output:
+          source: content
+
+  - job_name: chorus-ops
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: chorus-ops
+          daemon: chorus-ops
+          __path__: /Users/jeffbridwell/Library/Logs/Chorus/chorus-ops.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<content>.+)$'
+      - output:
+          source: content
+
+  # Clearing probe
+  - job_name: clearing-probe
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: clearing-probe
+          stream: stdout
+          __path__: /Users/jeffbridwell/Library/Logs/Chorus/clearing-probe-stdout.log
+      - targets: [localhost]
+        labels:
+          job: clearing-probe
+          stream: stderr
+          __path__: /Users/jeffbridwell/Library/Logs/Chorus/clearing-probe-stderr.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<content>.+)$'
+      - output:
+          source: content
+
+  # Context cache (4 intervals + error logs)
+  - job_name: context-cache
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: context-cache
+          interval: 5min
+          __path__: /Users/jeffbridwell/Library/Logs/Chorus/context-cache-5min.log
+      - targets: [localhost]
+        labels:
+          job: context-cache
+          interval: 5min
+          stream: stderr
+          __path__: /Users/jeffbridwell/Library/Logs/Chorus/context-cache-5min.err
+      - targets: [localhost]
+        labels:
+          job: context-cache
+          interval: hourly
+          __path__: /Users/jeffbridwell/Library/Logs/Chorus/context-cache-hourly.log
+      - targets: [localhost]
+        labels:
+          job: context-cache
+          interval: daily
+          __path__: /Users/jeffbridwell/Library/Logs/Chorus/context-cache-daily.log
+      - targets: [localhost]
+        labels:
+          job: context-cache
+          interval: daily
+          stream: stderr
+          __path__: /Users/jeffbridwell/Library/Logs/Chorus/context-cache-daily.err
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<content>.+)$'
+      - output:
+          source: content
+
+  # Crawler and indexing
+  - job_name: crawler-index
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: crawler-index
+          daemon: crawler-index
+          __path__: /Users/jeffbridwell/Library/Logs/Chorus/crawler-index.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<content>.+)$'
+      - output:
+          source: content
+
+  - job_name: cruft-scan
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: cruft-scan
+          daemon: cruft-scan
+          __path__: /Users/jeffbridwell/Library/Logs/Chorus/cruft-scan.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<content>.+)$'
+      - output:
+          source: content
+
+  # Health and monitoring
+  - job_name: deep-health
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: deep-health
+          daemon: deep-health
+          __path__: /Users/jeffbridwell/Library/Logs/Chorus/deep-health.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<content>.+)$'
+      - output:
+          source: content
+
+  - job_name: embed-worker
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: embed-worker
+          daemon: embed-worker
+          __path__: /Users/jeffbridwell/.chorus/embed-worker.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<content>.+)$'
+      - output:
+          source: content
+
+  - job_name: jeff-input-monitor
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: jeff-input-monitor
+          daemon: jeff-input-monitor
+          __path__: /Users/jeffbridwell/Library/Logs/Chorus/jeff-input-monitor.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<content>.+)$'
+      - output:
+          source: content
+
+  - job_name: launchagent-metrics
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: launchagent-metrics
+          daemon: launchagent-metrics
+          __path__: /Users/jeffbridwell/Library/Logs/Chorus/launchagent-metrics.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<content>.+)$'
+      - output:
+          source: content
+
+  - job_name: nudge-health
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: nudge-health
+          daemon: nudge-health
+          __path__: /Users/jeffbridwell/Library/Logs/Chorus/nudge-health.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<content>.+)$'
+      - output:
+          source: content
+
+  - job_name: perf-baseline-nightly
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: perf-baseline-nightly
+          daemon: perf-baseline-nightly
+          __path__: /Users/jeffbridwell/Library/Logs/Chorus/perf-baseline-nightly.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<content>.+)$'
+      - output:
+          source: content
+
+  - job_name: posture-capture
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: posture-capture
+          daemon: posture-capture
+          __path__: /Users/jeffbridwell/Library/Logs/Chorus/posture-capture.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<content>.+)$'
+      - output:
+          source: content
+
+  - job_name: session-health
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: session-health
+          daemon: session-health
+          __path__: /Users/jeffbridwell/Library/Logs/Chorus/session-health.log
+      - targets: [localhost]
+        labels:
+          job: session-health
+          daemon: session-health
+          stream: stderr
+          __path__: /Users/jeffbridwell/Library/Logs/Chorus/session-health.err
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<content>.+)$'
+      - output:
+          source: content
+
+  - job_name: watchdog
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: watchdog
+          daemon: watchdog
+          __path__: /Users/jeffbridwell/Library/Logs/Chorus/watchdog.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<content>.+)$'
+      - output:
+          source: content
+
+  # Gathering LaunchAgent logs
+  - job_name: bedroom-health
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: bedroom-health
+          daemon: bedroom-health
+          __path__: /Users/jeffbridwell/Library/Logs/Gathering/bedroom-health.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<content>.+)$'
+      - output:
+          source: content
+
+  - job_name: daily-reviews
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: daily-review
+          review: ops
+          __path__: /Users/jeffbridwell/Library/Logs/Gathering/daily-review-ops.log
+      - targets: [localhost]
+        labels:
+          job: daily-review
+          review: quality
+          __path__: /Users/jeffbridwell/Library/Logs/Gathering/daily-review-quality.log
+      - targets: [localhost]
+        labels:
+          job: daily-review
+          review: summary
+          __path__: /Users/jeffbridwell/Library/Logs/Gathering/daily-review-summary.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<content>.+)$'
+      - output:
+          source: content
+
+  - job_name: daily-signal-scan
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: daily-signal-scan
+          daemon: daily-signal-scan
+          __path__: /Users/jeffbridwell/Library/Logs/Gathering/daily-signal-scan.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<content>.+)$'
+      - output:
+          source: content
+
+  - job_name: heartbeat-log
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: heartbeat
+          daemon: heartbeat
+          __path__: /Users/jeffbridwell/Library/Logs/Gathering/heartbeat.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<content>.+)$'
+      - output:
+          source: content
+
+  - job_name: seed-probe
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: seed-probe
+          daemon: seed-probe
+          __path__: /Users/jeffbridwell/Library/Logs/Gathering/seed-probe.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<content>.+)$'
+      - output:
+          source: content
+
+  - job_name: standards-surface
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: standards-surface
+          daemon: standards-surface
+          __path__: /Users/jeffbridwell/Library/Logs/Gathering/standards-surface.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<content>.+)$'
+      - output:
+          source: content
+
+  - job_name: tm-thin
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: tm-thin
+          daemon: tm-thin
+          __path__: /Users/jeffbridwell/Library/Logs/Gathering/tm-thin.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<content>.+)$'
+      - output:
+          source: content
+
+  # Chorus spine event log. Producer is chorus-hook-shim writing to ~/.chorus/
+  # (CSC: Runtime Artifacts). Was platform/logs/chorus.log in the working tree
+  # until 2026-05-04 when branch checkouts started clobbering unstaged writes;
+  # producer + tail both moved out of the repo to runtime-artifact convention.
+  - job_name: platform-chorus-log
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: platform-chorus
+          __path__: /Users/jeffbridwell/.chorus/chorus.log
+    pipeline_stages:
+      - json:
+          expressions:
+            timestamp: timestamp
+            level: level
+            appName: appName
+            component: component
+            role: role
+            message: message
+      - labels:
+          level:
+          appName:
+          component:
+          role:
+      - timestamp:
+          source: timestamp
+          format: '2006-01-02T15:04:05.000Z'
+      # #4454 — no `output: source: message` here. It replaced every event that
+      # carries a message (every *.failed one) with the sentence alone, so Loki
+      # lost its event, card and trace: 10,122 nightly case events, 0 found by
+      # `| json`. The line stays the whole JSON event; the message is a field.
+      # Guarded by chorus platform/tests/4454-spine-json-in-loki.bats.
+
+  - job_name: platform-command-errors
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: platform-command-errors
+          __path__: /Users/jeffbridwell/CascadeProjects/chorus/platform/logs/command-errors.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<content>.+)$'
+      - output:
+          source: content
+
+  - job_name: platform-permission-prompts
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: platform-permission-prompts
+          __path__: /Users/jeffbridwell/CascadeProjects/chorus/platform/logs/permission-prompts.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<content>.+)$'
+      - output:
+          source: content
+
+  # Proving logs
+  - job_name: proving-chorus
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: proving-chorus
+          __path__: /Users/jeffbridwell/CascadeProjects/chorus/proving/logs/chorus.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<content>.+)$'
+      - output:
+          source: content
+
+  - job_name: proving-handoffs
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: proving-handoffs
+          __path__: /Users/jeffbridwell/CascadeProjects/chorus/proving/logs/handoffs.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<content>.+)$'
+      - output:
+          source: content
+
+  - job_name: proving-permission-prompts
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: proving-permission-prompts
+          __path__: /Users/jeffbridwell/CascadeProjects/chorus/proving/logs/permission-prompts.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<content>.+)$'
+      - output:
+          source: content
