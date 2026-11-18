@@ -136,6 +136,7 @@ chorus:ChunkShape-hasProduct a sh:PropertyShape ;
   sh:class chorus:Product .
 
 chorus:ChunkMembershipShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:ownedBy ; sh:maxCount 1 ; sh:class chorus:Principal ] ;  # #5002 AC1 (Jeff 11-18 10:04)
   sh:targetClass chorus:ChunkMembership ; sh:node chorus:CoreShape ;
   # #4187 — pin removed; all 218 rows are in urn:chorus:domains:board
   # (copied and verified 2026-09-18 12:47).

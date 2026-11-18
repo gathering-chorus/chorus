@@ -96,17 +96,25 @@ SELECT ?s ?o WHERE {
 /// Section OWNER_NOT_PRINCIPAL counts the bad rows; this counts the silence that
 /// lets them in, because the generated door enforces exactly what the shape
 /// states and no more.
+/// #5002 AC1 (Silas 11-18 10:06) — a shape on a superclass governs its subclasses'
+/// rows (SHACL targetClass covers subclass instances), so the rule is looked for up
+/// rdfs:subClassOf; and each class reports how many of its rows carry an owner, so
+/// the count is the validator's own output, never an ad hoc query.
 pub const OWNER_RULE_MISSING: Check = Check {
     id: "owner-rule-missing",
     question: "does every class that has owners say what an owner is",
     query: r#"PREFIX c: <https://jeffbridwell.com/chorus#>
 PREFIX sh: <http://www.w3.org/ns/shacl#>
-SELECT DISTINCT ?cls WHERE {
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?cls (COUNT(DISTINCT ?s) AS ?owned) WHERE {
   GRAPH ?g { ?s c:ownedBy ?o ; a ?cls }
   FILTER NOT EXISTS {
-    GRAPH ?sg { ?sh sh:targetClass ?cls ; sh:property ?p . ?p sh:path c:ownedBy ; sh:class c:Principal }
+    { GRAPH ?sg { ?sh sh:targetClass ?cls ; sh:property ?p . ?p sh:path c:ownedBy ; sh:class c:Principal } }
+    UNION
+    { GRAPH ?cg { ?cls rdfs:subClassOf+ ?sup }
+      GRAPH ?sg { ?sh sh:targetClass ?sup ; sh:property ?p . ?p sh:path c:ownedBy ; sh:class c:Principal } }
   }
-}"#,
+} GROUP BY ?cls"#,
 };
 
 /// A subject living in more than one graph. Two homes means two answers to the

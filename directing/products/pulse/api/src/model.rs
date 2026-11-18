@@ -110,6 +110,7 @@ pub const CLASSES: &[ClassDef] = &[
     ClassDef {
         domain: "streams", name: "StreamEvent", kind: "stream-event", plural: "streamevents", segment: "events", graph: "urn:chorus:domains:streams", store: "spine", composed: false,
         fields: &[
+            FieldDef { name: "ownedBy", link: true, datatype: "", required: false, many: false, allowed: &[] },
             FieldDef { name: "streamPhase", link: false, datatype: "string", required: true, many: false, allowed: &[] },
             FieldDef { name: "streamRole", link: false, datatype: "string", required: true, many: false, allowed: &[] },
             FieldDef { name: "streamTool", link: false, datatype: "string", required: true, many: false, allowed: &[] },
@@ -130,6 +131,7 @@ pub const CLASSES: &[ClassDef] = &[
             FieldDef { name: "metricDatasource", link: false, datatype: "string", required: false, many: false, allowed: &[] },
             FieldDef { name: "metricQuery", link: false, datatype: "string", required: false, many: false, allowed: &[] },
             FieldDef { name: "notify", link: false, datatype: "string", required: false, many: false, allowed: &["on", "off"] },
+            FieldDef { name: "ownedBy", link: true, datatype: "", required: true, many: false, allowed: &[] },
             FieldDef { name: "repeatInterval", link: false, datatype: "string", required: false, many: false, allowed: &[] },
         ],
     },

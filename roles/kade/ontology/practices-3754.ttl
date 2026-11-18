@@ -33,6 +33,7 @@ chorus:enactedBy a owl:DatatypeProperty ;
     rdfs:comment "What enacts the practice (a hook, gate or verb), as a name; absent means declared but not enacted." .
 
 chorus:PracticeShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal ] ;  # #5002 AC1 (Jeff 11-18 10:04)
     sh:targetClass chorus:Practice ; sh:node chorus:CoreShape ;
     sh:property [ sh:path rdfs:label ; sh:minCount 1 ] ;
     sh:property [ sh:path rdfs:comment ; sh:minCount 1 ] ;

@@ -22,6 +22,7 @@ setup() {
     | grep -vE 'shacl#(sparql|node)>' > "$SHAPES"
   PREFIX='@prefix chorus: <https://jeffbridwell.com/chorus#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+chorus:principal-owner a chorus:Principal .
 '
 }
 
@@ -44,33 +45,33 @@ fixture() { printf '%s%s\n' "$PREFIX" "$1" > "$BATS_TEST_TMPDIR/$2.ttl"; echo "$
 }
 
 @test "control: an Actor with a name and a kind conforms" {
-  f=$(fixture 'chorus:a1 a chorus:Actor ; rdfs:label "Silas" ; chorus:actorKind "agent" .' a1)
+  f=$(fixture 'chorus:a1 a chorus:Actor ; chorus:ownedBy chorus:principal-owner ; rdfs:label "Silas" ; chorus:actorKind "agent" .' a1)
   [ "$(verdict "$f")" = CONFORMS ] || return 1
 }
 
 # NEGATIVE PROOF: the state 4022 could not measure — an Actor with no required field.
 @test "an Actor with no kind is refused" {
-  f=$(fixture 'chorus:a2 a chorus:Actor ; rdfs:label "Silas" .' a2)
+  f=$(fixture 'chorus:a2 a chorus:Actor ; chorus:ownedBy chorus:principal-owner ; rdfs:label "Silas" .' a2)
   [ "$(verdict "$f")" = VIOLATES ] || return 1
 }
 
 @test "an Actor with no name is refused" {
-  f=$(fixture 'chorus:a3 a chorus:Actor ; chorus:actorKind "agent" .' a3)
+  f=$(fixture 'chorus:a3 a chorus:Actor ; chorus:ownedBy chorus:principal-owner ; chorus:actorKind "agent" .' a3)
   [ "$(verdict "$f")" = VIOLATES ] || return 1
 }
 
 @test "an Actor's kind is person, agent or service, nothing else" {
-  f=$(fixture 'chorus:a4 a chorus:Actor ; rdfs:label "X" ; chorus:actorKind "human" .' a4)
+  f=$(fixture 'chorus:a4 a chorus:Actor ; chorus:ownedBy chorus:principal-owner ; rdfs:label "X" ; chorus:actorKind "human" .' a4)
   [ "$(verdict "$f")" = VIOLATES ] || return 1
 }
 
 @test "control: a Persona with a name and the part it plays conforms" {
-  f=$(fixture 'chorus:p1 a chorus:Persona ; rdfs:label "Jeff on his phone" ; chorus:playsRole "Jeff" .' p1)
+  f=$(fixture 'chorus:p1 a chorus:Persona ; chorus:ownedBy chorus:principal-owner ; rdfs:label "Jeff on his phone" ; chorus:playsRole "Jeff" .' p1)
   [ "$(verdict "$f")" = CONFORMS ] || return 1
 }
 
 @test "a Persona with no part played is refused" {
-  f=$(fixture 'chorus:p2 a chorus:Persona ; rdfs:label "Jeff on his phone" .' p2)
+  f=$(fixture 'chorus:p2 a chorus:Persona ; chorus:ownedBy chorus:principal-owner ; rdfs:label "Jeff on his phone" .' p2)
   [ "$(verdict "$f")" = VIOLATES ] || return 1
 }
 

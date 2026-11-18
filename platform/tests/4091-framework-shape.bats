@@ -24,7 +24,7 @@ chorus:Framework rdfs:subClassOf chorus:Tool .
 chorus:grafana-sensor a chorus:Sensor .
 chorus:grafana-alert-ops a chorus:Skill .
 chorus:principal-kade a chorus:Principal .
-chorus:observe a chorus:ToolType ; rdfs:label "Observe" .
+chorus:observe a chorus:ToolType ; rdfs:label "Observe" ; chorus:ownedBy chorus:principal-kade .
 '
   FW='rdfs:label "Grafana" ; chorus:ownedBy chorus:principal-kade ; chorus:toolType chorus:observe'
 }
@@ -98,14 +98,14 @@ whole() { echo "chorus:grafana a chorus:Framework ; $FW ; chorus:hasOperation ch
 
 @test "a Framework with no owner is refused" {
   f=$(fixture "$(whole | sed 's/ chorus:ownedBy chorus:principal-kade ;//')" f8)
-  grep -q ownedBy "$f" && return 1
+  grep -q "ownedBy chorus:principal-kade ; chorus:toolType" "$f" && return 1  # the Framework's own owner (the ToolType row keeps its own)
   [ "$(verdict "$f")" = VIOLATES ] || return 1
 }
 
 @test "a ToolType with no name is refused; with one it conforms" {
-  f=$(fixture 'chorus:x a chorus:ToolType .' tt1)
+  f=$(fixture 'chorus:x a chorus:ToolType ; chorus:ownedBy chorus:principal-kade .' tt1)
   [ "$(verdict "$f")" = VIOLATES ] || return 1
-  f=$(fixture 'chorus:x a chorus:ToolType ; rdfs:label "Observe" .' tt2)
+  f=$(fixture 'chorus:x a chorus:ToolType ; rdfs:label "Observe" ; chorus:ownedBy chorus:principal-kade .' tt2)
   [ "$(verdict "$f")" = CONFORMS ] || return 1
 }
 
@@ -140,7 +140,9 @@ SEEDS() { echo "$REPO/designing/data/tool-instances.ttl $REPO/designing/data/too
 @test "the seeded Tool and ToolType rows conform" {
   riot --output=ttl $(SEEDS) > "$BATS_TEST_TMPDIR/seeds.ttl" 2>/dev/null || return 1
   [ "$(riot --output=nt "$BATS_TEST_TMPDIR/seeds.ttl" 2>/dev/null | grep -cE 'rdf-syntax-ns#type> <https://jeffbridwell.com/chorus#Tool(Type)?> ')" -eq 12 ] || return 1
-  [ "$(verdict "$BATS_TEST_TMPDIR/seeds.ttl")" = CONFORMS ] || return 1
+  # #5002 — a ToolType names its owner, a Principal: the verdict reads the seeds beside that one fact
+  { cat "$BATS_TEST_TMPDIR/seeds.ttl"; printf '\n<https://jeffbridwell.com/chorus#principal-kade> a <https://jeffbridwell.com/chorus#Principal> .\n'; } > "$BATS_TEST_TMPDIR/seeds-with-owner.ttl"
+  [ "$(verdict "$BATS_TEST_TMPDIR/seeds-with-owner.ttl")" = CONFORMS ] || return 1
 }
 
 # NEGATIVE PROOF: a bare Tool or ToolType IRI (the door cannot read it) is caught.

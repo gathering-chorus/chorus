@@ -94,7 +94,12 @@ ROOM_URL="${CLEARING_ROOM_URL:-https://lightlifeurbangardens.com/clearing-v2/}"
 # under "After land": the land's own wake proves it).
 WAKE_RE='^\[alert → [a-z-]+\] #[0-9]+ [a-z-]+ .*· dagu [^ ]+ · /cws [0-9]+$'
 @test "AC5: the newest run-finished wake in the room's record renders on the public page" {
-  rec="$(curl -sf --max-time 10 "${ROOM_URL}api/messages")" || { echo "room record unreadable"; return 1; }
+  code="$(curl -s --max-time 10 -o "$BATS_TEST_TMPDIR/rec" -w '%{http_code}' "${ROOM_URL}api/messages" || true)"
+  # #5002 (Silas): the public room's record sits behind sign-in (401). This check has
+  # no credential, so behind sign-in it reads unmeasured, never green; any other failure is red.
+  case "$code" in 401|302|403) skip "unmeasured: the room's record needs sign-in (HTTP $code)" ;; esac
+  [ "$code" = 200 ] || { echo "room record unreadable (HTTP $code)"; return 1; }
+  rec="$(cat "$BATS_TEST_TMPDIR/rec")"
   want="$(printf '%s' "$rec" | node -e '
     const {contentHash}=require(process.argv[1]); let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{
     const re=new RegExp(process.argv[2]); const w=JSON.parse(s).filter(m=>m.from==="system"&&re.test(m.text||"")).pop();
@@ -138,7 +143,14 @@ cage() {
   H="$BATS_TEST_TMPDIR/home"; mkdir -p "$H/ops/active-pairs"
   SENT="$BATS_TEST_TMPDIR/sent"; : > "$SENT"; : > "$SENT.wake"
   # one line per send: a wake's fenced reason spans lines (#4889)
-  printf '#!/bin/sh\n[ "$1" = nudge-send ] && printf "%%s|%%s\\n" "$3" "$(printf %%s "$4" | tr "\\n" " ")" >> %s && echo "${CHORUS_NUDGE_WAKE:-none}" >> %s.wake\n' "$SENT" "$SENT" > "$BATS_TEST_TMPDIR/shim"
+  printf '#!/bin/sh\n[ "$1" = nudge-send ] && printf "%%s|%%s\\n" "$3" "$(printf %%s "$4" | tr "\\n" " ")" >> %s && echo "${CHORUS_NUDGE_WAKE:-none}" >> %s.wake && echo "${OPS_ALERT:-none}" >> %s.alert\n' "$SENT" "$SENT" "$SENT" > "$BATS_TEST_TMPDIR/shim"
+  : > "$SENT.alert"
+  # #5002 (Silas): the cage never reads the live Alert rows. ops-nudge looks up the
+  # notify field of run-finished-pass (#4970: off, so a pass is quiet), which made
+  # these cases depend on prod. An unreachable door fails open (ops-nudge's rule), so
+  # the wake reaches the caged shim and each case checks run-finished's own words;
+  # the row each wake names is recorded in $SENT.alert.
+  export ALERTS_DOOR="http://127.0.0.1:9/alerts"
   printf '#!/bin/sh\necho "failed at test-pipeline: werk-test: RED (exit 1)"\n' > "$BATS_TEST_TMPDIR/why"
   chmod +x "$BATS_TEST_TMPDIR/shim" "$BATS_TEST_TMPDIR/why"
 }
@@ -180,7 +192,12 @@ finish() { # STATUS DAG [STEP]
     cage; run finish succeeded "$dag"
     [ "$(wc -l < "$SENT" | tr -d ' ')" -eq 1 ] || { echo "$dag:"; cat "$SENT"; return 1; }
     grep -q "#4888 $dag passed" "$SENT" || { echo "$dag:"; cat "$SENT"; return 1; }
+    # a pass goes out under run-finished-pass, the row that keeps it quiet (#4970)
+    [ "$(cat "$SENT.alert")" = "run-finished-pass" ] || { echo "$dag:"; cat "$SENT.alert"; return 1; }
   done
+  # and a failure names no row, so it always wakes
+  cage; run finish failed athena
+  [ "$(cat "$SENT.alert")" = "none" ] || { cat "$SENT.alert"; return 1; }
 }
 
 @test "cicd parks at the go: its pass is the demo brief, so run-finished sends nothing for it" {

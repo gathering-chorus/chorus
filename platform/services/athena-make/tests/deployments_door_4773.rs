@@ -17,6 +17,8 @@ fn deployment_table() -> RouteTable {
         base_path: "/cicd/deployments".into(),
         class: "https://jeffbridwell.com/chorus#Deployment".into(),
         fields: vec![
+            // #5002 AC1 — DeploymentShape declares its owner (53/53 live rows have one)
+            "ownedBy|edge:Principal".into(),
             "cdhash|datatype:string".into(),
             "cardId|datatype:string".into(),
             "deployedCommit|datatype:string".into(),
@@ -31,7 +33,7 @@ fn deployment_table() -> RouteTable {
         ],
         routes: vec!["GET /cicd/deployments".into(), "POST /cicd/deployments".into()],
         secured: vec![],
-        mandatory: vec!["cdhash".into()],
+        mandatory: vec!["ownedBy".into(), "cdhash".into()],
         write_required: vec!["cdhash".into()],
         allowed_values: vec![],
         repo_target: "generated/cicd".into(),

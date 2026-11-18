@@ -171,6 +171,15 @@ pub struct Retirement {
     pub triple_subject: String,
     pub triple_predicate: String,
     pub triple_object: String,
+    /// #5002 AC4 — every instance row whose door name starts with this prefix, and the
+    /// Version rows that name such a row, each kind under its own ceiling.
+    pub retire_name_prefix: String,
+    pub rows_ceiling: String,
+    pub versions_ceiling: String,
+    /// #5002 (code review) — the last day (YYYY-MM-DD, UTC) a name-prefix line may run. A staged
+    /// line replays on every deploy; without an end it would become a standing sweep that
+    /// deletes a running test's own probes. Required for this kind.
+    pub until: String,
     pub status: String,
 }
 
@@ -196,6 +205,10 @@ pub enum RetireAction {
     Merge { from: String, into: String, graph: String },
     /// #4716 — exactly one statement `<s> <p> <o>` (IRIs), in `graph`.
     Triple { s: String, p: String, o: String, graph: String },
+    /// #5002 AC4 (Jeff 11-18 10:23; guards Silas 10:28/10:33) — instance rows whose door name
+    /// starts with `prefix` (never in the ontology, security or provenance graphs), and the
+    /// provenance Version rows whose ofRow names such a row. Refused above either ceiling.
+    NamePrefix { prefix: String, rows_ceiling: String, versions_ceiling: String, until: String },
 }
 
 /// Read one JSONL line. `Ok(None)` is a blank line. A line that is present but
@@ -239,6 +252,10 @@ pub fn parse_retirement(line: &str) -> Result<Option<Retirement>, String> {
         triple_subject: field("triple_subject")?,
         triple_predicate: field("triple_predicate")?,
         triple_object: field("triple_object")?,
+        retire_name_prefix: field("retire_name_prefix")?,
+        rows_ceiling: field("rows_ceiling")?,
+        versions_ceiling: field("versions_ceiling")?,
+        until: field("until")?,
         status: if status.is_empty() { "staged".into() } else { status },
     }))
 }
@@ -264,6 +281,8 @@ pub fn retirement_action(r: &Retirement, default_graph: &str) -> RetireAction {
             r.merge_subject.clone()
         } else if !r.retire_graph.is_empty() {
             r.retire_graph.clone()
+        } else if !r.retire_name_prefix.is_empty() {
+            format!("name prefix {}", r.retire_name_prefix)
         } else {
             "claim".to_string()
         };
@@ -275,6 +294,14 @@ pub fn retirement_action(r: &Retirement, default_graph: &str) -> RetireAction {
     if !(r.triple_subject.is_empty() && r.triple_predicate.is_empty() && r.triple_object.is_empty()) {
         return RetireAction::Triple {
             s: r.triple_subject.clone(), p: r.triple_predicate.clone(), o: r.triple_object.clone(), graph,
+        };
+    }
+    if !r.retire_name_prefix.is_empty() {
+        return RetireAction::NamePrefix {
+            prefix: r.retire_name_prefix.clone(),
+            rows_ceiling: r.rows_ceiling.clone(),
+            versions_ceiling: r.versions_ceiling.clone(),
+            until: r.until.clone(),
         };
     }
     if !r.retire_graph.is_empty() {
@@ -329,6 +356,101 @@ pub fn subjects_from_answer(body: &str) -> Option<std::collections::BTreeSet<Str
         rest = &inner[end..];
     }
     Some(out)
+}
+
+/// #5002 AC4 — the graphs a name-prefix retirement never touches: the model, the
+/// security rows (their owner takes them by hand), and provenance (only its Versions go,
+/// by their own rule).
+pub const CHORUS_NS: &str = "https://jeffbridwell.com/chorus#";
+
+pub const NAME_PREFIX_EXCLUDED: [&str; 3] = ["urn:chorus:ontology", "urn:chorus:domains:security", "urn:chorus:domains:provenance"];
+
+/// A prefix this kind accepts: lowercase door-name characters, ending in '-', at least
+/// five long, so a stray "z" or "" can never widen into every row.
+pub fn name_prefix_ok(prefix: &str) -> bool {
+    prefix.len() >= 5 && prefix.ends_with('-')
+        && prefix.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+/// #5002 AC4 — the WHERE body that binds ?g ?s: an instance row whose IRI local name is
+/// exactly its class's door slug, '-', then the prefix (the door name starts with it;
+/// a real row with the prefix mid-name never matches). Instance graphs only.
+pub fn name_prefix_rows_where(prefix: &str) -> String {
+    let excluded = NAME_PREFIX_EXCLUDED.iter().map(|g| format!("<{g}>")).collect::<Vec<_>>().join(", ");
+    format!(
+        "GRAPH ?g {{ ?s a ?cls }} \
+         FILTER(STRSTARTS(STR(?g), \"urn:chorus:domains:\") && ?g NOT IN ({excluded})) \
+         FILTER(STRSTARTS(STR(?cls), \"{CHORUS_NS}\") && ?cls != <{CHORUS_NS}Version>) \
+         BIND(REPLACE(STR(?s), \"^{CHORUS_NS}\", \"\") AS ?ln) \
+         BIND(LCASE(REPLACE(REPLACE(STR(?cls), \"^.*#\", \"\"), \"([a-z0-9])([A-Z])\", \"$1-$2\")) AS ?slug) \
+         FILTER(STRSTARTS(?ln, CONCAT(?slug, \"-{prefix}\")))"
+    )
+}
+
+/// The provenance Version rows whose ofRow ("<collection>/<door name>") names a row whose
+/// door name starts with the prefix. Most such rows are gone (orphans), so the match is on
+/// the name the Version records, not a link to a live row (Silas 10:33).
+pub fn name_prefix_versions_where(prefix: &str) -> String {
+    format!(
+        "GRAPH <urn:chorus:domains:provenance> {{ ?v a <{CHORUS_NS}Version> ; <{CHORUS_NS}ofRow> ?or }} \
+         FILTER(STRSTARTS(STRAFTER(STR(?or), \"/\"), \"{prefix}\"))"
+    )
+}
+
+/// (subject count, triple count, construct, delete) for the rows, then the same for the
+/// Versions. Subject counts are held to the ceilings; triple counts feed `guarded_delete`.
+pub fn name_prefix_retirement_sparql(prefix: &str) -> [(String, String, String, String); 2] {
+    let rows = name_prefix_rows_where(prefix);
+    let vers = name_prefix_versions_where(prefix);
+    [
+        (
+            format!("SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE {{ {rows} }}"),
+            format!("SELECT (COUNT(*) AS ?n) WHERE {{ {{ SELECT DISTINCT ?g ?s WHERE {{ {rows} }} }} GRAPH ?g {{ ?s ?p ?o }} }}"),
+            format!("CONSTRUCT {{ ?s ?p ?o }} WHERE {{ {{ SELECT DISTINCT ?g ?s WHERE {{ {rows} }} }} GRAPH ?g {{ ?s ?p ?o }} }}"),
+            format!("DELETE {{ GRAPH ?g {{ ?s ?p ?o }} }} WHERE {{ {{ SELECT DISTINCT ?g ?s WHERE {{ {rows} }} }} GRAPH ?g {{ ?s ?p ?o }} }}"),
+        ),
+        (
+            format!("SELECT (COUNT(DISTINCT ?v) AS ?n) WHERE {{ {vers} }}"),
+            format!("SELECT (COUNT(*) AS ?n) WHERE {{ {{ SELECT DISTINCT ?v WHERE {{ {vers} }} }} GRAPH <urn:chorus:domains:provenance> {{ ?v ?p ?o }} }}"),
+            format!("CONSTRUCT {{ ?v ?p ?o }} WHERE {{ {{ SELECT DISTINCT ?v WHERE {{ {vers} }} }} GRAPH <urn:chorus:domains:provenance> {{ ?v ?p ?o }} }}"),
+            format!("DELETE {{ GRAPH <urn:chorus:domains:provenance> {{ ?v ?p ?o }} }} WHERE {{ {{ SELECT DISTINCT ?v WHERE {{ {vers} }} }} GRAPH <urn:chorus:domains:provenance> {{ ?v ?p ?o }} }}"),
+        ),
+    ]
+}
+
+/// Edges into the matched rows from subjects that are not themselves matched (rdf:type
+/// aside): deleting the rows would leave them dangling, so any one refuses.
+pub fn name_prefix_inbound_query(prefix: &str) -> String {
+    let rows = name_prefix_rows_where(prefix);
+    format!(
+        "SELECT (COUNT(*) AS ?n) WHERE {{ {{ SELECT DISTINCT ?s WHERE {{ {rows} }} }} GRAPH ?g2 {{ ?x ?p ?s }} \
+         FILTER(?p != <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> && ?x != ?s) \
+         FILTER NOT EXISTS {{ {{ SELECT DISTINCT (?s AS ?x) WHERE {{ {rows} }} }} }} }}"
+    )
+}
+
+/// #5002 — may a name-prefix line still run on `today` (YYYY-MM-DD)? A missing or malformed
+/// `until` refuses (fail-closed); past it, the line is spent and does nothing.
+pub fn name_prefix_window(until: &str, today: &str) -> Result<bool, String> {
+    let ok = |d: &str| d.len() == 10 && d.as_bytes()[4] == b'-' && d.as_bytes()[7] == b'-'
+        && d.chars().enumerate().all(|(i, c)| i == 4 || i == 7 || c.is_ascii_digit());
+    if !ok(until) { return Err(format!("name-prefix-until-missing-or-malformed:{until}")); }
+    // an unreadable clock ("" sorts before every date) must never read as "still in window" (Silas 15:42)
+    if !ok(today) { return Err(format!("name-prefix-today-unreadable:{today}")); }
+    Ok(today <= until)
+}
+
+/// The ceiling check: None = within it; Some(reason) = refuse. An unreadable ceiling and an
+/// unanswered count both refuse (fail-closed); a count at the ceiling passes.
+pub fn ceiling_refusal(kind: &str, count: Option<usize>, ceiling: &str) -> Option<String> {
+    let Ok(max) = ceiling.trim().parse::<usize>() else {
+        return Some(format!("name-prefix-{kind}-ceiling-missing"));
+    };
+    match count {
+        None => Some(format!("name-prefix-{kind}-count-unanswered")),
+        Some(n) if n > max => Some(format!("name-prefix-{kind}-over-ceiling:{n}>{max}")),
+        Some(_) => None,
+    }
 }
 
 pub fn subject_retirement_sparql(iri: &str, graph: &str) -> (String, String, String) {
@@ -1844,7 +1966,7 @@ pub fn run_athena_deploy_plan(plan: Option<&card::CardPlan>) -> Result<String, S
                     continue;
                 }
             }
-            run_retirement_with(action, *n, &ctx, &retiring)?;
+            run_retirement_with(action, *n, &ctx, &retiring, None)?;
         }
     }
 
@@ -2320,11 +2442,18 @@ pub fn served_claim_may_retire(class: &str, retiring: &std::collections::BTreeSe
     retiring.contains(class)
 }
 
-fn run_retirement(action: &RetireAction, line: usize, ctx: &StoreCtx) -> Result<(), String> {
-    run_retirement_with(action, line, ctx, &std::collections::BTreeSet::new())
+/// One retirement against a store. Public so a test can drive the real path (#5002 AC4).
+pub fn run_retirement(action: &RetireAction, line: usize, ctx: &StoreCtx) -> Result<(), String> {
+    run_retirement_with(action, line, ctx, &std::collections::BTreeSet::new(), None)
 }
 
-fn run_retirement_with(action: &RetireAction, line: usize, ctx: &StoreCtx, retiring: &std::collections::BTreeSet<String>) -> Result<(), String> {
+/// #5002 (code review 11-18, Silas 17:32) — the name-prefix window's "today", passed in by a
+/// test rather than read from an env var on the prod path. Prod always asks the clock.
+pub fn run_retirement_on(action: &RetireAction, line: usize, ctx: &StoreCtx, today: &str) -> Result<(), String> {
+    run_retirement_with(action, line, ctx, &std::collections::BTreeSet::new(), Some(today))
+}
+
+fn run_retirement_with(action: &RetireAction, line: usize, ctx: &StoreCtx, retiring: &std::collections::BTreeSet<String>, today: Option<&str>) -> Result<(), String> {
     let refuse = |reason: String| -> String {
         emit_spine(&ctx.chorus_log, "model.deploy.failed", &ctx.role,
             &[("reason", reason.clone()), ("line", line.to_string())]);
@@ -2528,6 +2657,48 @@ fn run_retirement_with(action: &RetireAction, line: usize, ctx: &StoreCtx, retir
                 ("rows", before.to_string()),
             ]);
             Ok(())
+        }
+        RetireAction::NamePrefix { prefix, rows_ceiling, versions_ceiling, until } => {
+            if !name_prefix_ok(prefix) {
+                return Err(refuse(format!("name-prefix-unsafe:{prefix}")));
+            }
+            let today = today.map(str::to_string).unwrap_or_else(||
+                Command::new("date").args(["-u", "+%Y-%m-%d"]).output()
+                    .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default());
+            match name_prefix_window(until, &today) {
+                Err(why) => return Err(refuse(why)),
+                Ok(false) => {
+                    println!("athena-deploy: name prefix {prefix}: past its until {until} — spent, nothing done");
+                    // #5002 (code review 11-18) — a spent line is a fact on the spine, never silent
+                    emit_spine(&ctx.chorus_log, "model.retirement.skipped", &ctx.role, &[
+                        ("line", line.to_string()),
+                        ("status", "spent".to_string()),
+                        ("target", format!("name-prefix {prefix}")),
+                        ("reason", format!("spent: past until {until}")),
+                    ]);
+                    return Ok(());
+                }
+                Ok(true) => {}
+            }
+            let ask = |q: &str| curl(&["-s", "--data-urlencode", &format!("query={q}"),
+                "-H", "Accept: application/sparql-results+json", &ctx.query]).ok().and_then(|b| count_from_answer(&b));
+            let [rows, vers] = name_prefix_retirement_sparql(prefix);
+            // Both ceilings before any delete: nothing is half-done on a refusal.
+            let (n_rows, n_vers) = (ask(&rows.0), ask(&vers.0));
+            if let Some(why) = ceiling_refusal("rows", n_rows, rows_ceiling) { return Err(refuse(why)); }
+            if let Some(why) = ceiling_refusal("versions", n_vers, versions_ceiling) { return Err(refuse(why)); }
+            match ask(&name_prefix_inbound_query(prefix)) {
+                None => return Err(refuse("name-prefix-inbound-check-unanswered".into())),
+                Some(0) => {}
+                Some(n) => return Err(refuse(format!("name-prefix-rows-have-inbound-edges:{n}"))),
+            }
+            let dry = std::env::var("ATHENA_RETIRE_DRY_RUN").is_ok_and(|v| v == "1");
+            println!("athena-deploy: {}name prefix {prefix}: {} rows, {} versions (ceilings {rows_ceiling}/{versions_ceiling}; never {})",
+                if dry { "DRY RUN — " } else { "" }, n_rows.unwrap_or(0), n_vers.unwrap_or(0), NAME_PREFIX_EXCLUDED.join(", "));
+            if dry { return Ok(()); }
+            // each delete backs up first and verifies the dump (guarded_delete)
+            guarded_delete(ctx, line, &format!("name-prefix {prefix} rows"), &rows.1, &rows.2, &rows.3)?;
+            guarded_delete(ctx, line, &format!("name-prefix {prefix} versions"), &vers.1, &vers.2, &vers.3)
         }
         RetireAction::WholeGraph { graph } => guarded_delete(
             ctx, line,

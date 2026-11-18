@@ -23,6 +23,7 @@ chorus:handlerPath a owl:DatatypeProperty ;
     rdfs:label "handler path" ; rdfs:domain chorus:Operation ; rdfs:range xsd:string .
 
 chorus:OperationShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal ] ;  # #5002 AC1 (Jeff 11-18 10:04)
     sh:targetClass chorus:Operation ; sh:node chorus:CoreShape ;
     rdfs:comment "An Operation names its home domain, its route segment and its handler; athena-gen refuses one that misses any." ;
     sh:property [ sh:path chorus:homeDomain ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Domain ; sh:nodeKind sh:IRI ] ;

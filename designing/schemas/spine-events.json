@@ -3660,8 +3660,13 @@
       "producer": "domains",
       "category": "fact",
       "version": "1",
-      "description": "Observed on the spine 2026-10-05 but never registered; payload unknown (#4438).",
-      "fields": {}
+      "description": "A retirement line did nothing on this deploy: not staged (#3788), or #5002 a name-prefix line past its `until` is spent and says so here (first registered payload; observed unregistered 2026-10-05, #4438).",
+      "fields": {
+        "line": "Staging file line number",
+        "status": "the line's status: a non-staged ledger status (#3788), or spent",
+        "target": "what the line would have retired, e.g. name-prefix zz-probe-",
+        "reason": "spent lines only: why nothing was done, e.g. spent: past until 2026-11-25"
+      }
     },
     "model.seed": {
       "producer": "domains",

@@ -107,12 +107,14 @@ chorus:exercises a owl:ObjectProperty ;
     rdfs:range chorus:CodeFile .
 
 chorus:CodeKindShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:ownedBy ; sh:maxCount 1 ; sh:class chorus:Principal ] ;  # #5002 AC1 (Jeff 11-18 10:04)
     sh:targetClass chorus:CodeKind ; sh:node chorus:CoreShape ;
     sh:property [ sh:path rdfs:label ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     chorus:instancesGraph "urn:chorus:domains:code" ;
     chorus:generatedBy "athena-model" .
 
 chorus:LanguageShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:ownedBy ; sh:maxCount 1 ; sh:class chorus:Principal ] ;  # #5002 AC1 (Jeff 11-18 10:04)
     sh:targetClass chorus:Language ; sh:node chorus:CoreShape ;
     sh:property [ sh:path rdfs:label ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:adoptedFrom ; sh:datatype xsd:string ] ;
@@ -181,12 +183,14 @@ chorus:httpMethod a owl:DatatypeProperty ;
     rdfs:range xsd:string .
 
 chorus:PageShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal ] ;  # #5002 AC1 (Jeff 11-18 10:04)
     sh:targetClass chorus:Page ; sh:node chorus:CoreShape ;
     sh:property [ sh:path chorus:route ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:pageType ; sh:datatype xsd:string ] ;
     chorus:generatedBy "athena-model" .
 
 chorus:EndpointShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal ] ;  # #5002 AC1 (Jeff 11-18 10:04)
     sh:targetClass chorus:Endpoint ; sh:node chorus:CoreShape ;
     sh:property [ sh:path chorus:routePath ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:httpMethod ; sh:minCount 1 ; sh:datatype xsd:string ] ;

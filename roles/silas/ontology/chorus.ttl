@@ -1565,6 +1565,7 @@ chorus:propertyScope a owl:DatatypeProperty ;
 # credential-specific (domain chorus:Credential); a Property uses propertyScope.
 
 chorus:PropertyShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:ownedBy ; sh:maxCount 1 ; sh:class chorus:Principal ] ;  # #5002 AC1 (Jeff 11-18 10:04)
     sh:targetClass chorus:Property ; sh:node chorus:CoreShape ;
     sh:property [
         sh:path chorus:propertyKey ;
@@ -1689,6 +1690,7 @@ chorus:PropertyCarrierShape a sh:NodeShape ;
 # appliesToClass + lifecycleEnabled are core to every registry row; the arm-specific carriers
 # (keyValueType/allowedValue | edgeTargetClass/hubProjected) stay optional, propertyKind-discriminated.
 chorus:PropertyKeyShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:ownedBy ; sh:maxCount 1 ; sh:class chorus:Principal ] ;  # #5002 AC1 (Jeff 11-18 10:04)
     sh:targetClass chorus:PropertyKey ; sh:node chorus:CoreShape ;
     sh:property [
         sh:path chorus:keyName ;
@@ -1932,6 +1934,7 @@ chorus:inStream a owl:ObjectProperty ; rdfs:label "in stream" ; rdfs:domain chor
     rdfs:comment "A step belongs to a value stream (ADR-041 line 80). AS-IS edge: chorus:belongsTo." .
 
 chorus:StepShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:ownedBy ; sh:maxCount 1 ; sh:class chorus:Principal ] ;  # #5002 AC1 (Jeff 11-18 10:04)
     sh:targetClass chorus:ValueStreamStep ; sh:node chorus:CoreShape ;
     sh:property [ sh:path chorus:publishesPreAuth ; sh:maxCount 1 ; sh:datatype xsd:string ] ;   # #3777 — opt-in publication to the pre-auth sign-in page. Absent means NOT published.
     # #4187 — pin removed; value-streams claims Step and all 55 rows are in
@@ -1943,6 +1946,7 @@ chorus:StepShape a sh:NodeShape ;
 
 # --- ValueStreamShape (NEW — was absent in both v0.3.0 and the stranded draft) ---
 chorus:ValueStreamShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:ownedBy ; sh:maxCount 1 ; sh:class chorus:Principal ] ;  # #5002 AC1 (Jeff 11-18 10:04)
     sh:targetClass chorus:ValueStream ; sh:node chorus:CoreShape ;
     # #4187 — pin removed; value-streams claims the class and all 8 rows are in
     # urn:chorus:domains:value-streams (copied and verified 2026-09-18 14:02).
@@ -2323,6 +2327,7 @@ chorus:hasThreshold a owl:ObjectProperty ;
 
 
 chorus:EmitContractShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:ownedBy ; sh:maxCount 1 ; sh:class chorus:Principal ] ;  # #5002 AC1 (Jeff 11-18 10:04)
     sh:targetClass chorus:EmitContract ; sh:node chorus:CoreShape ;
     sh:property [ sh:path chorus:declaresMetric ; sh:minCount 1 ; sh:class chorus:Metric ] ;
     # #4256 — ruling A (Jeff, 2026-09-21): the declared home follows the rows.
@@ -2333,6 +2338,7 @@ chorus:EmitContractShape a sh:NodeShape ;
     chorus:generatedBy "athena-model" .
 
 chorus:MetricShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:ownedBy ; sh:maxCount 1 ; sh:class chorus:Principal ] ;  # #5002 AC1 (Jeff 11-18 10:04)
     sh:targetClass chorus:Metric ; sh:node chorus:CoreShape ;
     sh:property [ sh:path chorus:metricKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:emittedAs ; sh:minCount 1 ; sh:datatype xsd:string ] ;
@@ -3133,6 +3139,7 @@ chorus:external a owl:DatatypeProperty ;   # #4472 — shared by ServiceInstance
     rdfs:range xsd:boolean .
 
 chorus:ServiceInstanceShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal ] ;  # #5002 AC1 (Jeff 11-18 10:04)
     sh:targetClass chorus:ServiceInstance ; sh:node chorus:CoreShape ;
     chorus:instancesGraph "urn:chorus:domains:services" ;   # harvested facts live in the
     # dedicated domain-named graph (Silas ruling 16:06), NOT the ontology
@@ -3348,6 +3355,7 @@ chorus:UnitDomainMapping a owl:Class ;
     rdfs:comment "ADR-027 / ADR-060 §5: the ONE authored place that says which domain a launchd unit (or Loki-only job) belongs to. Every harvester (logs, services, alerts, monitors, the crawler's unit facets) joins on launchdLabel and copies hasDomain from here. Authored rows (unit-domain-4084.ttl); an unmapped unit is a red in log-harvest --check, never a guess." .
 
 chorus:UnitDomainMappingShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:ownedBy ; sh:maxCount 1 ; sh:class chorus:Principal ] ;  # #5002 AC1 (Jeff 11-18 10:04)
     sh:targetClass chorus:UnitDomainMapping ; sh:node chorus:CoreShape ;
     chorus:instancesGraph "urn:chorus:domains:infrastructure" ;
     sh:property [ sh:path rdfs:label          ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
