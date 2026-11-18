@@ -192,10 +192,16 @@ pub fn session_facts(name: &str) -> Result<Option<SessionFacts>, String> {
 /// The role's open pane rows on the same hostAccount other than `keep`: the ones a new
 /// pane login supersedes.
 pub fn older_open_panes(principal: &str, host: &str, keep: &str) -> Result<Vec<String>, String> {
-    if !principal.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') || host.contains('"') { return Ok(vec![]); }
-    let q = format!("PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <urn:chorus:domains:identity> {{ ?s a chorus:Session ; chorus:ownedBy <{ns}principal-{p}> ; chorus:channel ?c ; chorus:hostAccount ?h . FILTER(STR(?c) = \"pane\" && STR(?h) = \"{h}\") FILTER NOT EXISTS {{ ?s chorus:endedAt ?e }} BIND(REPLACE(STR(?s), '.*#session-', '') AS ?v) }} }}",
-        ns = crate::NS, p = principal, h = host);
+    let Some(q) = older_open_panes_query(principal, host) else { return Ok(vec![]) };
     Ok(crate::select_v(&crate::sparql_json(&q)?).into_iter().filter(|n| n != keep).collect())
+}
+
+/// #4517 (ex-#4445) — the query: this principal's own Session rows, pane channel, same
+/// hostAccount, not ended. None for a name or host that could break out of the query.
+pub fn older_open_panes_query(principal: &str, host: &str) -> Option<String> {
+    if principal.is_empty() || !principal.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') || host.contains('"') || host.contains('\\') { return None; }
+    Some(format!("PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <urn:chorus:domains:identity> {{ ?s a chorus:Session ; chorus:ownedBy <{ns}principal-{p}> ; chorus:channel ?c ; chorus:hostAccount ?h . FILTER(STR(?c) = \"pane\" && STR(?h) = \"{h}\") FILTER NOT EXISTS {{ ?s chorus:endedAt ?e }} BIND(REPLACE(STR(?s), '.*#session-', '') AS ?v) }} }}",
+        ns = crate::NS, p = principal, h = host))
 }
 
 

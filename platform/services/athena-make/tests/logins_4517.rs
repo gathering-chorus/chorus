@@ -251,3 +251,20 @@ fn the_door_records_a_refused_login_with_its_reason() {
     assert_eq!(unverified[1], "unknown");
     assert!(refusal_event(201, "kade", "{}").is_none() && refusal_event(200, "kade", "{}").is_none());
 }
+
+/// #4517 (ex-#4445, Jeff 10-08 "i now see 2 sessions for abby") — a new pane login supersedes
+/// only the same principal's open pane rows on the same account. NEGATIVE PROOFS: another
+/// principal's row, a closed row and another channel are outside the query, and a name or
+/// host that could break out of it asks nothing.
+#[test]
+fn the_supersede_query_names_only_this_principals_open_pane_rows_on_this_account() {
+    use athena_make::logins::older_open_panes_query;
+    let q = older_open_panes_query("silas", "chorus-silas").unwrap();
+    assert!(q.contains("chorus:ownedBy <https://jeffbridwell.com/chorus#principal-silas>"), "{q}");
+    assert!(q.contains(r#"STR(?c) = "pane""#) && q.contains(r#"STR(?h) = "chorus-silas""#));
+    assert!(q.contains("FILTER NOT EXISTS { ?s chorus:endedAt ?e }"), "a closed row is never superseded");
+    assert!(!q.contains("principal-kade"));
+    assert!(older_open_panes_query("silas> . ?x ?y ?z", "chorus-silas").is_none());
+    assert!(older_open_panes_query("silas", "a\" } #").is_none());
+    assert!(older_open_panes_query("", "chorus-silas").is_none());
+}

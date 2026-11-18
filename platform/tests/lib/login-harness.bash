@@ -116,7 +116,7 @@ case "\$* \${@: -1}" in *" PUT "*|*" POST "*|*" PATCH "*) ;; *"/v1/identity/sess
 m=""; b=""; for a in "\$@"; do case "\$a" in POST|PUT|PATCH) m="\$a" ;; @*.body) b="\${a#@}" ;; esac; done
 url="\${@: -1}"
 # #4997 (Silas 00:48) — the open-sessions listing status reads: a case's own file, else none open
-if [ -z "\$m" ]; then case "\$url" in */v1/identity/sessions\?endedAt.absent=true\&limit=*) cat "$T/open-sessions.json" 2>/dev/null || printf '{"data":[]}\n'; exit 0 ;; esac; fi
+if [ -z "\$m" ]; then case "\$url" in */v1/identity/sessions\?endedAt.absent=true\&limit=*) cat "$T/open-sessions.json" 2>/dev/null || cat "$T/row.json" 2>/dev/null || printf '{"data":[]}\n'; exit 0 ;; esac; fi   # a planted listing (row.json) answers as on main
 # #4517 AC6 — the door hands back the Session row it wrote, by the name its logins answer gave
 if [ -z "\$m" ]; then case "\$url" in */v1/identity/sessions/*) sn="\${url##*/}"
   python3 -c 'import json,sys,glob,os
@@ -124,7 +124,7 @@ for f in sorted(glob.glob(os.path.join(sys.argv[1],"bodies","*-POST-identity_ses
     try: b=json.load(open(f))
     except Exception: continue
     if sys.argv[2] in (b.get("name"), "session-"+str(b.get("name"))): print(json.dumps({"data": dict(b, name=sys.argv[2])})); sys.exit(0)
-print("{}")' "$T" "\$sn"; exit 0 ;; esac; fi
+sys.exit(1)' "$T" "\$sn" && exit 0 ;; esac; fi   # no door-written row: the case's own planted row answers, below
 # #4517 AC6 — a logout asks the door, which stamps how the session ended; kept as the close it wrote
 case "\$url" in */v1/identity/logouts) lc=\$(cat "$T/curl.status.identity_logouts" 2>/dev/null || echo 200)
   if [ "\$lc" != 200 ]; then cat "$T/curl.reply.identity_logouts" 2>/dev/null || printf '{"error":"authz","message":"refused"}'; printf '\n%s\n' "\$lc"; exit 0; fi
