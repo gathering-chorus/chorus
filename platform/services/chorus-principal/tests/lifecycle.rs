@@ -32,18 +32,18 @@ fn a_login_from_an_earlier_session_is_not_this_sessions_login() {
 #[test]
 fn status_names_running_login_and_answering_on_one_line() {
     let rec = LoginState::Recorded { session: "s".into(), pid: Some(1) };
-    assert_eq!(status_line("wren", Some(1), &rec, true), "wren   running  logged in      answering");
+    assert_eq!(status_line("wren", Some(1), &rec, true, Some(true)), "wren   running  logged in      answering");
     let pend = LoginState::Pending { why: "identity not answering".into(), pid: Some(2) };
-    assert_eq!(status_line("kade", Some(2), &pend, true), "kade   running  login pending  answering   (identity not answering, retrying)");
-    assert_eq!(status_line("silas", None, &rec, false), "silas  off");
-    assert!(status_line("silas", Some(9), &LoginState::Unknown, false).contains("NOT logged in"));
-    assert!(status_line("silas", Some(9), &LoginState::Unknown, false).contains("NOT answering"));
+    assert_eq!(status_line("kade", Some(2), &pend, true, Some(true)), "kade   running  login pending  answering   (identity not answering, retrying)");
+    assert_eq!(status_line("silas", None, &rec, false, None), "silas  off");
+    assert!(status_line("silas", Some(9), &LoginState::Unknown, false, None).contains("NOT logged in"));
+    assert!(status_line("silas", Some(9), &LoginState::Unknown, false, None).contains("NOT answering"));
 }
 
 #[test]
 fn negative_proof_no_status_line_ever_says_registered_yes() {
     for st in [LoginState::Unknown, LoginState::Closed, LoginState::Pending { why: "x".into(), pid: Some(3) }] {
-        let l = status_line("kade", Some(3), &st, true);
+        let l = status_line("kade", Some(3), &st, true, Some(true));
         assert!(!l.contains("registered yes"), "{l}");
         assert!(!l.contains(" logged in ") || l.contains("NOT"), "{l}");
     }

@@ -9,7 +9,7 @@ import { fetchJson, failureReason } from './sources/http';
 import { formatBostonTime, formatBostonWhen, formatTodayHeader, isPrincipalRow, roleDisplayName } from './sources/format';
 import { buildTrustStripSources, TrustStripOptions } from './sources/trust-strip';
 import { fetchAlerts } from './sources/today';
-import { fetchActorState, fetchChangesOvernight, toActorRow, toChangedCard, unmeasuredText } from './sources/pulse';
+import { fetchActorState, fetchChangesOvernight, sessionsSourceUnread, toActorRow, toChangedCard, unmeasuredText } from './sources/pulse';
 import { fetchDrawerCard, DrawerCard } from './sources/card';
 import { fetchCardPipeline, CardPipelineStatus } from './sources/pipeline';
 
@@ -120,6 +120,7 @@ export class DataService {
     return {
       actors: (read.value.actors || []).map(toActorRow),
       unmeasured: unmeasuredText(read.value.unmeasured),
+      sessionsUnread: sessionsSourceUnread(read.value.unmeasured),
     };
   }
 

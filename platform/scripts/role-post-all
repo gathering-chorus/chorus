@@ -19,7 +19,7 @@ for p in json.load(sys.stdin).get("data",[]):
 ') || agents=""
 [ -n "$agents" ] || { echo "FAIL principals door unreadable — no table"; exit 1; }
 
-checks="identity identity-dir key settings login reach"
+checks="identity identity-dir key settings login signin reach"
 printf '%-12s' role; for c in $checks; do printf ' %-12s' "$c"; done; printf ' %s\n' "measured"
 bad=0
 while read -r role acct; do

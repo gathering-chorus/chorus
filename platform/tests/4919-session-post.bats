@@ -16,6 +16,9 @@ setup() {
   echo '{"model":"opus"}' > "$T/git/settings.json"; cp "$T/git/settings.json" "$T/home/.claude/settings.json"
   echo '{"oauthAccount":{"emailAddress":"x"}}' > "$T/home/.claude.json"
   echo '{"claudeAiOauth":{"accessToken":"tok","refreshToken":"ref"}}' > "$T/home/.claude/.credentials.json"
+  # #4997 — the role's own Chorus sign-in, recorded
+  mkdir -p "$T/home/.chorus/identity/silas"
+  echo '{"state":"recorded","session":"silas-1","pid":null,"at":"x"}' > "$T/home/.chorus/identity/silas/login.json"
   echo '{"data":[{"name":"silas","hostAccount": "chorus-silas"}]}' > "$T/principals.json"
   export POST_ROLE=silas POST_ACCOUNT=chorus-silas
   export POST_IDENTITY_DIR="$T/identity" POST_HOME="$T/home" POST_SETTINGS_SOURCE="$T/git/settings.json"

@@ -25,20 +25,26 @@ pub enum LoginState {
     Recorded { session: String, pid: Option<u64> },
     /// no row yet; `why` is the reason in words; a retry is running
     Pending { why: String, pid: Option<u64> },
+    /// #4997 — the login was refused (credential or identity said no); not retried
+    Refused { why: String, pid: Option<u64> },
     /// `off` (or /exit) closed it
     Closed,
     /// no file, or a file this build cannot read
     Unknown,
+    /// #4997 — the login file is the role's own and this account cannot read it (another
+    /// role's account asked): unverified, never "NOT logged in". Never written to a file.
+    Unreadable,
 }
 
 impl LoginState {
     pub fn pid(&self) -> Option<u64> {
-        match self { LoginState::Recorded { pid, .. } | LoginState::Pending { pid, .. } => *pid, _ => None }
+        match self { LoginState::Recorded { pid, .. } | LoginState::Pending { pid, .. } | LoginState::Refused { pid, .. } => *pid, _ => None }
     }
     pub fn with_pid(self, p: u64) -> LoginState {
         match self {
             LoginState::Recorded { session, .. } => LoginState::Recorded { session, pid: Some(p) },
             LoginState::Pending { why, .. } => LoginState::Pending { why, pid: Some(p) },
+            LoginState::Refused { why, .. } => LoginState::Refused { why, pid: Some(p) },
             other => other,
         }
     }
@@ -51,6 +57,7 @@ pub fn parse_login_state(json: &str) -> LoginState {
     match s("state").as_str() {
         "recorded" if !s("session").is_empty() => LoginState::Recorded { session: s("session"), pid },
         "pending" => LoginState::Pending { why: s("why"), pid },
+        "refused" => LoginState::Refused { why: s("why"), pid },
         "closed" => LoginState::Closed,
         _ => LoginState::Unknown,
     }
@@ -60,8 +67,9 @@ pub fn login_state_json(st: &LoginState, at: &str) -> String {
     let v = match st {
         LoginState::Recorded { session, pid } => serde_json::json!({"state":"recorded","session":session,"pid":pid,"at":at}),
         LoginState::Pending { why, pid } => serde_json::json!({"state":"pending","why":why,"pid":pid,"at":at}),
+        LoginState::Refused { why, pid } => serde_json::json!({"state":"refused","why":why,"pid":pid,"at":at}),
         LoginState::Closed => serde_json::json!({"state":"closed","at":at}),
-        LoginState::Unknown => serde_json::json!({"state":"unknown","at":at}),
+        LoginState::Unknown | LoginState::Unreadable => serde_json::json!({"state":"unknown","at":at}),
     };
     v.to_string()
 }
@@ -72,7 +80,7 @@ pub fn login_state_json(st: &LoginState, at: &str) -> String {
 /// A login with no pid yet is the one `on` wrote just before the pane
 /// registered; it is adopted by the session that registered.
 pub fn login_belongs_to(st: &LoginState, live_pid: u64) -> bool {
-    match st.pid() { Some(p) => p == live_pid, None => matches!(st, LoginState::Recorded { .. } | LoginState::Pending { .. }) }
+    match st.pid() { Some(p) => p == live_pid, None => matches!(st, LoginState::Recorded { .. } | LoginState::Pending { .. } | LoginState::Refused { .. }) }
 }
 
 /// The login word `status` and the tmux bar show.
@@ -81,18 +89,47 @@ pub fn login_word(st: &LoginState, live_pid: Option<u64>) -> &'static str {
         (_, None) => "",
         (LoginState::Recorded { .. }, Some(p)) if login_belongs_to(st, p) => "logged in",
         (LoginState::Pending { .. }, Some(p)) if login_belongs_to(st, p) => "login pending",
+        (LoginState::Refused { .. }, Some(p)) if login_belongs_to(st, p) => "refused",
+        (LoginState::Unreadable, Some(_)) => "unverified",
         _ => "NOT logged in",
     }
 }
 
 /// One line per role for `chorus-principal status`.
-pub fn status_line(role: &str, live_pid: Option<u64>, st: &LoginState, answering: bool) -> String {
+/// #4997 — a refusal (the credential or the identity door said no) as opposed to a failure
+/// worth retrying (unreachable, 5xx). Only an explicit 401/403 or a refused credential counts.
+pub fn is_refusal(why: &str) -> bool {
+    let w = why.to_ascii_lowercase();
+    w.contains("http 401") || w.contains("http 403") || w.contains("invalid_client") || w.contains("invalid_grant") || w.contains("refused the credential")
+}
+
+/// #4997 AC1 — the status line. "logged in" needs this pid's own successful login AND the
+/// role's Session row open in the store (`session_open`, read from the store, never copied);
+/// a closed row or an unread store never reads "logged in".
+pub fn status_line(role: &str, live_pid: Option<u64>, st: &LoginState, answering: bool, session_open: Option<bool>) -> String {
     let Some(pid) = live_pid else { return format!("{:<6} off", role) };
-    let mut line = format!("{:<6} running  {:<14} {}", role, login_word(st, Some(pid)), if answering { "answering" } else { "NOT answering" });
-    if let LoginState::Pending { why, .. } = st {
-        if login_belongs_to(st, pid) && !why.is_empty() { line.push_str(&format!("   ({}, retrying)", why)); }
+    let word = match (login_word(st, Some(pid)), session_open) {
+        ("logged in", Some(true)) => "logged in",
+        ("logged in", Some(false)) => "NOT logged in",
+        ("logged in", None) => "unverified",
+        (w, _) => w,
+    };
+    let mut line = format!("{:<6} running  {:<14} {}", role, word, if answering { "answering" } else { "NOT answering" });
+    match st {
+        LoginState::Pending { why, .. } if login_belongs_to(st, pid) && !why.is_empty() => line.push_str(&format!("   ({}, retrying)", why)),
+        LoginState::Refused { why, .. } if login_belongs_to(st, pid) => line.push_str(&format!("   ({})", why)),
+        _ if word == "NOT logged in" && session_open == Some(false) => line.push_str("   (session row closed)"),
+        LoginState::Unreadable => line.push_str("   (login readable only from its own account)"),
+        _ if word == "unverified" => line.push_str("   (session row unread)"),
+        _ => {}
     }
     line
+}
+
+/// #4997 — what `status` may say about a login it reads: from another role's account the
+/// login file is out of reach, so an absent state there is Unreadable, not Unknown.
+pub fn login_as_seen(st: LoginState, own_account: bool) -> LoginState {
+    match st { LoginState::Unknown if !own_account => LoginState::Unreadable, s => s }
 }
 
 /// #4933 — the launcher's read-back never hides why a start is pending: a pending

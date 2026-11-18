@@ -17,7 +17,7 @@ setup() {
 result() {  # role acct [fail-check]
   mkdir -p "$T/homes/$2/.chorus/post"
   { echo "at $(date +%s) role $1 account $2 runtime claude"
-    for c in identity identity-dir key settings login reach; do
+    for c in identity identity-dir key settings login signin reach; do
       if [ "$c" = "${3:-}" ]; then echo "FAIL $c: broken"; else echo "ok   $c: fine"; fi
     done; } > "$T/homes/$2/.chorus/post/$1.result"
 }
