@@ -65,8 +65,11 @@ pub fn plan_login(
     existing: Option<&str>,
     now_iso: &str,
 ) -> Result<Outcome, Refusal> {
-    if login.principal.is_empty() || login.token_id.is_empty() {
+    if login.principal.is_empty() {
         return Err((401, "no verified login".into()));
+    }
+    if login.token_id.is_empty() {
+        return Err((401, "login has no id: one Session row per login needs one, never an empty key".into()));
     }
     let obj = body.as_object().ok_or((422, "the body must be a JSON object".to_string()))?;
     if let Some(k) = obj.keys().find(|k| !ALLOWED.contains(&k.as_str())) {
@@ -203,5 +206,15 @@ mod tests {
         let anon = VerifiedLogin { principal: "", token_id: "t1", expires_at: "x" };
         assert_eq!(plan_login(&anon, &facts(), &json!({"channel":"pane"}), serves_kade, None, NOW).unwrap_err().0, 401);
         assert_eq!(plan(json!({"channel":"ssh"})).unwrap_err().0, 422);
+    }
+
+    /// NEGATIVE PROOF (Silas 00:22): a verified login without an id is refused, never
+    /// keyed on an empty string — two such logins would otherwise share one row.
+    #[test]
+    fn negative_proof_a_login_with_no_id_is_refused() {
+        let no_id = VerifiedLogin { principal: "kade", token_id: "", expires_at: "x" };
+        let (code, why) = plan_login(&no_id, &facts(), &json!({"channel":"pane","hostAccount":"chorus-kade"}), serves_kade, None, NOW).unwrap_err();
+        assert_eq!(code, 401);
+        assert!(why.contains("login has no id"), "{why}");
     }
 }
