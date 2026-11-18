@@ -50,3 +50,10 @@ signin() { printf '%s' "$1" > "$T/h/.chorus/identity/r/login.json"; }
 @test "AC2 the all-roles table carries the signin column" {
   grep -q 'checks="identity identity-dir key settings login signin reach"' "$ROOT/platform/scripts/role-post-all"
 }
+
+@test "AC2 NEGATIVE PROOF: a refusal saved with no reason (why: null) says so, never None" {
+  signin '{"state":"refused","why":null,"pid":null,"at":"x"}'
+  run env POST_ROLE=r bash "$POST"
+  printf '%s\n' "$output" | grep -qF "FAIL signin: Chorus login refused — no reason recorded"
+  if printf '%s\n' "$output" | grep -qF "None"; then return 1; fi
+}

@@ -26,5 +26,5 @@ setup() {
   run bash -c "cd '$ROOT/directing/clearing-v2' && npx jest tests/teammates-login-4997.test.ts 2>&1"
   echo "$output" | tail -3
   [ "$status" -eq 0 ]
-  echo "$output" | grep -qE "Tests: +3 passed, 3 total"
+  echo "$output" | grep -qE "Tests: +4 passed, 4 total"
 }

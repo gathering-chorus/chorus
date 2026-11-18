@@ -7,7 +7,7 @@
 // (the reason lives in `chorus-principal status`). An unread pulse says "unverified".
 import { renderRolesPage } from "../src/views";
 
-const actor = (id: string, sessions: string[]) => ({ id, name: id, sessions, state: "available", activity: "idle", card: null, cards: [], stream: [] });
+const actor = (id: string, sessions: string[], unmeasured?: string) => ({ id, name: id, sessions, unmeasured, state: "available", activity: "idle", card: null, cards: [], stream: [] });
 const loginCell = (html: string, id: string): string => {
   const row = html.split("<tr").find((r) => r.includes(`<b>${id}</b>`)) || "";
   return (row.match(/class="login[^"]*">([^<]*)</) || [])[1] || "";
@@ -29,5 +29,14 @@ describe("#4997 the Teammates tile tells the truth about login", () => {
   test("NEGATIVE PROOF: an unread pulse never reads logged in, it reads unverified", () => {
     const html = renderRolesPage({ actors: [actor("kade", ["kade-s1 · pane · live"])], unmeasured: "athena:identity:sessions: timeout" } as never, []);
     expect(loginCell(html, "kade")).toBe("unverified");
+  });
+
+  test("NEGATIVE PROOF: one actor's own unread sessions read unverified; others are unaffected", () => {
+    const html = renderRolesPage({ actors: [
+      actor("kade", ["kade-s1 · pane · live"], "athena:identity:sessions: timeout"),
+      actor("wren", ["wren-s1 · pane · live"], "pulse-api:streams: timeout"),
+    ] } as never, []);
+    expect(loginCell(html, "kade")).toBe("unverified");
+    expect(loginCell(html, "wren")).toBe("logged in");
   });
 });

@@ -179,7 +179,7 @@ if [ ! -r "$signin" ]; then
 else
   read -r st why < <(python3 -c 'import json,sys
 d=json.load(open(sys.argv[1]))
-print(d.get("state","unknown"), d.get("why",""))' "$signin" 2>/dev/null || echo "unreadable")
+print(d.get("state") or "unknown", d.get("why") or "")' "$signin" 2>/dev/null || echo "unreadable")
   case "$st" in
     recorded) ok "signin: Chorus login recorded" ;;
     refused) fail "signin: Chorus login refused — ${why:-no reason recorded}" ;;

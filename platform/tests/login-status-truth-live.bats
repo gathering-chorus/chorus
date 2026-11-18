@@ -12,21 +12,28 @@ setup() {
   BIN="${CHORUS_PRINCIPAL_BIN:-$(command -v chorus-principal || echo "$HOME/.chorus/bin/chorus-principal")}"
 }
 
-# $1 status output, $2 open-sessions listing json: 0 when status and rows agree both ways —
-# "logged in" needs an open row, and an open row is never called "NOT logged in"
-# ("unverified" is honest either way: the login was out of this account's reach).
+# $1 status output, $2 open-sessions listing json: 0 when status and the role's OWN Session row
+# agree both ways. The role's row is the one status names on its "store: session <name>" line
+# (its saved row; a superseded row of the same role may still be open and does not count).
+# "logged in" needs that row open; a role whose row is open is never "NOT logged in".
+# "unverified" is honest either way: the login was out of this account's reach.
 verdict() {
   python3 - "$1" "$2" <<'PY'
 import json, re, sys
 status, listing = sys.argv[1], json.loads(sys.argv[2])
-open_owners = {r.get("ownedBy", "").rsplit("#", 1)[-1].removeprefix("principal-") for r in listing.get("data", [])}
-bad = []
+open_names = {r.get("name") for r in listing.get("data", [])}
+rows, words, role = {}, {}, None
 for line in status.splitlines():
     m = re.match(r"^(\S+)\s+running\s+(logged in|NOT logged in)\b", line)
-    if not m: continue
-    role, word = m.groups()
-    if word == "logged in" and role not in open_owners: bad.append(role + ": logged in, no open row")
-    if word == "NOT logged in" and role in open_owners: bad.append(role + ": NOT logged in, row open")
+    if m: role = m.group(1); words[role] = m.group(2); continue
+    if re.match(r"^\S", line): role = None; continue
+    s = re.match(r"^\s+store: session (\S+) ", line)
+    if s and role: rows[role] = s.group(1)
+bad = []
+for role, word in words.items():
+    is_open = rows.get(role) in open_names
+    if word == "logged in" and not is_open: bad.append(role + ": logged in, its row not open")
+    if word == "NOT logged in" and is_open: bad.append(role + ": NOT logged in, its row open")
 print("status and Session rows disagree: " + ("; ".join(bad) or "none"))
 sys.exit(1 if bad else 0)
 PY
@@ -41,13 +48,18 @@ PY
   [ "$status" -eq 0 ]
 }
 
-@test "NEGATIVE PROOF: a mismatch either way fails; agreement and unverified pass" {
-  run verdict "kade   running  logged in      answering" '{"data":[{"ownedBy":"principal-wren"}]}'
+@test "NEGATIVE PROOF: a mismatch either way fails; agreement, unverified and a superseded open row pass" {
+  st_in=$'kade   running  logged in      answering\n       store: session kade-2 open, acts as role-kade'
+  st_out=$'kade   running  NOT logged in  answering\n       store: session kade-2 open, acts as role-kade'
+  run verdict "$st_in" '{"data":[{"name":"wren-1"}]}'
   [ "$status" -eq 1 ]
-  run verdict "kade   running  NOT logged in  answering" '{"data":[{"ownedBy":"principal-kade"}]}'
+  run verdict "$st_out" '{"data":[{"name":"kade-2"}]}'
   [ "$status" -eq 1 ]
-  run verdict "kade   running  logged in      answering" '{"data":[{"ownedBy":"https://jeffbridwell.com/chorus#principal-kade"}]}'
+  run verdict "$st_in" '{"data":[{"name":"kade-2"}]}'
   [ "$status" -eq 0 ]
-  run verdict "kade   running  unverified     answering" '{"data":[{"ownedBy":"principal-kade"}]}'
+  # an older kade row still open, its own row closed: NOT logged in is right
+  run verdict $'kade   running  NOT logged in  answering' '{"data":[{"name":"kade-1","ownedBy":"principal-kade"}]}'
+  [ "$status" -eq 0 ]
+  run verdict "kade   running  unverified     answering" '{"data":[{"name":"kade-2"}]}'
   [ "$status" -eq 0 ]
 }

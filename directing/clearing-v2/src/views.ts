@@ -306,16 +306,28 @@ export function renderTodayPage(data: TodayData, sources: TrustStripSource[]): s
   return renderPageShell('Today', 'today', content, sources, { decisions: data.decisionsCount, alerts: data.alerts.length });
 }
 
+/** The pulse source that reads Session rows (actor-state fetchSessionsFact). */
+const SESSIONS_SOURCE = 'athena:identity:sessions';
+
+/** True when an unmeasured text ("source: reason; …", pulse.ts unmeasuredText) names the sessions source. */
+function sessionsSourceUnread(text: string | undefined): boolean {
+  return (text || '').split('; ').some((e) => e.startsWith(`${SESSIONS_SOURCE}:`));
+}
+
+/** One rule for "this actor has a live session": pulse.ts renders a live row as "… · live". */
+export function hasLiveSession(a: ActorRow): boolean {
+  return a.sessions.some((s) => s.endsWith(' · live'));
+}
+
 /** #4997 AC1 (Jeff 19:24) — "logged in" only when pulse lists an open, live Session row;
- *  otherwise "not logged in" (the reason lives in `chorus-principal status`). Sessions that
- *  could not be read say "unverified", never a stale "logged in". */
-export function loginWord(a: ActorRow, sessionsUnread: boolean): string {
-  if (sessionsUnread) return 'unverified';
-  return a.sessions.some((s) => s.endsWith(' · live')) ? 'logged in' : 'not logged in';
+ *  otherwise "not logged in" (the reason lives in `chorus-principal status`). When the
+ *  Session rows could not be read — for the page or for this actor — "unverified". */
+export function loginWord(a: ActorRow, pageUnmeasured?: string): string {
+  if (sessionsSourceUnread(pageUnmeasured) || sessionsSourceUnread(a.unmeasured)) return 'unverified';
+  return hasLiveSession(a) ? 'logged in' : 'not logged in';
 }
 
 export function renderRolesPage(data: RolesData, sources: TrustStripSource[]): string {
-  const sessionsUnread = (data.unmeasured || '').includes('identity:sessions');
   const table = data.actors.length === 0 ? '' : `
         <table class="roles-table">
           <thead>
@@ -325,7 +337,7 @@ export function renderRolesPage(data: RolesData, sources: TrustStripSource[]): s
             ${data.actors.map(a => `
               <tr class="${a.id === 'jeff' ? 'you' : ''}">
                 <td><span class="row who"><span class="av a-${a.id}">${a.name.charAt(0)}</span><b>${a.name}</b></span></td>
-                <td class="login${sessionsUnread ? ' faint' : ''}">${loginWord(a, sessionsUnread)}</td>
+                <td class="login">${loginWord(a, data.unmeasured)}</td>
                 <td>${renderStateBadge(a)}${renderActorDetail(a)}</td>
                 <td class="meta">${renderActivity(a)}</td>
                 <td>${renderCardRefs(a.cards, a.card, a.pair)}</td>
@@ -816,7 +828,7 @@ export function isRoleLoggedIn(a: ActorRow): boolean {
   const state = (a.state || '').toLowerCase();
   if (state === 'offline' || state === 'off') return false;
   if (a.sessions.length > 0) {
-    const hasLive = a.sessions.some(s => s.includes(' · live') || s === 'live');
+    const hasLive = hasLiveSession(a);
     const allNotLive = a.sessions.every(s => s.startsWith('+') || s.includes('not live'));
     if (allNotLive && !hasLive) return false;
   }
