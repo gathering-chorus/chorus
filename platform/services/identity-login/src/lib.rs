@@ -118,7 +118,9 @@ pub fn plan_login(
     let channel = text("channel");
     let mut row = Map::new();
     match channel {
-        "pane" => {
+        // #4424 — a supervised runtime (Abby's) logs in on the agent channel: like a pane it
+        // runs as the role's own account, so it names that account and the door checks it
+        "pane" | "agent" => {
             let claimed = text("hostAccount");
             match facts.host_account {
                 Some(h) if !h.is_empty() && h == claimed => { row.insert("hostAccount".into(), json!(h)); }
@@ -138,7 +140,7 @@ pub fn plan_login(
                 _ => return Err((403, format!("{} has no hostAccount on its Principal row; a Session needs one", login.principal))),
             }
         }
-        other => return Err((422, format!("channel must be pane or browser, not '{other}'"))),
+        other => return Err((422, format!("channel must be pane, agent or browser, not '{other}'"))),
     }
     let acts_as = text("actsAs");
     if !acts_as.is_empty() {
@@ -154,6 +156,8 @@ pub fn plan_login(
     // no ownedBy: the door's create stamps the verified caller as owner and ignores any in the body
     if let Some((field, who)) = person_stamp(obj, facts, Moment::Start)? { row.insert(field.into(), json!(who)); }
     row.insert("startedAt".into(), json!(now_iso));
+    // SessionShape requires one issuedAt: the moment the door accepted this login
+    row.insert("issuedAt".into(), json!(now_iso));
     row.insert("tokenId".into(), json!(login.token_id));
     row.insert("sessionState".into(), json!("open"));
     row.insert("expiresAt".into(), json!(login.expires_at));

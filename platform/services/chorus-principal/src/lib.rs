@@ -903,7 +903,7 @@ fn do_login(ctx: &Ctx, role: &str) -> Result<LoginState, ()> {
     // The door verifies the login, checks hostAccount and actsAs against the model, and
     // answers with the row's name (a repeat of the same login gets the same row).
     let mut body = serde_json::json!({ "channel": channel, "actsAs": format!("role-{}", role) });
-    if channel == "pane" { body["hostAccount"] = Value::String(host_account.clone()); }
+    if channel == "pane" || channel == "agent" { body["hostAccount"] = Value::String(host_account.clone()); }
     // #4412 — the person present, as person_signed_in found him; the door vouches or labels it
     person_fields(&mut body, "CHORUS_STARTED_BY");
     let role_id_dir = PathBuf::from(&ctx.identity_dir).join(role);
