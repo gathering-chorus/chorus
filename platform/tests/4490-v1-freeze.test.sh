@@ -31,10 +31,10 @@
 #                       again; shrinking v1 back to the old line is a separate card, not yet filed.
 #    10996  2026-11-18  #4517 AC5 (Wren): +8, the door is the only writer of Session rows
 #                       (door_written + its refusal); an authz break fix, not a feature.
-#    11120  2026-11-18  #4517 AC5 (Wren, Jeff 00:17 decision 4: the logins route on v1 as a
-#                       security fix): +124, POST /identity/logins (src/logins.rs + its serve
+#    11128  2026-11-18  #4517 AC5 (Wren, Jeff 00:17 decision 4: the logins route on v1 as a
+#                       security fix): +132, POST /identity/logins (src/logins.rs + its serve
 #                       block); the row decision lives outside in the identity-login crate.
-FROZEN_LINES=11120  # #4517 AC5 — see history above
+FROZEN_LINES=11128  # #4517 AC5 — see history above
 set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 count() { cat "$1"/*.rs 2>/dev/null | wc -l | tr -d ' '; }

@@ -9,7 +9,7 @@ use std::cell::RefCell;
 const NOW: &str = "2026-11-18T05:30:00Z";
 fn kade() -> Caller<'static> { Caller { principal: "kade", jti: "j1", expires_at: "2026-11-18T05:40:00Z" } }
 fn host(p: &str) -> Result<Option<String>, String> { Ok((p == "kade").then(|| "chorus-kade".to_string())) }
-fn serves(r: &str) -> bool { r == "role-kade" }
+fn serves(r: &str) -> Result<bool, String> { Ok(r == "role-kade") }
 const PANE: &str = r#"{"channel":"pane","hostAccount":"chorus-kade","actsAs":"role-kade"}"#;
 
 #[test]
@@ -54,4 +54,7 @@ fn an_unread_store_is_503_not_a_refusal() {
     assert_eq!(c, 503);
     let (c, _) = handle_login(&kade(), PANE, host, serves, |_| Err("timeout".into()), never, NOW);
     assert_eq!(c, 503);
+    // NEGATIVE PROOF (Silas 00:27): a Teammate read that failed is 503, not "does not serve"
+    let (c, b) = handle_login(&kade(), PANE, host, |_| Err("timeout".into()), |_| Ok(None), never, NOW);
+    assert_eq!(c, 503, "{b}");
 }

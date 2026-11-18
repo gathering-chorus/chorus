@@ -24,7 +24,7 @@ pub fn handle_login(
     caller: &Caller,
     body: &str,
     host_account: impl Fn(&str) -> Result<Option<String>, String>,
-    serves: impl Fn(&str) -> bool,
+    serves: impl Fn(&str) -> Result<bool, String>,
     existing: impl Fn(&str) -> Result<Option<String>, String>,
     create: impl Fn(&str) -> (u16, String),
     now_iso: &str,
@@ -43,8 +43,16 @@ pub fn handle_login(
             Err(e) => return (503, error("unavailable", &format!("could not read this login's Session row: {e}"))),
         }
     };
+    // A store that did not answer is 503, never a "does not serve" refusal (Silas 00:27).
+    let acts_as = parsed.get("actsAs").and_then(Value::as_str).unwrap_or("").to_string();
+    let served = if acts_as.is_empty() { false } else {
+        match serves(&acts_as) {
+            Ok(b) => b,
+            Err(e) => return (503, error("unavailable", &format!("could not read whether {} serves {acts_as}: {e}", caller.principal))),
+        }
+    };
     let login = VerifiedLogin { principal: caller.principal, token_id: caller.jti, expires_at: caller.expires_at };
-    match plan_login(&login, &PrincipalFacts { host_account: host.as_deref() }, &parsed, serves, found.as_deref(), now_iso) {
+    match plan_login(&login, &PrincipalFacts { host_account: host.as_deref() }, &parsed, |r| r == acts_as && served, found.as_deref(), now_iso) {
         Ok(Outcome::Existing(name)) => (200, format!("{{ \"name\": \"{}\", \"created\": false }}", crate::json_escape(&name))),
         Ok(Outcome::Create(name, mut row)) => {
             row["name"] = Value::String(name);

@@ -7012,7 +7012,7 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                             match tables.iter().find(|t| t.class.ends_with("#Session")) {
                                 None => (503u16, "{ \"error\": \"unavailable\", \"message\": \"this door serves no Session class\" }".to_string()),
                                 Some(table) => logins::handle_login(&caller, body_str, logins::principal_host_account,
-                                    |role| teammate_serves(&who, role).unwrap_or(false), logins::session_for_login,
+                                    |role| teammate_serves(&who, role), logins::session_for_login,
                                     |row| with_write_lock(|| handle_create(row, table, &who, token, "")), &logins::iso_from_secs(now_secs)),
                             }
                         }
