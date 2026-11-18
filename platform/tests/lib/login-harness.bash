@@ -115,6 +115,24 @@ print(json.dumps({"data":list(rows.values())}))' "$T" "\$r"; exit 0 ;; esac
 case "\$* \${@: -1}" in *" PUT "*|*" POST "*|*" PATCH "*) ;; *"/v1/identity/sessionruns/"*) rn="\${@: -1}"; rn="\${rn##*/}"; hit=\$(grep -l "\"name\": *\"\$rn\"" "$T"/bodies/*-POST-identity_sessionruns.json 2>/dev/null | tail -1); if [ -n "\$hit" ]; then printf '{"data":%s}\n200\n' "\$(cat "\$hit")"; else printf '{"data":{}}\n404\n'; fi; exit 0 ;; *"/v1/identity/presences/"*) [ -f "$T/presence-door-down" ] && exit 22; last=\$(ls "$T/bodies" | grep -i presences | tail -1); if [ -n "\$last" ]; then printf '{"data":%s}\n' "\$(cat "$T/bodies/\$last")"; else printf '{"data":{}}\n'; fi; exit 0 ;; esac   # #4895: a Presence write reads the door's current row first; the door holds the last one written
 m=""; b=""; for a in "\$@"; do case "\$a" in POST|PUT|PATCH) m="\$a" ;; @*.body) b="\${a#@}" ;; esac; done
 url="\${@: -1}"
+# #4517 AC6 — the door hands back the Session row it wrote, by the name its logins answer gave
+if [ -z "\$m" ]; then case "\$url" in */v1/identity/sessions/*) sn="\${url##*/}"
+  python3 -c 'import json,sys,glob,os
+for f in sorted(glob.glob(os.path.join(sys.argv[1],"bodies","*-POST-identity_sessions.json")), reverse=True):
+    try: b=json.load(open(f))
+    except Exception: continue
+    if sys.argv[2] in (b.get("name"), "session-"+str(b.get("name"))): print(json.dumps({"data": dict(b, name=sys.argv[2])})); sys.exit(0)
+print("{}")' "$T" "\$sn"; exit 0 ;; esac; fi
+# #4517 AC6 — a login asks the door, which writes the Session row itself (owner = the login,
+# startedBy the door) and answers with its name; the row it wrote is kept like any POST body.
+case "\$url" in */v1/identity/logins) cp "\$b" "$T/curl.body"; lc=\$(cat "$T/curl.status.identity_logins" 2>/dev/null || cat "$T/curl.status" 2>/dev/null || echo 201)
+  if [ "\$lc" != 201 ]; then cat "$T/curl.reply.identity_logins" 2>/dev/null || cat "$T/curl.reply" 2>/dev/null || printf '{"error":"authz","message":"refused"}'; printf '\n%s\n' "\$lc"; exit 0; fi
+  n=\$(ls "$T/bodies" | wc -l | tr -d ' ')
+  python3 -c 'import json,sys
+b=json.load(open(sys.argv[1])); role=b.get("actsAs","role-x").removeprefix("role-")
+row=dict(b, name=role+"-door1", ownedBy="principal-"+role, startedBy="principal-door", sessionState="open")
+json.dump(row, open(sys.argv[2],"w")); print(json.dumps({"name": "session-"+role+"-door1", "created": True}))' "\$b" "$T/bodies/\$(printf %03d \$n)-POST-identity_sessions.json"
+  printf '201\n'; exit 0 ;; esac
 if [ -n "\$m" ]; then
   n=\$(ls "$T/bodies" | wc -l | tr -d ' '); route=\$(echo "\$url" | sed -E 's#.*/v1/##; s#/#_#g')
   cp "\$b" "$T/bodies/\$(printf %03d \$n)-\$m-\$route.json"

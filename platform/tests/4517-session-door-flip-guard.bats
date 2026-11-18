@@ -38,11 +38,14 @@ guard() { # $@ shape files — 1 (and the sites) when a shape says door while ro
   echo "$w"; return 1
 }
 
-@test "AC5 guard: the finder sees today's role-side Session writes (it can go red)" {
+@test "AC5 guard: the finder sees a role-side Session write (it can go red), on a fixture tree" {
   [ -n "$SHAPES" ] || { echo "no Session shape file found — the guard has nothing to read"; return 1; }
-  n="$(role_session_writes "$ROOT" | wc -l | tr -d ' ')"
-  echo "role-side Session write sites: $n"
-  [ "$n" -ge 5 ] || return 1
+  F="$BATS_TEST_TMPDIR/root"; mkdir -p "$F/platform/services/chorus-principal/src" "$F/platform/scripts/lib"
+  printf '    if patch_row(ctx, &role, "identity/sessions", "session", &name, &body) {\n' > "$F/platform/services/chorus-principal/src/lib.rs"
+  printf '        status, reply = http("POST", f"{api}/v1/identity/sessions", id_token, row)\n' > "$F/platform/scripts/lib/person_session.py"
+  n="$(role_session_writes "$F" | wc -l | tr -d ' ')"
+  [ "$n" -eq 2 ] || { echo "the finder saw $n of the 2 planted write sites"; return 1; }
+  echo "role-side Session write sites left in this tree: $(role_session_writes "$ROOT" | wc -l | tr -d ' ')"
 }
 
 @test "AC5 guard: a Session shape says writeAuthority door only once no role writes Session rows" {

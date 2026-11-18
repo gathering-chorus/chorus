@@ -898,15 +898,11 @@ fn do_login(ctx: &Ctx, role: &str) -> Result<LoginState, ()> {
             return Err(());
         }
     };
-    let start_id = format!("{:x}", now_ms());
-    let (session_name, body) = session_row(role, &login, &host_account, &start_id);
-    // #4328 — the row says which role it acts as and when it started
-    let body = rows::with_role_and_start(body, role, &iso_utc(now_ms() as u64 / 1000));
-    // #4412 — who started it, and where it lives
-    let mut body = body;
-    body["channel"] = Value::String(channel.into());
-    if let Ok(p) = env::var("CHORUS_STARTED_BY") { if !p.is_empty() { body["startedBy"] = Value::String(p); } }
-    // the row: POST through the security API with the token as a header FILE (0600), never an argv
+    // #4517 AC6 — the door writes the Session row (Jeff 11-18 00:17): this login only asks.
+    // The door verifies the login, checks hostAccount and actsAs against the model, and
+    // answers with the row's name (a repeat of the same login gets the same row).
+    let mut body = serde_json::json!({ "channel": channel, "actsAs": format!("role-{}", role) });
+    if channel == "pane" { body["hostAccount"] = Value::String(host_account.clone()); }
     let role_id_dir = PathBuf::from(&ctx.identity_dir).join(role);
     let _ = fs::create_dir_all(&role_id_dir);
     let hdr = role_id_dir.join("session.hdr");
@@ -914,27 +910,17 @@ fn do_login(ctx: &Ctx, role: &str) -> Result<LoginState, ()> {
     if let Err(e) = write_private(&hdr, &format!("Authorization: Bearer {}\n", token)).and_then(|_| write_private(&body_path, &body.to_string())) {
         return Ok(LoginState::Pending { why: format!("cannot write {}: {}", hdr.display(), e), pid: None });
     }
-    let url = format!("{}/v1/identity/sessions", ctx.api);
+    let url = format!("{}/v1/identity/logins", ctx.api);
     let hdr_arg = format!("@{}", hdr.display());
     let body_arg = format!("@{}", body_path.display());
     let answer = door(ctx, &["-s", "-w", "\n%{http_code}", "--max-time", "10", "-X", "POST", "-H", "Content-Type: application/json", "-H", &hdr_arg, "--data-binary", &body_arg, &url]).unwrap_or_else(|e| format!("curl failed: {}", e.trim()));
     let _ = fs::remove_file(&hdr);
     let (reply, code) = match answer.trim_end().rsplit_once('\n') { Some((b, c)) => (b.to_string(), c.trim().to_string()), None => (String::new(), answer.trim().to_string()) };
-    // #4295 — the stored name is the one the API hands back, not the one sent
-    let session_name = stored_name(&reply).unwrap_or(session_name);
-    // #4215 — a 409 on a per-start name means something real: ask WHOSE row it is.
-    if code == "409" {
-        let get = format!("{}/v1/identity/sessions/{}", ctx.api, session_name);
-        let existing = door(ctx, &["-s", "--max-time", "10", &get]).unwrap_or_default();
-        let mine = format!("principal-{}", role);
-        if existing.contains(&mine) {
-            eprintln!("chorus-principal: session {} already open and owned by {} — reusing it", session_name, mine);
-        } else {
-            let owner = existing.split("ownedBy").nth(1).map(|t| t.chars().take(60).collect::<String>()).unwrap_or_else(|| "unknown".into());
-            eprintln!("chorus-principal: REFUSED — session {} exists and is NOT yours (ownedBy{})", session_name, owner);
-            eprintln!("  nothing was started; starting under someone else's session would log your work as theirs.");
-            return Err(());
-        }
+    let session_name = login_reply_name(&reply).unwrap_or_default();
+    if code == "401" || code == "403" {
+        let why = format!("the door refused this login: HTTP {} {}", code, reply.trim());
+        ctx.spine(&["session.login.refused", role, &format!("reason={}", why)]);
+        return Ok(LoginState::Refused { why, pid: None });
     } else if !(code == "200" || code == "201") {
         // #4215 — degrade, do not block: the identity was verified above; what
         // failed is the bookkeeping write, and #4295 retries it on its own.
@@ -943,14 +929,22 @@ fn do_login(ctx: &Ctx, role: &str) -> Result<LoginState, ()> {
         if lifecycle::is_refusal(&why) { return Ok(LoginState::Refused { why, pid: None }); }
         return Ok(LoginState::Pending { why, pid: None });
     }
-    // #4295 — keep the full row: closing it is a whole-row PUT
-    let mut saved = body.clone();
-    saved["name"] = Value::String(session_name.clone());
-    let _ = write_private(&role_id_dir.join("session.row.json"), &saved.to_string());
+    // #4295 — keep the full row as the door wrote it: closing it is a whole-row PUT
+    let get = format!("{}/v1/identity/sessions/{}", ctx.api, session_name);
+    if let Some(row) = door(ctx, &["-s", "--max-time", "10", &get]).ok()
+        .and_then(|r| serde_json::from_str::<Value>(&r).ok()).and_then(|v| v.get("data").cloned()) {
+        let _ = write_private(&role_id_dir.join("session.row.json"), &row.to_string());
+    }
     ctx.spine(&["session.login", role, &format!("webid={}", login.webid), &format!("jti={}", login.jti), &format!("session={}", session_name), &format!("host_account={}", host_account), &format!("expires_at={}", iso_utc(login.exp))]);
     println!("login: {}  webid {}  jti {}  session {}  recorded yes", role, login.webid, login.jti, session_name);
     close_superseded(ctx, role, channel, &session_name);
     Ok(LoginState::Recorded { session: session_name, pid: None })
+}
+
+/// #4517 AC6 — the row name the door chose, from the logins reply ({"name": …}).
+pub fn login_reply_name(reply: &str) -> Option<String> {
+    let v: Value = serde_json::from_str(reply).ok()?;
+    v.get("name").and_then(|n| n.as_str()).filter(|n| !n.is_empty()).map(String::from)
 }
 
 /// The row name the API stored, from its create reply (data.name).
