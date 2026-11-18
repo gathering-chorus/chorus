@@ -8,7 +8,7 @@
 //! Callers never pass IRIs — fields are literals, edges are (property, kind:name)
 //! pairs the mint resolves. --dry-run prints the Turtle and writes nothing.
 
-use athena_model::{apply, parse_apply_ndjson, add_batch, add_edge, add_edges_keeping, remove_edge_keeping, batch, curl_http, delete_batch, delete_entity, delete_iri, deploy_home, deploy_partitions, mint, post_all, post_rows, seed_multi_at, parse_add_batch_ndjson, parse_ntriples, remove_edge, seed_multi, OwnerTokens, SeedGroup, set_field, to_turtle, write, write_many, FusekiStore, Identity, Store, WriteReq};
+use athena_model::{apply, claim_owner, parse_apply_ndjson, add_batch, add_edge, add_edges_keeping, remove_edge_keeping, batch, curl_http, delete_batch, delete_entity, delete_iri, deploy_home, deploy_partitions, mint, post_all, post_rows, seed_multi_at, parse_add_batch_ndjson, parse_ntriples, remove_edge, seed_multi, OwnerTokens, SeedGroup, set_field, to_turtle, write, write_many, FusekiStore, Identity, Store, WriteReq};
 use std::io::Read;
 use std::process::ExitCode;
 
@@ -837,6 +837,15 @@ fn run() -> Result<String, String> {
             let id = Identity::resolve(&store)?; // #3651
             let subject = set_field(&store, &req.kind, &req.name, &prop, &value, req.graph.as_deref(), &id)?;
             Ok(format!("set: {} {}={}", subject, prop, value))
+        }
+        // #4517 AC3 — claim an ownerless row for the verified caller (its graph's Write holder).
+        Some("claim-owner") => {
+            let (req, _) = parse_req(&args[1..])?;
+            let graph = req.graph.as_deref().ok_or("claim-owner needs --graph")?;
+            let store = FusekiStore::new();
+            let id = Identity::resolve(&store)?;
+            let subject = claim_owner(&store, &req.kind, &req.name, graph, &id)?;
+            Ok(format!("claim-owner: {} ownedBy {}", subject, id.role()))
         }
         Some(verb @ ("link" | "unlink")) => {
             // #4102 — --revision-stdin is this verb's own flag, not an entity arg;
