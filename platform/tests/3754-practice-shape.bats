@@ -25,6 +25,7 @@ setup() {
   # A live Principle + Policy the fixtures can legitimately point at.
   WORLD='chorus:principle-live a chorus:Principle ; rdfs:label "live" ; rdfs:comment "c" .
 chorus:policy-live a chorus:Policy ; rdfs:label "pol" .
+chorus:principal-owner a chorus:Principal .
 '
 }
 
@@ -44,7 +45,7 @@ verdict() {
 # --- the control: this MUST pass, or the shape separates nothing -------------
 
 @test "control: a well-formed v2 practice PASSES" {
-  printf '%s%s%s' "$PREFIX" "$WORLD" 'chorus:practice-ok a chorus:Practice ;
+  printf '%s%s%s' "$PREFIX" "$WORLD" 'chorus:practice-ok a chorus:Practice ; chorus:ownedBy chorus:principal-owner ;
     rdfs:label "Test-Driven Development" ; rdfs:comment "write the test first" ;
     chorus:expresses chorus:principle-live ;
     chorus:operationalizes chorus:policy-live ;
@@ -58,7 +59,7 @@ verdict() {
 @test "negative: expresses -> a retired/dangling IRI FAILS" {
   # the live rot: 11 of 23 targets look exactly like this — an IRI with no
   # Principle behind it. Unconstrained, this validated clean.
-  printf '%s%s%s' "$PREFIX" "$WORLD" 'chorus:practice-dangling a chorus:Practice ;
+  printf '%s%s%s' "$PREFIX" "$WORLD" 'chorus:practice-dangling a chorus:Practice ; chorus:ownedBy chorus:principal-owner ;
     rdfs:label "p" ; rdfs:comment "c" ;
     chorus:expresses chorus:principle-retired-does-not-exist .
 ' > "$TMP/dangling.ttl"
@@ -66,7 +67,7 @@ verdict() {
 }
 
 @test "negative: expresses -> a non-Principle (wrong type) FAILS" {
-  printf '%s%s%s' "$PREFIX" "$WORLD" 'chorus:practice-wrongtype a chorus:Practice ;
+  printf '%s%s%s' "$PREFIX" "$WORLD" 'chorus:practice-wrongtype a chorus:Practice ; chorus:ownedBy chorus:principal-owner ;
     rdfs:label "p" ; rdfs:comment "c" ;
     chorus:expresses chorus:policy-live .
 ' > "$TMP/wrongtype.ttl"
@@ -74,14 +75,14 @@ verdict() {
 }
 
 @test "negative: a practice with NO expresses at all FAILS" {
-  printf '%s%s%s' "$PREFIX" "$WORLD" 'chorus:practice-orphan a chorus:Practice ;
+  printf '%s%s%s' "$PREFIX" "$WORLD" 'chorus:practice-orphan a chorus:Practice ; chorus:ownedBy chorus:principal-owner ;
     rdfs:label "p" ; rdfs:comment "c" .
 ' > "$TMP/orphan.ttl"
   [ "$(verdict "$TMP/orphan.ttl")" = "VIOLATES" ]
 }
 
 @test "negative: operationalizes -> a non-Policy FAILS (optional, but typed)" {
-  printf '%s%s%s' "$PREFIX" "$WORLD" 'chorus:practice-badpolicy a chorus:Practice ;
+  printf '%s%s%s' "$PREFIX" "$WORLD" 'chorus:practice-badpolicy a chorus:Practice ; chorus:ownedBy chorus:principal-owner ;
     rdfs:label "p" ; rdfs:comment "c" ;
     chorus:expresses chorus:principle-live ;
     chorus:operationalizes chorus:principle-live .
@@ -92,7 +93,7 @@ verdict() {
 @test "declared-not-enacted is legal: no enactedBy still PASSES" {
   # Energized Work and Slack are real XP practices we do NOT enact. The model
   # must be able to say so honestly rather than omit them or fake a binding.
-  printf '%s%s%s' "$PREFIX" "$WORLD" 'chorus:practice-declared a chorus:Practice ;
+  printf '%s%s%s' "$PREFIX" "$WORLD" 'chorus:practice-declared a chorus:Practice ; chorus:ownedBy chorus:principal-owner ;
     rdfs:label "Energized Work" ; rdfs:comment "declared, not enacted" ;
     chorus:expresses chorus:principle-live .
 ' > "$TMP/declared.ttl"

@@ -23,21 +23,26 @@
 
 
 chorus:tool-type-sense a chorus:ToolType ;
+    chorus:ownedBy chorus:principal-kade ;  # #5002 AC1: as the live row (5/5 principal-kade, 11-18)
     rdfs:label "Sense" ;
     rdfs:comment "Input capture — eyes, ears, voice." .
 
 chorus:tool-type-interaction a chorus:ToolType ;
+    chorus:ownedBy chorus:principal-kade ;  # #5002 AC1: as the live row (5/5 principal-kade, 11-18)
     rdfs:label "Interaction" ;
     rdfs:comment "Multi-party coordination and alignment." .
 
 chorus:tool-type-memory a chorus:ToolType ;
+    chorus:ownedBy chorus:principal-kade ;  # #5002 AC1: as the live row (5/5 principal-kade, 11-18)
     rdfs:label "Memory" ;
     rdfs:comment "Persistent shared context — indexes, searches, remembers." .
 
 chorus:tool-type-orchestration a chorus:ToolType ;
+    chorus:ownedBy chorus:principal-kade ;  # #5002 AC1: as the live row (5/5 principal-kade, 11-18)
     rdfs:label "Orchestration" ;
     rdfs:comment "Sequences and tracks work across roles." .
 
 chorus:tool-type-analysis a chorus:ToolType ;
+    chorus:ownedBy chorus:principal-kade ;  # #5002 AC1: as the live row (5/5 principal-kade, 11-18)
     rdfs:label "Analysis" ;
     rdfs:comment "Decomposes, examines, produces structured insight." .

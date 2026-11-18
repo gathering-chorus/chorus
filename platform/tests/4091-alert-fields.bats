@@ -16,6 +16,7 @@ setup() {
   PREFIX='@prefix chorus: <https://jeffbridwell.com/chorus#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 chorus:infrastructure a chorus:Domain .
+chorus:principal-owner a chorus:Principal .
 '
   BASE='rdfs:label "Host memory pressure" ; chorus:alertSource "grafana" ; chorus:alertFile "chorus/proving/domains/alerts/host-pressure.yml"'
 }
@@ -30,32 +31,32 @@ verdict() {
 fixture() { printf '%s%s\n' "$PREFIX" "$1" > "$BATS_TEST_TMPDIR/$2.ttl"; echo "$BATS_TEST_TMPDIR/$2.ttl"; }
 
 @test "control: a prod-shaped Alert row with none of the new fields conforms" {
-  f=$(fixture "chorus:a1 a chorus:Alert ; $BASE ; chorus:hasDomain chorus:infrastructure ." a1)
+  f=$(fixture "chorus:a1 a chorus:Alert ; chorus:ownedBy chorus:principal-owner ; $BASE ; chorus:hasDomain chorus:infrastructure ." a1)
   [ "$(verdict "$f")" = CONFORMS ] || return 1
 }
 
 @test "control: an Alert row carrying everything a Grafana rule needs conforms" {
-  f=$(fixture "chorus:a2 a chorus:Alert ; $BASE ; chorus:hasDomain chorus:infrastructure ; chorus:metricQuery \"chorus_host_pressure >= 4\" ; chorus:metricDatasource \"prometheus\" ; chorus:forDuration \"5m\" ; chorus:evalInterval \"1m\" ; chorus:grafanaRuleUid \"host-pressure\" ." a2)
+  f=$(fixture "chorus:a2 a chorus:Alert ; chorus:ownedBy chorus:principal-owner ; $BASE ; chorus:hasDomain chorus:infrastructure ; chorus:metricQuery \"chorus_host_pressure >= 4\" ; chorus:metricDatasource \"prometheus\" ; chorus:forDuration \"5m\" ; chorus:evalInterval \"1m\" ; chorus:grafanaRuleUid \"host-pressure\" ." a2)
   [ "$(verdict "$f")" = CONFORMS ] || return 1
 }
 
 # NEGATIVE PROOF (AC6): a row with no domain edge is refused at the shape.
 @test "an Alert row with no domain is refused" {
-  f=$(fixture "chorus:a3 a chorus:Alert ; $BASE ." a3)
+  f=$(fixture "chorus:a3 a chorus:Alert ; chorus:ownedBy chorus:principal-owner ; $BASE ." a3)
   [ "$(verdict "$f")" = VIOLATES ] || return 1
 }
 
 @test "a forDuration that is not a Grafana duration is refused" {
-  f=$(fixture "chorus:a4 a chorus:Alert ; $BASE ; chorus:hasDomain chorus:infrastructure ; chorus:forDuration \"five minutes\" ." a4)
+  f=$(fixture "chorus:a4 a chorus:Alert ; chorus:ownedBy chorus:principal-owner ; $BASE ; chorus:hasDomain chorus:infrastructure ; chorus:forDuration \"five minutes\" ." a4)
   [ "$(verdict "$f")" = VIOLATES ] || return 1
 }
 
 @test "a grafanaRuleUid Grafana would reject is refused" {
-  f=$(fixture "chorus:a5 a chorus:Alert ; $BASE ; chorus:hasDomain chorus:infrastructure ; chorus:grafanaRuleUid \"has spaces/and a slash\" ." a5)
+  f=$(fixture "chorus:a5 a chorus:Alert ; chorus:ownedBy chorus:principal-owner ; $BASE ; chorus:hasDomain chorus:infrastructure ; chorus:grafanaRuleUid \"has spaces/and a slash\" ." a5)
   [ "$(verdict "$f")" = VIOLATES ] || return 1
 }
 
 @test "two queries on one row are refused" {
-  f=$(fixture "chorus:a6 a chorus:Alert ; $BASE ; chorus:hasDomain chorus:infrastructure ; chorus:metricQuery \"a\" , \"b\" ." a6)
+  f=$(fixture "chorus:a6 a chorus:Alert ; chorus:ownedBy chorus:principal-owner ; $BASE ; chorus:hasDomain chorus:infrastructure ; chorus:metricQuery \"a\" , \"b\" ." a6)
   [ "$(verdict "$f")" = VIOLATES ] || return 1
 }
