@@ -903,6 +903,8 @@ fn do_login(ctx: &Ctx, role: &str) -> Result<LoginState, ()> {
     // answers with the row's name (a repeat of the same login gets the same row).
     let mut body = serde_json::json!({ "channel": channel, "actsAs": format!("role-{}", role) });
     if channel == "pane" { body["hostAccount"] = Value::String(host_account.clone()); }
+    // #4412 — the person present, as person_signed_in found him; the door vouches or labels it
+    person_fields(&mut body, "CHORUS_STARTED_BY");
     let role_id_dir = PathBuf::from(&ctx.identity_dir).join(role);
     let _ = fs::create_dir_all(&role_id_dir);
     let hdr = role_id_dir.join("session.hdr");
@@ -967,7 +969,8 @@ const CLEARING_SIGN_IN: &str = "https://clearing.lightlifeurbangardens.com";
 /// #4412 — Jeff 2026-09-30: "maybe we must bind chorus-principal to a human(s)"
 /// / "the login and logout". A role's session starts or ends only while a
 /// person is signed in: an open browser Session (his Clearing sign-in) owned by
-/// a person principal. Returns that person's bare name. The API not answering
+/// a person principal. Returns `<name>.browser` or `<name>.terminal` (#4517: how the door may
+/// record him — verified, or role-reported). The API not answering
 /// is a refusal too: nobody can be shown to be present.
 fn person_signed_in(ctx: &Ctx) -> Result<String, String> {
     let url = format!("{}/v1/identity/sessions?channel=browser&limit=1000", ctx.api);
@@ -977,12 +980,12 @@ fn person_signed_in(ctx: &Ctx) -> Result<String, String> {
     for who in rows::signed_in_owners(body, &iso_utc(now_ms() as u64 / 1000)) {
         let purl = format!("{}/v1/identity/principals/{}", ctx.api, who);
         let pa = door(ctx, &["-s", "-w", "\n%{http_code}", "--max-time", "5", &purl]).unwrap_or_default();
-        if pa.contains("\"principalKind\":\"person\"") { return Ok(who); }
+        if pa.contains("\"principalKind\":\"person\"") { return Ok(format!("{}.browser", who)); }
     }
     // #4412 — Jeff 2026-10-01: "both use cases are valid". A person typing in
     // their own Mac account is present too: not an agent session, and the OS
     // user is a person principal's hostAccount.
-    if let Some(p) = person_at_terminal(ctx) { return Ok(p); }
+    if let Some(p) = person_at_terminal(ctx) { return Ok(format!("{}.terminal", p)); }
     // #4412 — with CSS down nobody CAN sign in; say that, with its one fix
     if let Some((_, url)) = ctx.services.iter().find(|(n, _)| n == "identity") {
         let code = sh(&ctx.probe, &["-s", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "2", url]).unwrap_or_default();
@@ -1982,6 +1985,13 @@ fn seen_write(ctx: &Ctx, role: &str, conv: &str, flag: &str) -> i32 {
         if !matches!(ctx.read_state(role), LoginState::Recorded { .. }) { return 0; }
     }
     let now = iso_utc(now_ms() as u64 / 1000);
+    // #4367, #4517 (Jeff 11-18 "yes") — a prompt from Jeff: the door records that he attended
+    if flag == "jeff" {
+        if let LoginState::Recorded { session, .. } = ctx.read_state(role) {
+            let (code, reply) = api_call(ctx, role, "POST", &format!("{}/v1/identity/attendances", ctx.api), &serde_json::json!({"session": session, "person": "jeff"}), "attendance");
+            if !ok_code(&code) { ctx.spine(&["session.row.failed", role, "kind=attendance", &format!("row={}", session), &format!("http={}", code), &format!("why={}", rows::refusal_reason(&reply))]); }
+        }
+    }
     // #4948 — an agent session lasts from login to logout: a turn never renews its expiresAt
     // #4517 AC6 (Silas 00:56) — a pane's Session row is no longer touched per turn: liveness
     // takes the newer of lastSeenAt and the stream's last action, and only the door writes Sessions.
@@ -2312,12 +2322,24 @@ fn relogin(_ctx: &Ctx, role: &str) -> i32 {
 }
 
 
+/// #4412 — `<name>.<browser|terminal>` from the env (set by person_signed_in) as the door's
+/// person and personAt; nothing when unset (the roles-up launch has no person).
+fn person_fields(body: &mut Value, var: &str) {
+    let v = env::var(var).unwrap_or_default();
+    if let Some((who, at)) = v.rsplit_once('.') {
+        if !who.is_empty() && (at == "browser" || at == "terminal") {
+            body["person"] = Value::String(who.to_string());
+            body["personAt"] = Value::String(at.to_string());
+        }
+    }
+}
+
 /// Close the Session row (#4944): a PATCH of sessionState, endedAt and, when set,
 /// endedBy (#4412: who ended it). The row is never read back and sent whole; a refusal
 /// is named on the spine by patch_row.
 fn close_row(ctx: &Ctx, role: &str, session: &str) -> Result<(), String> {
     // #4517 AC6 — the owner asks the door to end its session; the door stamps how it ended
-    let (code, reply) = api_call(ctx, role, "POST", &format!("{}/v1/identity/logouts", ctx.api), &serde_json::json!({"session": session}), "logout");
+    let (code, reply) = api_call(ctx, role, "POST", &format!("{}/v1/identity/logouts", ctx.api), &{ let mut b = serde_json::json!({"session": session}); person_fields(&mut b, "CHORUS_ENDED_BY"); b }, "logout");
     if ok_code(&code) { return Ok(()); }
     ctx.spine(&["session.row.failed", role, "kind=session", &format!("row={}", session), &format!("http={}", code), &format!("why={}", rows::refusal_reason(&reply))]);
     Err(format!("the door refused the logout: HTTP {}", code))

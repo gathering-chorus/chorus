@@ -146,7 +146,7 @@ chorus:lastDeliveredAt a owl:DatatypeProperty ;
 
 chorus:attendedBy a owl:ObjectProperty ;
     rdfs:label "attended by" ;
-    rdfs:comment "The human principal who has spoken to this session: a prompt from him, not a nudge, arrived in it. Written by the seen hook. #4339." ;
+    rdfs:comment "The human principal who has spoken to this session: a prompt from him, not a nudge, arrived in it. Reported by the role's seen hook and written by the door (#4339, #4517): role-reported, the door cannot see who typed." ;
     rdfs:domain chorus:Session ;
     rdfs:range chorus:Principal .
 
@@ -187,13 +187,25 @@ chorus:channel a owl:DatatypeProperty ;
 
 chorus:startedBy a owl:ObjectProperty ;
     rdfs:label "started by" ;
-    rdfs:comment "The person whose open session was live when this session was logged in (chorus-principal login). #4412." ;
+    rdfs:comment "The person whose open browser Session was live when this session was logged in, as the door read it from its own rows (#4412, #4517). It proves he was present, not that he started this pane himself." ;
     rdfs:domain chorus:Session ;
     rdfs:range chorus:Principal .
 
 chorus:endedBy a owl:ObjectProperty ;
     rdfs:label "ended by" ;
-    rdfs:comment "The person whose open session was live when this session was logged out (chorus-principal logout). #4412." ;
+    rdfs:comment "The person whose open browser Session was live when this session was logged out, as the door read it from its own rows (#4412, #4517). It proves he was present, not that he ended it himself." ;
+    rdfs:domain chorus:Session ;
+    rdfs:range chorus:Principal .
+
+chorus:startReportedBy a owl:ObjectProperty ;
+    rdfs:label "start reported by" ;
+    rdfs:comment "The person the role reported at his own terminal when this session was logged in (not inside an agent session, his Mac account). Role-reported: the door cannot verify it, so it is never startedBy (#4412, Silas 2026-11-18)." ;
+    rdfs:domain chorus:Session ;
+    rdfs:range chorus:Principal .
+
+chorus:endReportedBy a owl:ObjectProperty ;
+    rdfs:label "end reported by" ;
+    rdfs:comment "The person the role reported at his own terminal when this session was logged out. Role-reported, never endedBy (#4412, Silas 2026-11-18)." ;
     rdfs:domain chorus:Session ;
     rdfs:range chorus:Principal .
 
@@ -219,6 +231,8 @@ chorus:SessionShape
     sh:property chorus:SessionShape-channel ;
     sh:property chorus:SessionShape-startedBy ;
     sh:property chorus:SessionShape-endedBy ;
+    sh:property chorus:SessionShape-startReportedBy ;
+    sh:property chorus:SessionShape-endReportedBy ;
     sh:property chorus:SessionShape-binds ;
     sh:sparql chorus:OpenSessionActsAsARole , chorus:OpenSessionHasOneLiveRun , chorus:AttendedNeedsATime .
 
@@ -238,6 +252,10 @@ chorus:SessionShape-startedBy a sh:PropertyShape ;
     sh:path chorus:startedBy ; sh:maxCount 1 ; sh:class chorus:Principal .
 chorus:SessionShape-endedBy a sh:PropertyShape ;
     sh:path chorus:endedBy ; sh:maxCount 1 ; sh:class chorus:Principal .
+chorus:SessionShape-startReportedBy a sh:PropertyShape ;
+    sh:path chorus:startReportedBy ; sh:maxCount 1 ; sh:class chorus:Principal .
+chorus:SessionShape-endReportedBy a sh:PropertyShape ;
+    sh:path chorus:endReportedBy ; sh:maxCount 1 ; sh:class chorus:Principal .
 chorus:SessionShape-binds a sh:PropertyShape ;
     sh:path chorus:binds ; sh:class chorus:Session .
 

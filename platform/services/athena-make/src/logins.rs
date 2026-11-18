@@ -5,7 +5,7 @@
 //! normal create path with the caller's own login, so the DAL's owner rule holds and
 //! `startedBy` is the door. Store reads come in as functions so the route is tested
 //! without a store; `serve` passes the real ones.
-use identity_login::{plan_login, Outcome, PrincipalFacts, VerifiedLogin};
+use identity_login::{person_stamp, plan_login, Moment, Outcome, PrincipalFacts, VerifiedLogin};
 use serde_json::Value;
 
 pub const LOGINS_PATH: &str = "/identity/logins";
@@ -29,6 +29,7 @@ pub fn handle_login(
     create: impl Fn(&str) -> (u16, String),
     supersede: impl Fn(&str),
     touch: impl Fn(&str),
+    people: impl Fn() -> Result<People, String>,
     now_iso: &str,
 ) -> (u16, String) {
     let parsed: Value = match serde_json::from_str(if body.trim().is_empty() { "{}" } else { body }) {
@@ -54,7 +55,9 @@ pub fn handle_login(
         }
     };
     let login = VerifiedLogin { principal: caller.principal, token_id: caller.jti, expires_at: caller.expires_at };
-    match plan_login(&login, &PrincipalFacts { host_account: host.as_deref() }, &parsed, |r| r == acts_as && served, found.as_deref(), now_iso) {
+    let present = match read_people(&parsed, &people) { Ok(p) => p, Err(r) => return r };
+    let (persons, here) = present.refs();
+    match plan_login(&login, &PrincipalFacts { host_account: host.as_deref(), persons: &persons, present: &here }, &parsed, |r| r == acts_as && served, found.as_deref(), now_iso) {
         Ok(Outcome::Existing(name)) => {
             // #4517 AC6 (Silas 00:56) — a browser sign-in stays live by its lastSeenAt: its
             // repeat login asks the door to touch it (at most once per window, see touch_due)
@@ -126,6 +129,8 @@ mod tests {
 }
 
 pub const LOGOUTS_PATH: &str = "/identity/logouts";
+/// #4367 — a role reports that a person spoke in its session; the door writes it.
+pub const ATTENDANCES_PATH: &str = "/identity/attendances";
 
 /// What the door reads about a Session row before ending it.
 pub struct SessionFacts {
@@ -145,11 +150,12 @@ pub fn handle_logout(
     body: &str,
     read: impl Fn(&str) -> Result<Option<SessionFacts>, String>,
     end: impl Fn(&str, &str) -> (u16, String),
+    people: impl Fn() -> Result<People, String>,
     now_iso: &str,
 ) -> (u16, String) {
     let v: Value = match serde_json::from_str(body) { Ok(v) => v, Err(e) => return (422, error("validation", &format!("the logout body is not JSON: {e}"))) };
     let Some(obj) = v.as_object() else { return (422, error("validation", "the logout body must be a JSON object")) };
-    if let Some(k) = obj.keys().find(|k| k.as_str() != "session") {
+    if let Some(k) = obj.keys().find(|k| !["session", "person", "personAt"].contains(&k.as_str())) {
         return (422, error("validation", &format!("'{k}' is not the caller's to say; the door stamps how a session ends")));
     }
     let name = obj.get("session").and_then(Value::as_str).unwrap_or("");
@@ -169,7 +175,17 @@ pub fn handle_logout(
     }
     // an expired row ends AT its expiresAt, its true end, never later (#4966, Silas 01:39)
     let ended_at = if !facts.expires_at.is_empty() && facts.expires_at.as_str() < now_iso { facts.expires_at.as_str() } else { now_iso };
-    let patch = format!("{{\"endedAt\":\"{ended_at}\",\"endedBy\":\"door\",\"sessionState\":\"closed\"}}");
+    // #4412 — the person present at the end, as the door can vouch for him (never "door")
+    let present = match read_people(&v, &people) { Ok(p) => p, Err(r) => return r };
+    let (persons, here) = present.refs();
+    let facts_p = PrincipalFacts { host_account: None, persons: &persons, present: &here };
+    let mut patch = serde_json::json!({"endedAt": ended_at, "sessionState": "closed"});
+    match person_stamp(obj, &facts_p, Moment::End) {
+        Ok(Some((field, who))) => { patch[field] = Value::String(who); }
+        Ok(None) => {}
+        Err((c, m)) => return (c, error(if c == 403 { "authz" } else { "validation" }, &m)),
+    }
+    let patch = patch.to_string();
     match end(name, &patch) {
         (c, _) if (200..300).contains(&c) => (200, format!("{{ \"session\": \"{}\", \"ended\": true }}", crate::json_escape(name))),
         other => other,
@@ -305,4 +321,84 @@ pub fn refusal_event(code: u16, principal: &str, body: &str) -> Option<Vec<Strin
         format!("reason={}", why.replace('\n', " ")),
         "by=door".into(),
     ])
+}
+
+
+/// #4412, #4517 — the person principals and those of them with an open, unexpired browser
+/// Session, from the door's own rows. Read only when a login or logout names a person.
+#[derive(Default, Debug, Clone)]
+pub struct People { pub persons: Vec<String>, pub present: Vec<String> }
+
+impl People {
+    fn refs(&self) -> (Vec<&str>, Vec<&str>) {
+        (self.persons.iter().map(String::as_str).collect(), self.present.iter().map(String::as_str).collect())
+    }
+}
+
+fn read_people(body: &Value, people: &impl Fn() -> Result<People, String>) -> Result<People, (u16, String)> {
+    if body.get("person").is_none() && body.get("personAt").is_none() { return Ok(People::default()); }
+    people().map_err(|e| (503, error("unavailable", &format!("could not read who is signed in: {e}"))))
+}
+
+/// The door's read: person principals, and those with an open browser Session not yet expired.
+pub fn people_present() -> Result<People, String> {
+    let now = iso_from_secs(crate::unix_now_secs());
+    let persons = crate::select_v(&crate::sparql_json(&format!(
+        "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH ?g {{ ?p a chorus:Principal ; chorus:principalKind ?k . FILTER(STR(?k) = \"person\") BIND(REPLACE(STR(?p), '.*#principal-', '') AS ?v) }} }}",
+        ns = crate::NS))?);
+    let present = crate::select_v(&crate::sparql_json(&people_present_query(&now))?);
+    Ok(People { persons, present })
+}
+
+/// The query for who is signed in: an open browser Session (no endedAt) whose expiresAt is
+/// later than now, owned by a person principal.
+pub fn people_present_query(now_iso: &str) -> String {
+    format!("PREFIX chorus: <{ns}> SELECT DISTINCT ?v WHERE {{ GRAPH <urn:chorus:domains:identity> {{ ?s a chorus:Session ; chorus:channel ?c ; chorus:ownedBy ?p ; chorus:expiresAt ?x . FILTER(STR(?c) = \"browser\" && STR(?x) > \"{now}\") FILTER NOT EXISTS {{ ?s chorus:endedAt ?e }} }} GRAPH ?g {{ ?p chorus:principalKind ?k . FILTER(STR(?k) = \"person\") }} BIND(REPLACE(STR(?p), '.*#principal-', '') AS ?v) }}",
+        ns = crate::NS, now = now_iso.replace('"', ""))
+}
+
+/// #4367, #4517 (Jeff 11-18 "yes") — a role reports that a person spoke in its own open
+/// session: body `{"session":<name>,"person":<name>}`. The door writes attendedBy and
+/// lastAttendedAt on that row. Role-reported (the door cannot see who typed), so it is only
+/// ever the caller's own open row and only ever a person principal.
+pub fn handle_attendance(
+    principal: &str,
+    body: &str,
+    read: impl Fn(&str) -> Result<Option<SessionFacts>, String>,
+    patch_row: impl Fn(&str, &str) -> (u16, String),
+    people: impl Fn() -> Result<People, String>,
+    now_iso: &str,
+) -> (u16, String) {
+    let v: Value = match serde_json::from_str(body) { Ok(v) => v, Err(e) => return (422, error("validation", &format!("the attendance body is not JSON: {e}"))) };
+    let Some(obj) = v.as_object() else { return (422, error("validation", "the attendance body must be a JSON object")) };
+    if let Some(k) = obj.keys().find(|k| !["session", "person"].contains(&k.as_str())) {
+        return (422, error("validation", &format!("'{k}' is not the caller's to say; the door stamps when")));
+    }
+    let name = obj.get("session").and_then(Value::as_str).unwrap_or("");
+    if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+        return (422, error("validation", "an attendance names one session by its row name"));
+    }
+    let person = obj.get("person").and_then(Value::as_str).unwrap_or("");
+    let person = person.strip_prefix("principal-").unwrap_or(person);
+    match people() {
+        Ok(p) if p.persons.iter().any(|x| x == person) => {}
+        Ok(_) => return (403, error("authz", &format!("'{person}' is not a person principal"))),
+        Err(e) => return (503, error("unavailable", &format!("could not read the person principals: {e}"))),
+    }
+    let facts = match read(name) {
+        Ok(Some(f)) => f,
+        Ok(None) => return (404, error("not-found", &format!("no Session row '{name}'"))),
+        Err(e) => return (503, error("unavailable", &format!("could not read Session '{name}': {e}"))),
+    };
+    if facts.owner.rsplit('#').next().unwrap_or("") != format!("principal-{principal}") {
+        return (403, error("authz", &format!("{principal} does not own session '{name}'")));
+    }
+    if facts.ended {
+        return (409, error("conflict", &format!("session '{name}' has ended; nobody attends it")));
+    }
+    let patch = serde_json::json!({"attendedBy": person, "lastAttendedAt": now_iso}).to_string();
+    match patch_row(name, &patch) {
+        (c, _) if (200..300).contains(&c) => (200, format!("{{ \"session\": \"{}\", \"attended\": true }}", crate::json_escape(name))),
+        other => other,
+    }
 }

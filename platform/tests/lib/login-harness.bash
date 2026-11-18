@@ -125,13 +125,23 @@ for f in sorted(glob.glob(os.path.join(sys.argv[1],"bodies","*-POST-identity_ses
     except Exception: continue
     if sys.argv[2] in (b.get("name"), "session-"+str(b.get("name"))): print(json.dumps({"data": dict(b, name=sys.argv[2])})); sys.exit(0)
 sys.exit(1)' "$T" "\$sn" && exit 0 ;; esac; fi   # no door-written row: the case's own planted row answers, below
+# #4367 — an attendance asks the door, which writes attendedBy + lastAttendedAt on the row; kept as that patch
+case "\$url" in */v1/identity/attendances) lc=\$(cat "$T/curl.status.identity_attendances" 2>/dev/null || echo 200)
+  if [ "\$lc" != 200 ]; then cat "$T/curl.reply" 2>/dev/null || printf '{"error":"authz","message":"refused"}'; printf '\n%s\n' "\$lc"; exit 0; fi
+  n=\$(ls "$T/bodies" | wc -l | tr -d ' ')
+  python3 -c 'import json,sys,datetime
+b=json.load(open(sys.argv[1])); sn=b["session"]; now=datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+json.dump({"attendedBy":b["person"],"lastAttendedAt":now}, open(sys.argv[2]+"_"+sn+".json","w"), separators=(",",":"))
+print(json.dumps({"session": sn, "attended": True}))' "\$b" "$T/bodies/\$(printf %03d \$n)-PATCH-identity_sessions"
+  printf '200\n'; exit 0 ;; esac
 # #4517 AC6 — a logout asks the door, which stamps how the session ended; kept as the close it wrote
 case "\$url" in */v1/identity/logouts) lc=\$(cat "$T/curl.status.identity_logouts" 2>/dev/null || echo 200)
   if [ "\$lc" != 200 ]; then cat "$T/curl.reply.identity_logouts" 2>/dev/null || printf '{"error":"authz","message":"refused"}'; printf '\n%s\n' "\$lc"; exit 0; fi
   n=\$(ls "$T/bodies" | wc -l | tr -d ' ')
   python3 -c 'import json,sys
-b=json.load(open(sys.argv[1])); sn=b["session"]
-json.dump({"endedAt":"2026-11-18T06:00:00Z","endedBy":"door","sessionState":"closed"}, open(sys.argv[2]+"_"+sn+".json","w"), separators=(",",":"))
+b=json.load(open(sys.argv[1])); sn=b["session"]; end={"endedAt":"2026-11-18T06:00:00Z","sessionState":"closed"}
+if b.get("person"): end["endedBy" if b.get("personAt")=="browser" else "endReportedBy"]=b["person"]
+json.dump(end, open(sys.argv[2]+"_"+sn+".json","w"), separators=(",",":"))
 print(json.dumps({"session": sn, "ended": True}))' "\$b" "$T/bodies/\$(printf %03d \$n)-PATCH-identity_sessions"
   printf '200\n'; exit 0 ;; esac
 # #4517 AC6 — a login asks the door, which writes the Session row itself (owner = the login,
@@ -144,7 +154,9 @@ b=json.load(open(sys.argv[1])); role=b.get("actsAs","role-x").removeprefix("role
 nm=role+"-door"+sys.argv[3]   # each new login gets its own row, as the door names it per login id
 # as identity-login plans it: actsAs bare, startedBy the door, startedAt now; compact JSON, as the door writes it
 import datetime; now=datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-row=dict(b, name=nm, actsAs=role, ownedBy="principal-"+role, startedBy="door", startedAt=now, sessionState="open")
+row={k:v for k,v in b.items() if k not in ("person","personAt")}
+row.update(name=nm, actsAs=role, ownedBy="principal-"+role, startedAt=now, sessionState="open")
+if b.get("person"): row["startedBy" if b.get("personAt")=="browser" else "startReportedBy"]=b["person"]   # 4412: the door vouches (browser) or labels (terminal)
 json.dump(row, open(sys.argv[2],"w"), separators=(",",":")); print(json.dumps({"name": "session-"+nm, "created": True}))' "\$b" "$T/bodies/\$(printf %03d \$n)-POST-identity_sessions.json" "\$n"
   printf '201\n'; exit 0 ;; esac
 if [ -n "\$m" ]; then

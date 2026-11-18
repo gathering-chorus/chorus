@@ -7040,7 +7040,7 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                                         let host = logins::principal_host_account(&who).ok().flatten().unwrap_or_default();
                                         for old in logins::older_open_panes(&who, &host, keep).unwrap_or_default() {
                                             let (c, _) = logins::handle_logout(&who, &format!("{{\"session\":\"{}\"}}", old), logins::session_facts,
-                                                |n, p| with_write_lock(|| handle_write_scoped("PATCH", &format!("/sessions/{}", n), p, &own, &who, token, "", &claims.scope)), &now_iso);
+                                                |n, p| with_write_lock(|| handle_write_scoped("PATCH", &format!("/sessions/{}", n), p, &own, &who, token, "", &claims.scope)), logins::people_present, &now_iso);
                                             emit_write_spine(&who, "supersede", &old, "", if c == 200 { "ok" } else { "failed" });
                                         }
                                     };
@@ -7058,7 +7058,7 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                                     } else {
                                     logins::handle_login(&caller, body_str, logins::principal_host_account,
                                         |role| teammate_serves(&who, role), logins::session_for_login,
-                                        |row| with_write_lock(|| handle_create(row, table, &who, token, "")), supersede, touch, &now_iso)
+                                        |row| with_write_lock(|| handle_create(row, table, &who, token, "")), supersede, touch, logins::people_present, &now_iso)
                                     }
                                 }
                             }
@@ -7074,7 +7074,9 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                     return;
                 }
                 // #4517 AC6 — the owner ends its own session; the door stamps how.
-                if method == "POST" && (path == logins::LOGOUTS_PATH || path.strip_prefix("/v1") == Some(logins::LOGOUTS_PATH)) {
+                // #4517 — a logout, or (#4367) an attendance: both patch the caller's own Session row
+                let own_session_path = |p: &str| path == p || path.strip_prefix("/v1") == Some(p);
+                if method == "POST" && (own_session_path(logins::LOGOUTS_PATH) || own_session_path(logins::ATTENDANCES_PATH)) {
                     let now_secs = unix_now_secs();
                     let auth_hdr = header("authorization");
                     let token = bearer_token(&auth_hdr);
@@ -7089,9 +7091,13 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                                     // the door's own patch: the "door" write rule is for sessions, not for the door
                                     let mut own = table.clone();
                                     own.write_authority = String::new();
-                                    logins::handle_logout(&who, body_str, logins::session_facts,
-                                        |name, patch| with_write_lock(|| handle_write_scoped("PATCH", &format!("/sessions/{}", name), patch, &own, &who, token, "", &claims.scope)),
-                                        &logins::iso_from_secs(now_secs))
+                                    let patch_own = |name: &str, patch: &str| with_write_lock(|| handle_write_scoped("PATCH", &format!("/sessions/{}", name), patch, &own, &who, token, "", &claims.scope));
+                                    let now_iso = logins::iso_from_secs(now_secs);
+                                    if own_session_path(logins::ATTENDANCES_PATH) {
+                                        logins::handle_attendance(&who, body_str, logins::session_facts, patch_own, logins::people_present, &now_iso)
+                                    } else {
+                                        logins::handle_logout(&who, body_str, logins::session_facts, patch_own, logins::people_present, &now_iso)
+                                    }
                                 }
                             }
                         }

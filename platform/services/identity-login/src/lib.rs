@@ -11,13 +11,35 @@
 //!   hostAccount  must equal the Principal row's hostAccount (pane); browser carries none
 //!   actsAs       only a Role the caller's Teammate serves
 //!   tokenId      one row per login: a repeat returns the same row
+//!   startedBy    the person present, only when the door finds his open browser Session
+//!                (#4412); a person at his own terminal is startReportedBy (role-reported)
 
 use serde_json::{json, Map, Value};
 
-/// The principal the door names in `startedBy`: a link to chorus:principal-door, written as
-/// the bare name, since the DAL mints the `principal-` prefix and refuses a name that already
-/// carries it (double-prefix, ADR-040 Rule 0).
-pub const DOOR_PRINCIPAL: &str = "door";
+/// #4412, #4517 (Jeff 11-18 "yes", Silas 06:22) — who was present at a login or logout.
+/// `browser`: the door found his open, unexpired browser Session in its own rows, so it
+/// stamps startedBy/endedBy (he was present; not proof he typed the command). `terminal`: the
+/// role reports him at his own Mac account; the door cannot verify that, so it is labelled
+/// startReportedBy/endReportedBy, never startedBy/endedBy. Links are bare names (the DAL
+/// mints `principal-`, ADR-040 Rule 0).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Moment { Start, End }
+
+pub fn person_stamp(obj: &Map<String, Value>, facts: &PrincipalFacts, moment: Moment) -> Result<Option<(&'static str, String)>, Refusal> {
+    let person = obj.get("person").and_then(Value::as_str).unwrap_or("");
+    let at = obj.get("personAt").and_then(Value::as_str).unwrap_or("");
+    if person.is_empty() && at.is_empty() { return Ok(None); }
+    let person = person.strip_prefix("principal-").unwrap_or(person);
+    if person.is_empty() { return Err((422, "personAt needs a person".into())); }
+    if !facts.persons.contains(&person) { return Err((403, format!("'{person}' is not a person principal"))); }
+    let (verified, reported) = match moment { Moment::Start => ("startedBy", "startReportedBy"), Moment::End => ("endedBy", "endReportedBy") };
+    match at {
+        "browser" if facts.present.contains(&person) => Ok(Some((verified, person.to_string()))),
+        "browser" => Err((403, format!("{person} has no open browser Session: sign in to the Clearing, or say personAt terminal"))),
+        "terminal" => Ok(Some((reported, person.to_string()))),
+        other => Err((422, format!("personAt must be browser or terminal, not '{other}'"))),
+    }
+}
 
 /// A login the door has already verified (signature, issuer, expiry).
 pub struct VerifiedLogin<'a> {
@@ -40,6 +62,10 @@ pub fn session_name(principal: &str, token_id: &str) -> String {
 /// What the door holds about that principal, read from its Principal row.
 pub struct PrincipalFacts<'a> {
     pub host_account: Option<&'a str>,
+    /// every person principal's bare name
+    pub persons: &'a [&'a str],
+    /// the persons with an open, unexpired browser Session, read by the door from its own rows
+    pub present: &'a [&'a str],
 }
 
 #[derive(Debug, PartialEq)]
@@ -53,7 +79,7 @@ pub enum Outcome {
 /// A refusal: HTTP status and the reason in words.
 pub type Refusal = (u16, String);
 
-const ALLOWED: [&str; 3] = ["channel", "hostAccount", "actsAs"];
+const ALLOWED: [&str; 5] = ["channel", "hostAccount", "actsAs", "person", "personAt"];
 
 /// What the door read about the browser row a renewal names.
 pub struct RenewedRow<'a> {
@@ -126,7 +152,7 @@ pub fn plan_login(
     let name = session_name(login.principal, login.token_id);
     row.insert("channel".into(), json!(channel));
     // no ownedBy: the door's create stamps the verified caller as owner and ignores any in the body
-    row.insert("startedBy".into(), json!(DOOR_PRINCIPAL));
+    if let Some((field, who)) = person_stamp(obj, facts, Moment::Start)? { row.insert(field.into(), json!(who)); }
     row.insert("startedAt".into(), json!(now_iso));
     row.insert("tokenId".into(), json!(login.token_id));
     row.insert("sessionState".into(), json!("open"));
@@ -167,7 +193,7 @@ mod tests {
 
     const NOW: &str = "2026-11-18T05:20:00Z";
     fn kade() -> VerifiedLogin<'static> { VerifiedLogin { principal: "kade", token_id: "t1", expires_at: "2026-11-18T05:30:00Z" } }
-    fn facts() -> PrincipalFacts<'static> { PrincipalFacts { host_account: Some("chorus-kade") } }
+    fn facts() -> PrincipalFacts<'static> { PrincipalFacts { host_account: Some("chorus-kade"), persons: &["jeff"], present: &["jeff"] } }
     fn serves_kade(r: &str) -> bool { r == "role-kade" }
     fn plan(body: Value) -> Result<Outcome, Refusal> { plan_login(&kade(), &facts(), &body, serves_kade, None, NOW) }
 
@@ -180,7 +206,7 @@ mod tests {
         assert_eq!(row["expiresAt"], "2026-11-18T05:30:00Z");
         assert!(row.get("ownedBy").is_none(), "the door's create stamps the owner from the login");
         assert_eq!(row["actsAs"], "kade", "a bare role name: the DAL mints role-");
-        assert_eq!(row["startedBy"], DOOR_PRINCIPAL);
+        assert!(row.get("startedBy").is_none(), "nobody named present: no startedBy");
         assert_eq!(row["tokenId"], "t1");
         assert_eq!(row["hostAccount"], "chorus-kade");
     }
@@ -197,7 +223,7 @@ mod tests {
     fn negative_proof_a_wrong_or_missing_host_account_is_refused() {
         assert_eq!(plan(json!({"channel":"pane","hostAccount":"chorus-silas"})).unwrap_err().0, 403);
         assert_eq!(plan(json!({"channel":"pane"})).unwrap_err().0, 403);
-        let none = PrincipalFacts { host_account: None };
+        let none = PrincipalFacts { host_account: None, persons: &["jeff"], present: &["jeff"] };
         let r = plan_login(&kade(), &none, &json!({"channel":"pane","hostAccount":""}), serves_kade, None, NOW);
         assert_eq!(r.unwrap_err().0, 403, "a principal with no hostAccount cannot open a pane session");
     }
@@ -237,7 +263,7 @@ mod tests {
     #[test]
     fn a_browser_login_takes_its_host_account_from_the_principal_and_is_owned_by_the_person() {
         let jeff = VerifiedLogin { principal: "jeff", token_id: "b7", expires_at: "x" };
-        let his = PrincipalFacts { host_account: Some("jeffbridwell") };
+        let his = PrincipalFacts { host_account: Some("jeffbridwell"), persons: &["jeff"], present: &["jeff"] };
         let r = plan_login(&jeff, &his, &json!({"channel":"browser"}), |_| false, None, NOW);
         let Outcome::Create(_, row) = r.unwrap() else { panic!("expected a row") };
         assert!(row.get("ownedBy").is_none());
@@ -245,7 +271,7 @@ mod tests {
         let bad = plan_login(&jeff, &his, &json!({"channel":"browser","hostAccount":"x"}), |_| false, None, NOW);
         assert_eq!(bad.unwrap_err().0, 422, "the body never names the account");
         // NEGATIVE PROOF: no hostAccount on his Principal, no row the shape would refuse
-        let none = plan_login(&jeff, &PrincipalFacts { host_account: None }, &json!({"channel":"browser"}), |_| false, None, NOW);
+        let none = plan_login(&jeff, &PrincipalFacts { host_account: None, persons: &["jeff"], present: &["jeff"] }, &json!({"channel":"browser"}), |_| false, None, NOW);
         assert_eq!(none.unwrap_err().0, 403);
     }
 
