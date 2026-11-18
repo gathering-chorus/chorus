@@ -877,6 +877,11 @@ fn do_login(ctx: &Ctx, role: &str) -> Result<LoginState, ()> {
                 eprintln!("  nothing was started; starting on another principal's credential would file this work as theirs.");
                 return Err(());
             }
+            // #4997 — a refused credential is a refusal, not a retry: it reads "refused"
+            _ if lifecycle::is_refusal(&why) => {
+                ctx.spine(&["session.login.refused", role, &format!("reason={}", why)]);
+                return Ok(LoginState::Refused { why, pid: None });
+            }
             _ => {
                 ctx.spine(&["session.login.degraded", role, &format!("reason={}", why)]);
                 return Ok(LoginState::Pending { why, pid: None });
@@ -932,7 +937,9 @@ fn do_login(ctx: &Ctx, role: &str) -> Result<LoginState, ()> {
         // #4215 — degrade, do not block: the identity was verified above; what
         // failed is the bookkeeping write, and #4295 retries it on its own.
         ctx.spine(&["session.login.degraded", role, &format!("http={}", code), &format!("session={}", session_name)]);
-        return Ok(LoginState::Pending { why: format!("the identity API answered HTTP {}", code), pid: None });
+        let why = format!("the identity API answered HTTP {}", code);
+        if lifecycle::is_refusal(&why) { return Ok(LoginState::Refused { why, pid: None }); }
+        return Ok(LoginState::Pending { why, pid: None });
     }
     // #4295 — keep the full row: closing it is a whole-row PUT
     let mut saved = body.clone();
@@ -1061,7 +1068,7 @@ fn pending_line(role: &str, why: &str) -> String {
 
 
 fn came_of(st: &LoginState) -> Came {
-    match st { LoginState::Recorded { .. } => Came::LoggedIn, LoginState::Pending { why, .. } => Came::Pending(why.clone()), _ => Came::Pending("no login".into()) }
+    match st { LoginState::Recorded { .. } => Came::LoggedIn, LoginState::Pending { why, .. } | LoginState::Refused { why, .. } => Came::Pending(why.clone()), _ => Came::Pending("no login".into()) }
 }
 
 fn attach_to(ctx: &Ctx, role: &str) {
@@ -2439,6 +2446,15 @@ fn off(ctx: &Ctx, role: &str, from_exit: bool) -> i32 {
     0
 }
 
+/// #4997 — is the role's Session row open in the store? Read from the open-sessions listing
+/// (`endedAt.absent=true`): present = open, absent = closed; an unreadable listing is None.
+pub fn session_row_open(listing: &str, name: Option<&str>) -> Option<bool> {
+    let v: Value = serde_json::from_str(listing).ok()?;
+    let rows = v.get("data")?.as_array()?;
+    let name = name?;
+    Some(rows.iter().any(|r| r.get("name").and_then(|n| n.as_str()) == Some(name)))
+}
+
 fn status(ctx: &Ctx) -> i32 {
     let listing = door(ctx, &["-s", "--max-time", "5", &format!("{}/v1/identity/sessions?endedAt.absent=true&limit=5000", ctx.api)]).unwrap_or_default(); // #4838
     let presences = door(ctx, &["-s", "--max-time", "5", &format!("{}/v1/identity/presences?limit=5000", ctx.api)]).unwrap_or_default();
@@ -2447,7 +2463,9 @@ fn status(ctx: &Ctx) -> i32 {
         let live = live_entries(&ctx.sessions_dir, role, &ctx.ps);
         let pid = live.first().map(|l| l.pid);
         let answering = pid.is_some() && ctx.answered(role);
-        println!("{}", lifecycle::status_line(role, pid, &ctx.read_state(role), answering));
+        // #4997 AC1 — "logged in" also needs the role's Session row open in the store, read here
+        let session_open = session_row_open(&listing, read_row(ctx, role, "session").map(|v| row_name(&v)).as_deref());
+        println!("{}", lifecycle::status_line(role, pid, &ctx.read_state(role), answering, session_open));
         // #4328 — and what the store says, which is what everyone else reads
         if let Some(line) = store_line(&listing, read_row(ctx, role, "session").map(|v| row_name(&v)).as_deref()) { println!("       {}", line); }
         // #4339 — who is in the room, as the store has it
