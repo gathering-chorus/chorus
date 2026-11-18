@@ -25,6 +25,8 @@ setup() {
 # failed assert mid-test cannot leave it in the live store.
 teardown() {
   [ -f "$BATS_TEST_TMPDIR/created" ] || return 0
+  # local: a test calls teardown itself, and reading into its $name emptied it (#5002, Silas 12:50)
+  local name
   while read -r name; do
     [ -n "$name" ] && curl -s --max-time 10 -X DELETE -H "@$HDR" "$API/v1/identity/sessionruns/$name" -o /dev/null
   done < "$BATS_TEST_TMPDIR/created"
@@ -80,16 +82,10 @@ silas_session() {
   test "$output" = "201"
   teardown
   : > "$BATS_TEST_TMPDIR/created"
-  # NEGATIVE PROOF that the read can see a row: it saw this one before teardown ran.
-  # The door's read can lag a delete by about a second (Silas 12:47, listed as a defect):
-  # wait up to 5s for the 404, never longer, and a row still there after that is red.
-  code=""
-  for _ in 1 2 3 4 5 6 7 8 9 10; do
-    code="$(curl -s --max-time 10 -o /dev/null -w '%{http_code}' "$API/v1/identity/sessionruns/$name")"
-    [ "$code" = "404" ] && break
-    sleep 0.5
-  done
-  test "$code" = "404"
+  # NEGATIVE PROOF that the read can see a row: it saw this one before teardown ran
+  [ -n "$name" ] || { echo "the row name was lost before the check"; return 1; }
+  run curl -s --max-time 10 -o /dev/null -w '%{http_code}' "$API/v1/identity/sessionruns/$name"
+  test "$output" = "404"
 }
 
 @test "#4220 the door names the graph the MODEL declares, not a built-in" {
