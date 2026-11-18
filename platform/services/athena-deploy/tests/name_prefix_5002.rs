@@ -6,7 +6,7 @@
 //! such a row, never a real row with the prefix mid-name, never the ontology, security or
 //! provenance rows themselves, and refuses above either ceiling or with inbound edges.
 
-use athena_deploy::{ceiling_refusal, name_prefix_inbound_query, name_prefix_ok, name_prefix_retirement_sparql, name_prefix_window, parse_retirement, retirement_action, run_retirement, RetireAction, StoreCtx};
+use athena_deploy::{ceiling_refusal, name_prefix_inbound_query, name_prefix_ok, name_prefix_retirement_sparql, name_prefix_window, parse_retirement, retirement_action, run_retirement_on, RetireAction, StoreCtx};
 use std::process::Command;
 
 const C: &str = "https://jeffbridwell.com/chorus#";
@@ -133,33 +133,36 @@ fn the_run_refuses_over_a_ceiling_dry_runs_and_backs_up_before_deleting() {
     update(port, FIXTURE);
     let backups = dir.join("backups");
     std::env::set_var("GRAPH_BACKUP_DIR", &backups);
-    std::env::set_var("ATHENA_RETIRE_TODAY", "2026-11-18");
+    let today = "2026-11-18";
+    let log = dir.join("spine.log");
+    let logger = dir.join("chorus-log");
+    std::fs::write(&logger, format!("#!/bin/sh\necho \"$*\" >> {}\n", log.display())).unwrap();
+    std::process::Command::new("chmod").args(["+x", logger.to_str().unwrap()]).status().unwrap();
     let ctx = StoreCtx {
         gsp: format!("http://127.0.0.1:{port}/t/data"),
         query: format!("http://127.0.0.1:{port}/t/query"),
         update: format!("http://127.0.0.1:{port}/t/update"),
-        chorus_log: "/usr/bin/true".into(),
+        chorus_log: logger.to_string_lossy().into(),
         role: "test".into(),
     };
     // #5002 (quality review) — the inbound-edge refusal through the real run: a real row that
     // points at a probe stops the run, and nothing is deleted
     update(port, &format!("INSERT DATA {{ GRAPH <urn:chorus:domains:code> {{ <{C}language-rust> <{C}dependsOn> <{C}language-zz-probe-a> }} }}"));
-    let inbound = run_retirement(&action("260", "12100"), 0, &ctx);
+    let inbound = run_retirement_on(&action("260", "12100"), 0, &ctx, today);
     let after_inbound = ask(port, "language-zz-probe-a");
     update(port, &format!("DELETE DATA {{ GRAPH <urn:chorus:domains:code> {{ <{C}language-rust> <{C}dependsOn> <{C}language-zz-probe-a> }} }}"));
     // past its until, the line is spent: nothing is deleted
-    std::env::set_var("ATHENA_RETIRE_TODAY", "2026-11-26");
-    let spent = run_retirement(&action("260", "12100"), 0, &ctx);
+    let spent = run_retirement_on(&action("260", "12100"), 0, &ctx, "2026-11-26");
+    let spine = std::fs::read_to_string(&log).unwrap_or_default();
     let after_spent = ask(port, "language-zz-probe-a");
-    std::env::set_var("ATHENA_RETIRE_TODAY", "2026-11-18");
-    let over_rows = run_retirement(&action("1", "12100"), 1, &ctx);
-    let over_vers = run_retirement(&action("260", "1"), 2, &ctx);
+    let over_rows = run_retirement_on(&action("1", "12100"), 1, &ctx, today);
+    let over_vers = run_retirement_on(&action("260", "1"), 2, &ctx, today);
     let after_refusals = (ask(port, "language-zz-probe-a"), ask(port, "version-gone"));
     std::env::set_var("ATHENA_RETIRE_DRY_RUN", "1");
-    let dry = run_retirement(&action("260", "12100"), 3, &ctx);
+    let dry = run_retirement_on(&action("260", "12100"), 3, &ctx, today);
     std::env::remove_var("ATHENA_RETIRE_DRY_RUN");
     let after_dry = (ask(port, "language-zz-probe-a"), ask(port, "version-gone"));
-    let real = run_retirement(&action("260", "12100"), 4, &ctx);
+    let real = run_retirement_on(&action("260", "12100"), 4, &ctx, today);
     let after_run = (ask(port, "language-zz-probe-a"), ask(port, "version-gone"), ask(port, "language-mything-zz-probe-x"));
     let dumped: Vec<usize> = std::fs::read_dir(&backups).map(|d| d.flatten()
         .map(|e| std::fs::read_to_string(e.path()).unwrap_or_default().lines().filter(|l| !l.trim().is_empty()).count()).collect()).unwrap_or_default();
@@ -168,6 +171,10 @@ fn the_run_refuses_over_a_ceiling_dry_runs_and_backs_up_before_deleting() {
     assert!(inbound.as_ref().is_err_and(|e| e.contains("name-prefix-rows-have-inbound-edges")), "{inbound:?}");
     assert!(after_inbound, "an inbound-edge refusal deleted the probe");
     assert!(spent.is_ok() && after_spent, "a spent line must do nothing: {spent:?}");
+    // a spent line says so on the spine (code review 11-18); NEGATIVE PROOF: the in-window runs
+    // above never emit it, so the line is spent-only
+    assert_eq!(spine.matches("model.retirement.skipped").count(), 1, "spent must emit exactly one skipped event: {spine}");
+    assert!(spine.contains("spent: past until 2026-11-25"), "{spine}");
     // NEGATIVE PROOFS: each ceiling refuses on its own, and a refusal deletes nothing
     assert!(over_rows.as_ref().is_err_and(|e| e.contains("name-prefix-rows-over-ceiling:2>1")), "{over_rows:?}");
     assert!(over_vers.as_ref().is_err_and(|e| e.contains("name-prefix-versions-over-ceiling:2>1")), "{over_vers:?}");

@@ -1966,7 +1966,7 @@ pub fn run_athena_deploy_plan(plan: Option<&card::CardPlan>) -> Result<String, S
                     continue;
                 }
             }
-            run_retirement_with(action, *n, &ctx, &retiring)?;
+            run_retirement_with(action, *n, &ctx, &retiring, None)?;
         }
     }
 
@@ -2444,10 +2444,16 @@ pub fn served_claim_may_retire(class: &str, retiring: &std::collections::BTreeSe
 
 /// One retirement against a store. Public so a test can drive the real path (#5002 AC4).
 pub fn run_retirement(action: &RetireAction, line: usize, ctx: &StoreCtx) -> Result<(), String> {
-    run_retirement_with(action, line, ctx, &std::collections::BTreeSet::new())
+    run_retirement_with(action, line, ctx, &std::collections::BTreeSet::new(), None)
 }
 
-fn run_retirement_with(action: &RetireAction, line: usize, ctx: &StoreCtx, retiring: &std::collections::BTreeSet<String>) -> Result<(), String> {
+/// #5002 (code review 11-18, Silas 17:32) — the name-prefix window's "today", passed in by a
+/// test rather than read from an env var on the prod path. Prod always asks the clock.
+pub fn run_retirement_on(action: &RetireAction, line: usize, ctx: &StoreCtx, today: &str) -> Result<(), String> {
+    run_retirement_with(action, line, ctx, &std::collections::BTreeSet::new(), Some(today))
+}
+
+fn run_retirement_with(action: &RetireAction, line: usize, ctx: &StoreCtx, retiring: &std::collections::BTreeSet<String>, today: Option<&str>) -> Result<(), String> {
     let refuse = |reason: String| -> String {
         emit_spine(&ctx.chorus_log, "model.deploy.failed", &ctx.role,
             &[("reason", reason.clone()), ("line", line.to_string())]);
@@ -2656,13 +2662,20 @@ fn run_retirement_with(action: &RetireAction, line: usize, ctx: &StoreCtx, retir
             if !name_prefix_ok(prefix) {
                 return Err(refuse(format!("name-prefix-unsafe:{prefix}")));
             }
-            let today = std::env::var("ATHENA_RETIRE_TODAY").ok().filter(|t| !t.is_empty()).unwrap_or_else(||
+            let today = today.map(str::to_string).unwrap_or_else(||
                 Command::new("date").args(["-u", "+%Y-%m-%d"]).output()
                     .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default());
             match name_prefix_window(until, &today) {
                 Err(why) => return Err(refuse(why)),
                 Ok(false) => {
                     println!("athena-deploy: name prefix {prefix}: past its until {until} — spent, nothing done");
+                    // #5002 (code review 11-18) — a spent line is a fact on the spine, never silent
+                    emit_spine(&ctx.chorus_log, "model.retirement.skipped", &ctx.role, &[
+                        ("line", line.to_string()),
+                        ("status", "spent".to_string()),
+                        ("target", format!("name-prefix {prefix}")),
+                        ("reason", format!("spent: past until {until}")),
+                    ]);
                     return Ok(());
                 }
                 Ok(true) => {}
