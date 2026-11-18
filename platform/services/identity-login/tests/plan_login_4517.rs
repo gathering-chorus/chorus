@@ -1,3 +1,6 @@
+// @test-type: unit — the crate's public API only; no store, no door, no DAL.
+// @domain: security
+// @card: #4517
 //! #4517 AC5 — the session decision through the crate's public API, as the door calls it:
 //! one row per verified login, the door's stamps, the body never names owner or writer.
 //! (werk-test registers a crate's tests by its tests/ files; the inline unit tests stay.)
