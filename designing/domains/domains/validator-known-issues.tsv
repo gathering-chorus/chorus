@@ -1,5 +1,5 @@
 # validator-known-issues.tsv — issues a card names as known, with their reason (first: #5002); athena-validate compiles this file in, counts them as known and stays red on anything outside (Silas 11:16).
-# The AC3 ratchet (platform/tests/no-ownerless-rows-live.bats) reads the same file.
+# The AC3 ratchet (platform/tests/no-ownerless-rows-ac3-live.bats) reads the same file.
 # Measured 2026-11-18 11:00 (Wren + Silas): rows stored under an older IRI prefix, or a name the
 # door's name rule refuses, are listed by the door and 404/400 by name. Fix: its own card (Jeff's ok).
 # check	class	rule	rows	reason
