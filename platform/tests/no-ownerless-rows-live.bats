@@ -15,8 +15,9 @@ setup() {
 
 in_werk() { case "${BATS_TEST_DIRNAME}" in */chorus-werk/*) return 0;; esac; return 1; }
 
-# $1 rows json ({"data":[{name, ownedBy}]}), $2 domain owner (principal-x): every row carries
-# that owner. The list view leaves ownedBy out (Kade 10:17), so rows_with_owners reads each
+# $1 rows json ({"data":[{name, ownedBy}]}), $2 domain owner (principal-x): every row has an
+# owner, and every real row is the domain owner's. A zz-probe row is owned by the principal
+# whose probe made it (the quartet's Append creates, Kade 10:18), so it needs an owner only. The list view leaves ownedBy out (Kade 10:17), so rows_with_owners reads each
 # row and takes links.ownedBy, as the door serves it.
 owned_by_domain_owner() {
   python3 - "$1" "$2" <<'PY'
@@ -24,10 +25,12 @@ import json, sys
 rows = json.loads(sys.argv[1]).get("data", [])
 want = sys.argv[2]
 local = lambda v: (v or "").rsplit("#", 1)[-1].removeprefix("chorus:")
-bad = [r.get("name") for r in rows if local(r.get("ownedBy")) != want]
+probe = lambda r: (r.get("name") or "").startswith("zz-")
+bad = [r.get("name") for r in rows if not local(r.get("ownedBy"))
+       or (not probe(r) and local(r.get("ownedBy")) != want)]
 if not rows:
     print("no rows read"); sys.exit(1)
-print(f"{len(rows)} rows: " + (f"{len(bad)} not owned by {want}: {', '.join(bad[:10])}" if bad else f"all owned by {want}"))
+print(f"{len(rows)} rows: " + (f"{len(bad)} ownerless or a real row not {want}'s: {', '.join(bad[:10])}" if bad else f"all owned; real rows all {want}'s"))
 sys.exit(1 if bad else 0)
 PY
 }
@@ -57,7 +60,7 @@ PY
   done
 }
 
-@test "AC2 NEGATIVE PROOF: an ownerless row, a row owned by someone else, or no rows at all is red" {
+@test "AC2 NEGATIVE PROOF: an ownerless row, a real row owned by someone else, an ownerless probe, or no rows is red" {
   run owned_by_domain_owner '{"data":[{"name":"rust","ownedBy":"principal-kade"}]}' principal-kade
   [ "$status" -eq 0 ] || return 1
   run owned_by_domain_owner '{"data":[{"name":"rust","ownedBy":"principal-kade"},{"name":"toml"}]}' principal-kade
@@ -67,4 +70,8 @@ PY
   [ "$status" -eq 1 ] || return 1
   run owned_by_domain_owner '{"data":[]}' principal-kade
   [ "$status" -eq 1 ] || return 1
+  run owned_by_domain_owner '{"data":[{"name":"rust","ownedBy":"principal-kade"},{"name":"zz-probe-1","ownedBy":"principal-quartet"}]}' principal-kade
+  [ "$status" -eq 0 ] || { echo "a probe owned by its maker passes"; return 1; }
+  run owned_by_domain_owner '{"data":[{"name":"rust","ownedBy":"principal-kade"},{"name":"zz-probe-1"}]}' principal-kade
+  [ "$status" -eq 1 ] || { echo "an ownerless probe is red"; return 1; }
 }
