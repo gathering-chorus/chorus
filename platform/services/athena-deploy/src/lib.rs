@@ -435,6 +435,8 @@ pub fn name_prefix_window(until: &str, today: &str) -> Result<bool, String> {
     let ok = |d: &str| d.len() == 10 && d.as_bytes()[4] == b'-' && d.as_bytes()[7] == b'-'
         && d.chars().enumerate().all(|(i, c)| i == 4 || i == 7 || c.is_ascii_digit());
     if !ok(until) { return Err(format!("name-prefix-until-missing-or-malformed:{until}")); }
+    // an unreadable clock ("" sorts before every date) must never read as "still in window" (Silas 15:42)
+    if !ok(today) { return Err(format!("name-prefix-today-unreadable:{today}")); }
     Ok(today <= until)
 }
 

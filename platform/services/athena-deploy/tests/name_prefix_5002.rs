@@ -187,4 +187,5 @@ fn the_until_window_runs_spends_and_refuses() {
     assert_eq!(name_prefix_window("2026-11-25", "2026-11-26"), Ok(false));
     assert!(name_prefix_window("", "2026-11-18").is_err(), "no until refuses");
     assert!(name_prefix_window("2026-11-5", "2026-11-18").is_err(), "a malformed until refuses");
+    assert!(name_prefix_window("2026-11-25", "").is_err(), "an unreadable today refuses, never runs");
 }
