@@ -1520,3 +1520,14 @@ fn a_refused_caller_gets_403_before_the_body_checks_4517() {
     let (c, _, b) = http("PUT", "/domains/pulse", &[("Authorization", wren.as_str())], stamped);
     assert_eq!(c, 422, "the owner still meets the stamp check: {}", b);
 }
+
+/// #4517 AC5 — the logins route is reached through the real serve loop, at both spellings,
+/// before any surface rewrite: an unverified call gets the route's own 401.
+#[test]
+fn the_logins_route_is_reached_and_refuses_an_unverified_call_4517() {
+    for p in ["/identity/logins", "/v1/identity/logins"] {
+        let (c, _, b) = http("POST", p, &[], "{\"channel\":\"pane\"}");
+        assert_eq!(c, 401, "{p}: {b}");
+        assert!(b.contains("a verified login is required to open a session"), "{p} did not reach the logins route: {b}");
+    }
+}

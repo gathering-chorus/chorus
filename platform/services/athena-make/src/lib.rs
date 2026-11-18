@@ -21,6 +21,7 @@ use std::process::Command;
 pub mod auth;
 pub mod reconcile; // #3723 — the model reconciliation readout
 pub mod oidc; // #3613 / ADR-052 — ES256/JWKS (Solid-OIDC via CSS) verify at the seam
+pub mod logins; // #4517 AC5 — POST /identity/logins: the door writes every Session row
 
 pub const NS: &str = "https://jeffbridwell.com/chorus#";
 pub const ONTOLOGY_GRAPH: &str = "urn:chorus:ontology";
@@ -6993,6 +6994,29 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                         }
                     } };
                     log.close(&principal, "create-linked", "", code, &body);
+                    let resp = http_response_ct(status_line(code), &body, "application/json");
+                    let _ = stream.write_all(resp.as_bytes());
+                    return;
+                }
+                // #4517 AC5 — the door writes every Session row: a verified login calls once.
+                if method == "POST" && (path == logins::LOGINS_PATH || path.strip_prefix("/v1") == Some(logins::LOGINS_PATH)) {
+                    let now_secs = unix_now_secs();
+                    let auth_hdr = header("authorization");
+                    let token = bearer_token(&auth_hdr);
+                    let (code, body) = match oidc::verify_any(token, &oidc_verifier, now_secs) {
+                        Err(_) => (401u16, "{ \"error\": \"authn-missing\", \"message\": \"a verified login is required to open a session\" }".to_string()),
+                        Ok(claims) => {
+                            let who = oidc_verifier.principal_for(&claims.web_id, now_secs).unwrap_or_else(|| claims.agent_id.clone());
+                            let caller = logins::Caller { principal: &who, jti: &claims.jti, expires_at: &logins::iso_from_secs(claims.exp) };
+                            let body_str = req.splitn(2, "\r\n\r\n").nth(1).unwrap_or("");
+                            match tables.iter().find(|t| t.class.ends_with("#Session")) {
+                                None => (503u16, "{ \"error\": \"unavailable\", \"message\": \"this door serves no Session class\" }".to_string()),
+                                Some(table) => logins::handle_login(&caller, body_str, logins::principal_host_account,
+                                    |role| teammate_serves(&who, role).unwrap_or(false), logins::session_for_login,
+                                    |row| with_write_lock(|| handle_create(row, table, &who, token, "")), &logins::iso_from_secs(now_secs)),
+                            }
+                        }
+                    };
                     let resp = http_response_ct(status_line(code), &body, "application/json");
                     let _ = stream.write_all(resp.as_bytes());
                     return;

@@ -27,6 +27,9 @@ p256 = { version = "0.13", features = ["ecdsa"] }
 properties-resolver = { path = "../properties-resolver" }
 # #3356 — the shared CSS-token verifier (extracted from this crate, now consumed).
 chorus-oidc = { path = "../chorus-oidc" }
+# #4517 AC5 — the pure "which Session row does this login get" decision; this crate wires it.
+identity-login = { path = "../identity-login" }
+serde_json = "1"
 
 [[bin]]
 name = "athena-make"
