@@ -1549,6 +1549,10 @@ fn a_claim_on_an_ownerless_row_reaches_the_dal_and_nothing_else_does_4517() {
     assert_eq!(calls().matches("claim-owner").count(), before.matches("claim-owner").count(), "a refused claim must not reach the DAL");
     let (_, _, b) = http("PATCH", "/domains/orphan", hdrs, "{\"ownedBy\":\"wren\"}");
     assert!(claimed(&calls()), "the claim never reached the DAL: {b}\n{}", calls());
+    // AC1 (Silas 00:33): a caller with no Write gets 403 before its bad claim body is judged
+    let nobody = bearer(&mint_token(NOBODY_WEBID, None));
+    let (c, _, b) = http("PATCH", "/domains/orphan", &[("Authorization", nobody.as_str())], "{\"ownedBy\":\"nobody\",\"x\":1}");
+    assert_eq!(c, 403, "{b}");
     let (c, _, b) = http("PATCH", "/domains/pulse", hdrs, "{\"ownedBy\":\"wren\"}");
     assert_eq!(c, 422, "an owned row is not claimable: {b}");
     assert!(b.contains("cannot be patched"), "{b}");

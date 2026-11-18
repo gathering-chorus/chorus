@@ -15,9 +15,10 @@ const PANE: &str = r#"{"channel":"pane","hostAccount":"chorus-kade","actsAs":"ro
 #[test]
 fn a_new_login_is_created_by_the_door_as_the_caller() {
     let wrote = RefCell::new(String::new());
-    let (code, _) = handle_login(&kade(), PANE, host, serves, |_| Ok(None),
+    let (code, body) = handle_login(&kade(), PANE, host, serves, |_| Ok(None),
         |b| { *wrote.borrow_mut() = b.to_string(); (201, "{}".into()) }, NOW);
     assert_eq!(code, 201);
+    assert!(body.contains("\"created\": true") && body.contains("\"name\": \"kade-"), "the answer names the row: {body}");
     let row: serde_json::Value = serde_json::from_str(&wrote.borrow()).unwrap();
     assert_eq!(row["ownedBy"], "principal-kade");
     assert_eq!(row["startedBy"], "principal-door");

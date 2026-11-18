@@ -55,8 +55,12 @@ pub fn handle_login(
     match plan_login(&login, &PrincipalFacts { host_account: host.as_deref() }, &parsed, |r| r == acts_as && served, found.as_deref(), now_iso) {
         Ok(Outcome::Existing(name)) => (200, format!("{{ \"name\": \"{}\", \"created\": false }}", crate::json_escape(&name))),
         Ok(Outcome::Create(name, mut row)) => {
-            row["name"] = Value::String(name);
-            create(&row.to_string())
+            row["name"] = Value::String(name.clone());
+            // The caller learns the row's name from the answer: the door chose it.
+            match create(&row.to_string()) {
+                (c, _) if (200..300).contains(&c) => (201, format!("{{ \"name\": \"{}\", \"created\": true }}", crate::json_escape(&name))),
+                other => other,
+            }
         }
         Err((code, why)) => (code, error(if code == 401 { "authn" } else if code == 403 { "authz" } else { "validation" }, &why)),
     }

@@ -3899,6 +3899,11 @@ pub fn handle_write_scoped(method: &str, path: &str, body: &str, table: &RouteTa
         // Only a row with NO owner is claimable; an owned row keeps the normal path's answer.
         if matches!(op, WriteOp::PatchEntity { .. }) {
             if let Some(claim) = claims::claim_body(body, caller_role).filter(|_| matches!(read_owned_by(&table.class, e, &table.instances_graph), Ok(None))) {
+                // AC1 holds here too (Silas 00:33): no Write on the graph is 403 before the body is judged.
+                if !scope_allows(&table.instances_graph, scope) {
+                    emit_write_spine(caller_role, method, e, "", "authz");
+                    return write_resp("authz", &format!("only a Write holder on <{}> may claim its rows; {}", table.instances_graph, row_that_would_open(caller_role, &table.instances_graph)));
+                }
                 if let Err((code, why)) = claim { return (code, format!("{{ \"error\": \"{}\", \"message\": \"{}\" }}", if code == 422 { "validation" } else { "authz" }, json_escape(&why))); }
                 let args: Vec<String> = ["claim-owner", "--kind", &kind_of_class(class_local), "--name", e, "--graph", &table.instances_graph].iter().map(|s| s.to_string()).collect();
                 let (code, tag) = claims::claim_status(dal_run(&args, token));
