@@ -345,3 +345,22 @@ mod attendance {
         assert_eq!(handle_attendance("kade", r#"{"session":"kade-1","person":"jeff","lastAttendedAt":"x"}"#, |_| row("kade", false), never, people, NOW).0, 422);
     }
 }
+
+/// #4517 (Silas 06:46) — person and account facts come only from the Principal graph.
+/// NEGATIVE PROOF: no Principal-fact read uses `GRAPH ?g`, so a principalKind or hostAccount
+/// triple written into any other graph is never read as a person or an account.
+#[test]
+fn principal_facts_are_read_only_from_the_principal_graph() {
+    use athena_make::logins::{people_present_query, persons_query, PRINCIPAL_GRAPH};
+    let pinned = format!("GRAPH <{PRINCIPAL_GRAPH}> {{ ?p ");
+    for q in [persons_query(), people_present_query("2026-11-18T07:00:00Z")] {
+        assert!(q.contains(&pinned), "{q}");
+        assert!(!q.contains("GRAPH ?g"), "a person read from any graph: {q}");
+    }
+    let src = std::fs::read_to_string(format!("{}/src/logins.rs", std::env::var("CARGO_MANIFEST_DIR").unwrap())).unwrap();
+    for (i, line) in src.lines().enumerate() {
+        if line.contains("principalKind") || line.contains("chorus:hostAccount ?v") {
+            assert!(!line.contains("GRAPH ?g"), "logins.rs:{} reads a Principal fact from any graph", i + 1);
+        }
+    }
+}

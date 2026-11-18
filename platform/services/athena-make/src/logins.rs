@@ -102,11 +102,17 @@ pub fn iso_from_secs(secs: u64) -> String {
     format!("{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z", rem / 3600, rem % 3600 / 60, rem % 60)
 }
 
+/// #4517 (Silas 06:46) — Principal facts are read only from the graph that holds the
+/// Principal rows (measured 11-18: all 18 principalKind and 16 hostAccount triples), never
+/// `GRAPH ?g`: a role able to write some other graph could otherwise mint itself a person or
+/// an account. When #3784 moves Principal rows, this one constant moves with them.
+pub const PRINCIPAL_GRAPH: &str = "urn:chorus:domains:security";
+
 /// The door's own store reads for a login, by SPARQL against its store.
 pub fn principal_host_account(principal: &str) -> Result<Option<String>, String> {
     if !principal.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') { return Ok(None); }
-    let q = format!("PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH ?g {{ <{ns}principal-{p}> chorus:hostAccount ?v }} }} LIMIT 1",
-        ns = crate::NS, p = principal);
+    let q = format!("PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{pg}> {{ <{ns}principal-{p}> chorus:hostAccount ?v }} }} LIMIT 1",
+        ns = crate::NS, p = principal, pg = PRINCIPAL_GRAPH);
     crate::sparql_json(&q).map(|b| crate::select_v(&b).into_iter().next())
 }
 
@@ -343,9 +349,7 @@ fn read_people(body: &Value, people: &impl Fn() -> Result<People, String>) -> Re
 /// The door's read: person principals, and those with an open browser Session not yet expired.
 pub fn people_present() -> Result<People, String> {
     let now = iso_from_secs(crate::unix_now_secs());
-    let persons = crate::select_v(&crate::sparql_json(&format!(
-        "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH ?g {{ ?p a chorus:Principal ; chorus:principalKind ?k . FILTER(STR(?k) = \"person\") BIND(REPLACE(STR(?p), '.*#principal-', '') AS ?v) }} }}",
-        ns = crate::NS))?);
+    let persons = crate::select_v(&crate::sparql_json(&persons_query())?);
     let present = crate::select_v(&crate::sparql_json(&people_present_query(&now))?);
     Ok(People { persons, present })
 }
@@ -353,8 +357,14 @@ pub fn people_present() -> Result<People, String> {
 /// The query for who is signed in: an open browser Session (no endedAt) whose expiresAt is
 /// later than now, owned by a person principal.
 pub fn people_present_query(now_iso: &str) -> String {
-    format!("PREFIX chorus: <{ns}> SELECT DISTINCT ?v WHERE {{ GRAPH <urn:chorus:domains:identity> {{ ?s a chorus:Session ; chorus:channel ?c ; chorus:ownedBy ?p ; chorus:expiresAt ?x . FILTER(STR(?c) = \"browser\" && STR(?x) > \"{now}\") FILTER NOT EXISTS {{ ?s chorus:endedAt ?e }} }} GRAPH ?g {{ ?p chorus:principalKind ?k . FILTER(STR(?k) = \"person\") }} BIND(REPLACE(STR(?p), '.*#principal-', '') AS ?v) }}",
-        ns = crate::NS, now = now_iso.replace('"', ""))
+    format!("PREFIX chorus: <{ns}> SELECT DISTINCT ?v WHERE {{ GRAPH <urn:chorus:domains:identity> {{ ?s a chorus:Session ; chorus:channel ?c ; chorus:ownedBy ?p ; chorus:expiresAt ?x . FILTER(STR(?c) = \"browser\" && STR(?x) > \"{now}\") FILTER NOT EXISTS {{ ?s chorus:endedAt ?e }} }} GRAPH <{pg}> {{ ?p chorus:principalKind ?k . FILTER(STR(?k) = \"person\") }} BIND(REPLACE(STR(?p), '.*#principal-', '') AS ?v) }}",
+        ns = crate::NS, now = now_iso.replace('"', ""), pg = PRINCIPAL_GRAPH)
+}
+
+/// The person principals, from the Principal graph only.
+pub fn persons_query() -> String {
+    format!("PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{pg}> {{ ?p a chorus:Principal ; chorus:principalKind ?k . FILTER(STR(?k) = \"person\") BIND(REPLACE(STR(?p), '.*#principal-', '') AS ?v) }} }}",
+        ns = crate::NS, pg = PRINCIPAL_GRAPH)
 }
 
 /// #4367, #4517 (Jeff 11-18 "yes") — a role reports that a person spoke in its own open
