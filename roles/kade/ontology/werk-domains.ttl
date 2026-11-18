@@ -502,18 +502,21 @@ chorus:hasRecordClass a owl:AnnotationProperty ;
 # =============================================================================
 
 chorus:VerbRunShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:ownedBy ; sh:maxCount 1 ; sh:class chorus:Principal ] ;  # #5002 AC5 (Jeff 11-18 10:53)
     sh:targetClass chorus:VerbRun ; sh:node chorus:CoreShape ;
     sh:property [ sh:path chorus:traceId ; sh:minCount 1 ] ;
     sh:property [ sh:path chorus:verb ; sh:minCount 1 ] ;
     sh:property [ sh:path chorus:ts ; sh:minCount 1 ]  .
 
 chorus:TypedRefusalShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:ownedBy ; sh:maxCount 1 ; sh:class chorus:Principal ] ;  # #5002 AC5 (Jeff 11-18 10:53)
     sh:targetClass chorus:TypedRefusal ; sh:node chorus:CoreShape ;
     sh:property [ sh:path chorus:traceId ; sh:minCount 1 ] ;
     sh:property [ sh:path chorus:verb ; sh:minCount 1 ] ;
     sh:property [ sh:path chorus:ts ; sh:minCount 1 ]  .
 
 chorus:WitnessShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:ownedBy ; sh:maxCount 1 ; sh:class chorus:Principal ] ;  # #5002 AC5 (Jeff 11-18 10:53)
     sh:targetClass chorus:Witness ; sh:node chorus:CoreShape ;
     sh:property [ sh:path chorus:verb ; sh:minCount 1 ]  .
 
@@ -536,12 +539,14 @@ chorus:GateResultShape a sh:NodeShape ;
     sh:property [ sh:path chorus:result ; sh:minCount 1 ]  .
 
 chorus:ReviewVerdictShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:ownedBy ; sh:maxCount 1 ; sh:class chorus:Principal ] ;  # #5002 AC5 (Jeff 11-18 10:53)
     sh:targetClass chorus:ReviewVerdict ; sh:node chorus:CoreShape ;
     sh:property [ sh:path chorus:cardId ; sh:minCount 1 ] ;
     sh:property [ sh:path chorus:ts ; sh:minCount 1 ] ;
     sh:property [ sh:path chorus:result ; sh:minCount 1 ]  .
 
 chorus:DemoVerdictShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:ownedBy ; sh:maxCount 1 ; sh:class chorus:Principal ] ;  # #5002 AC5 (Jeff 11-18 10:53)
     sh:targetClass chorus:DemoVerdict ; sh:node chorus:CoreShape ;
     sh:property [ sh:path chorus:cardId ; sh:minCount 1 ] ;
     sh:property [ sh:path chorus:ts ; sh:minCount 1 ] ;
@@ -563,23 +568,28 @@ chorus:DeploymentShape a sh:NodeShape ;
     sh:property [ sh:path chorus:rollbackOf ; sh:class chorus:Deployment ; sh:maxCount 1 ] .
 
 chorus:WerkSlotShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:ownedBy ; sh:maxCount 1 ; sh:class chorus:Principal ] ;  # #5002 AC5 (Jeff 11-18 10:53)
     sh:targetClass chorus:WerkSlot ; sh:node chorus:CoreShape ;
     sh:property [ sh:path chorus:cardId ; sh:minCount 1 ]  .
 
 chorus:MergeEventShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:ownedBy ; sh:maxCount 1 ; sh:class chorus:Principal ] ;  # #5002 AC5 (Jeff 11-18 10:53)
     sh:targetClass chorus:MergeEvent ; sh:node chorus:CoreShape ;
     sh:property [ sh:path chorus:cardId ; sh:minCount 1 ]  .
 
 chorus:ConflictHoldShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:ownedBy ; sh:maxCount 1 ; sh:class chorus:Principal ] ;  # #5002 AC5 (Jeff 11-18 10:53)
     sh:targetClass chorus:ConflictHold ; sh:node chorus:CoreShape ;
     sh:property [ sh:path chorus:cardId ; sh:minCount 1 ] ;
     sh:property [ sh:path chorus:ts ; sh:minCount 1 ]  .
 
 chorus:RecoveryActionShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:ownedBy ; sh:maxCount 1 ; sh:class chorus:Principal ] ;  # #5002 AC5 (Jeff 11-18 10:53)
     sh:targetClass chorus:RecoveryAction ; sh:node chorus:CoreShape ;
     sh:property [ sh:path chorus:ts ; sh:minCount 1 ]  .
 
 chorus:CardDiffShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:ownedBy ; sh:maxCount 1 ; sh:class chorus:Principal ] ;  # #5002 AC5 (Jeff 11-18 10:53)
     sh:targetClass chorus:CardDiff ; sh:node chorus:CoreShape ;
     sh:property [ sh:path chorus:cardId ; sh:minCount 1 ]  .
 

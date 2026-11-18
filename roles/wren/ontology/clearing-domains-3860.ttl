@@ -44,6 +44,7 @@ chorus:emittedBy a owl:ObjectProperty ;
     rdfs:comment "The role the event is attributed to. Unattributed events are the drop-class #3959 made visible." .
 
 chorus:SpineEventShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:ownedBy ; sh:maxCount 1 ; sh:class chorus:Principal ] ;  # #5002 AC5 (Jeff 11-18 10:53)
     sh:targetClass chorus:SpineEvent ; sh:node chorus:CoreShape ;
     sh:property [ sh:path rdfs:label       ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:eventKind ; sh:minCount 1 ; sh:datatype xsd:string ] .
