@@ -7,7 +7,7 @@
 //! verifies the login and writes the row as itself.
 //!
 //! The door trusts nothing in the body it can check itself (Silas, 2026-11-18 00:11):
-//!   ownedBy      the verified login's principal, never the body
+//!   ownedBy      the verified login's principal (stamped by the door's create), never the body
 //!   hostAccount  must equal the Principal row's hostAccount (pane); browser carries none
 //!   actsAs       only a Role the caller's Teammate serves
 //!   tokenId      one row per login: a repeat returns the same row
@@ -119,11 +119,13 @@ pub fn plan_login(
         if !serves(acts_as) {
             return Err((403, format!("{} does not serve '{acts_as}'", login.principal)));
         }
-        row.insert("actsAs".into(), json!(acts_as));
+        // actsAs is an edge to a Role: the DAL mints "role-", so the row carries the bare name
+        // (a prefixed one is refused as a double prefix, #4343)
+        row.insert("actsAs".into(), json!(acts_as.strip_prefix("role-").unwrap_or(acts_as)));
     }
     let name = session_name(login.principal, login.token_id);
     row.insert("channel".into(), json!(channel));
-    row.insert("ownedBy".into(), json!(format!("principal-{}", login.principal)));
+    // no ownedBy: the door's create stamps the verified caller as owner and ignores any in the body
     row.insert("startedBy".into(), json!(DOOR_PRINCIPAL));
     row.insert("startedAt".into(), json!(now_iso));
     row.insert("tokenId".into(), json!(login.token_id));
@@ -176,7 +178,8 @@ mod tests {
         assert_eq!(name, session_name("kade", "t1"));
         assert_eq!(row["sessionState"], "open");
         assert_eq!(row["expiresAt"], "2026-11-18T05:30:00Z");
-        assert_eq!(row["ownedBy"], "principal-kade");
+        assert!(row.get("ownedBy").is_none(), "the door's create stamps the owner from the login");
+        assert_eq!(row["actsAs"], "kade", "a bare role name: the DAL mints role-");
         assert_eq!(row["startedBy"], DOOR_PRINCIPAL);
         assert_eq!(row["tokenId"], "t1");
         assert_eq!(row["hostAccount"], "chorus-kade");
@@ -237,7 +240,7 @@ mod tests {
         let his = PrincipalFacts { host_account: Some("jeffbridwell") };
         let r = plan_login(&jeff, &his, &json!({"channel":"browser"}), |_| false, None, NOW);
         let Outcome::Create(_, row) = r.unwrap() else { panic!("expected a row") };
-        assert_eq!(row["ownedBy"], "principal-jeff");
+        assert!(row.get("ownedBy").is_none());
         assert_eq!(row["hostAccount"], "jeffbridwell", "the shape requires it; the door takes it from his Principal");
         let bad = plan_login(&jeff, &his, &json!({"channel":"browser","hostAccount":"x"}), |_| false, None, NOW);
         assert_eq!(bad.unwrap_err().0, 422, "the body never names the account");

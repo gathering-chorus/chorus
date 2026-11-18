@@ -567,7 +567,7 @@ fn world() -> &'static World {
         let dal = home.join("dal-stub.sh");
         let dal_batch_log = home.join("dal-add-batch.log");
         let dal_script = format!(
-            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{calls}'\nif [ \"$1\" = \"apply\" ]; then cat >> '{calls}'; fi\nif [ \"$1\" = \"add-batch\" ]; then\n  batch_input=$(cat)\n  {{\n    printf 'ARGV\\t%s\\n' \"$*\"\n    printf 'TOKEN\\t%s\\n' \"$CHORUS_IDENTITY_TOKEN\"\n    printf 'STDIN\\n%s\\nEND\\n' \"$batch_input\"\n  }} > '{}'\n  case \"$batch_input\" in\n    *testresult-existing*) echo \"add-batch: entity 'test-result:testresult-existing': already-exists\" >&2; exit 1;;\n    *\\\"name\\\":\\\"pulse\\\"*) echo \"add-batch: entity 'domain:pulse': already-exists: entity already exists\" >&2; exit 1;;\n    *shapefail*) echo 'shape-violation: comment missing' >&2; exit 1;;\n    *retiredstub*) echo 'chorus-model is RETIRED (#3718) - use athena-model instead.' >&2; exit 1;;\n  esac\nfi\ncase \"$*\" in\n  *shapefail*) echo 'shape-violation: comment missing' >&2; exit 1;;\n  *dalboom*) echo kaboom >&2; exit 1;;\n  *retiredstub*) echo 'chorus-model is RETIRED (#3718) - use athena-model instead.' >&2; exit 1;;\nesac\nexit 0\n",
+            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{calls}'\nif [ \"$1\" = \"apply\" ]; then cat >> '{calls}'; fi\nif [ \"$1\" = \"add-batch\" ]; then\n  batch_input=$(cat)\n  {{\n    printf 'ARGV\\t%s\\n' \"$*\"\n    printf 'TOKEN\\t%s\\n' \"$CHORUS_IDENTITY_TOKEN\"\n    printf 'STDIN\\n%s\\nEND\\n' \"$batch_input\"\n  }} > '{}'\n  case \"$batch_input\" in\n    *testresult-existing*) echo \"add-batch: entity 'test-result:testresult-existing': already-exists\" >&2; exit 1;;\n    *\\\"name\\\":\\\"pulse\\\"*) echo \"add-batch: entity 'domain:pulse': already-exists: entity already exists\" >&2; exit 1;;\n    *shapefail*) echo 'shape-violation: comment missing' >&2; exit 1;;\n    *\\\"principal\\\",\\\"principal-*|*\\\"role\\\",\\\"role-*) echo \"double-prefix: a link names its target bare; the mint adds the prefix (ADR-040 Rule 0)\" >&2; exit 1;;\n    *retiredstub*) echo 'chorus-model is RETIRED (#3718) - use athena-model instead.' >&2; exit 1;;\n  esac\nfi\ncase \"$*\" in\n  *shapefail*) echo 'shape-violation: comment missing' >&2; exit 1;;\n  *dalboom*) echo kaboom >&2; exit 1;;\n  *retiredstub*) echo 'chorus-model is RETIRED (#3718) - use athena-model instead.' >&2; exit 1;;\nesac\nexit 0\n",
             dal_batch_log.display(),
             calls = home.join("dal-calls.log").display(),
         );
@@ -1561,4 +1561,24 @@ fn a_claim_on_an_ownerless_row_reaches_the_dal_and_nothing_else_does_4517() {
     let (c, _, b) = http("PATCH", "/domains/pulse", hdrs, "{\"ownedBy\":\"wren\"}");
     assert_eq!(c, 422, "an owned row is not claimable: {b}");
     assert!(b.contains("cannot be patched"), "{b}");
+}
+
+/// #4517 (Silas 01:45) — the stub DAL now refuses a doubled prefix on a link, as the real
+/// mint does, so a serve-level test can no longer pass a row the real DAL would refuse.
+/// NEGATIVE PROOF of the stub itself: a prefixed principal link is refused, a bare one passes.
+#[test]
+fn the_stub_dal_refuses_a_double_prefixed_link_like_the_real_mint_4517() {
+    let _ = world();
+    let dal = std::env::temp_dir().join(format!("owl3701-home-{}", std::process::id())).join("dal-stub.sh");
+    let run = |line: &str| {
+        let mut c = std::process::Command::new("sh").arg(&dal).arg("add-batch")
+            .stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::piped()).spawn().unwrap();
+        use std::io::Write as _;
+        c.stdin.take().unwrap().write_all(line.as_bytes()).unwrap();
+        c.wait_with_output().unwrap()
+    };
+    let prefixed = run(r#"{"kind":"session","name":"s1","fields":{},"edges":[["startedBy","principal","principal-door"]]}"#);
+    assert!(!prefixed.status.success() && String::from_utf8_lossy(&prefixed.stderr).contains("double-prefix"), "a prefixed link passed the stub");
+    let bare = run(r#"{"kind":"session","name":"s2","fields":{},"edges":[["startedBy","principal","door"]]}"#);
+    assert!(bare.status.success(), "{}", String::from_utf8_lossy(&bare.stderr));
 }

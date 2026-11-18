@@ -20,7 +20,8 @@ fn a_new_login_is_created_by_the_door_as_the_caller() {
     assert_eq!(code, 201);
     assert!(body.contains("\"created\": true") && body.contains("\"name\": \"kade-"), "the answer names the row: {body}");
     let row: serde_json::Value = serde_json::from_str(&wrote.borrow()).unwrap();
-    assert_eq!(row["ownedBy"], "principal-kade");
+    assert!(row.get("ownedBy").is_none(), "the door's create stamps the owner from the login");
+    assert_eq!(row["actsAs"], "kade");
     assert_eq!(row["startedBy"], "door", "a bare name: the DAL refuses principal-principal-door");
     assert_eq!(row["tokenId"], "j1");
     assert!(row["name"].as_str().unwrap().starts_with("kade-"));
@@ -211,4 +212,27 @@ mod renewal {
         assert_eq!(handle_renewal(&jeff(), RENEW, expired, never, NOW).0, 409);
         assert_eq!(handle_renewal(&jeff(), RENEW, |_| Err("timeout".into()), never, NOW).0, 503);
     }
+}
+
+/// #4517 (Silas 01:45) — the DAL mints "principal-"/"role-" on a link and refuses a name that
+/// already carries it (normalize_name, double-prefix). Every link the door writes on a Session
+/// row names its target bare. NEGATIVE PROOF: the prefixed spelling that shipped in 6db4b76e6's
+/// parent would trip this.
+#[test]
+fn every_link_on_a_door_written_row_names_its_target_bare() {
+    use athena_make::logins::{handle_login, Caller};
+    use std::cell::RefCell;
+    let wrote = RefCell::new(String::new());
+    let kade = Caller { principal: "kade", jti: "j9", expires_at: "x" };
+    handle_login(&kade, r#"{"channel":"pane","hostAccount":"chorus-kade","actsAs":"role-kade"}"#,
+        |_| Ok(Some("chorus-kade".into())), |r| Ok(r == "role-kade"), |_| Ok(None),
+        |b| { *wrote.borrow_mut() = b.to_string(); (201, "{}".into()) }, |_| {}, |_| {}, "2026-11-18T06:50:00Z");
+    let row: serde_json::Value = serde_json::from_str(&wrote.borrow()).unwrap();
+    for (link, prefix) in [("startedBy", "principal-"), ("actsAs", "role-"), ("ownedBy", "principal-"), ("endedBy", "principal-")] {
+        if let Some(v) = row.get(link).and_then(|v| v.as_str()) {
+            assert!(!v.starts_with(prefix), "{link} = {v}: the DAL refuses a double prefix");
+        }
+    }
+    assert_eq!(row["startedBy"], "door");
+    assert_eq!(row["actsAs"], "kade");
 }
