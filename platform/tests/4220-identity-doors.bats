@@ -26,11 +26,19 @@ setup() {
 teardown() {
   [ -f "$BATS_TEST_TMPDIR/created" ] || return 0
   while read -r name; do
-    [ -n "$name" ] && curl -s --max-time 10 -X DELETE -H "@$HDR" "$API/v1/identity/sessions/$name" -o /dev/null
+    [ -n "$name" ] && curl -s --max-time 10 -X DELETE -H "@$HDR" "$API/v1/identity/sessionruns/$name" -o /dev/null
   done < "$BATS_TEST_TMPDIR/created"
 }
 
 FUSEKI_QUERY_URL="${FUSEKI_QUERY:-http://localhost:3030/pods/sparql}"
+
+# #5002 — since #4517 only the door writes Session rows, so the "a class it owns" proof writes a
+# SessionRun (identity graph, silas holds Append there; its turns write these) on silas's own
+# open session, read from the door.
+silas_session() {
+  curl -sf --max-time 20 "$API/v1/identity/sessions?endedAt.absent=true&channel=pane&limit=500" \
+    | python3 -c "import json,sys; print(next((r['name'] for r in json.load(sys.stdin)['data'] if (r.get('ownedBy') or '').endswith('principal-silas')), ''))"
+}
 
 @test "#4220 a session may NOT create a Principal — who exists is deploy-only" {
   run curl -s --max-time 10 -X POST -H 'Content-Type: application/json' -H "@$HDR" \
@@ -46,35 +54,35 @@ FUSEKI_QUERY_URL="${FUSEKI_QUERY:-http://localhost:3030/pods/sparql}"
 @test "#4220 NEGATIVE PROOF: the same caller CAN still write a class it owns" {
   # If this fails, the refusal above proves nothing about deploy-only — it would
   # just mean the caller cannot write anything at all.
-  name="bats-4220-sess-$$"
+  sess="$(silas_session)"; [ -n "$sess" ] || skip "silas has no open pane session to run under"
+  name="bats-4220-run-$$"
   echo "$name" >> "$BATS_TEST_TMPDIR/created"
   run curl -s --max-time 10 -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -H "@$HDR" \
-    --data "{\"name\":\"$name\",\"label\":\"bats\",\"ownedBy\":\"principal-silas\",\"tokenId\":\"bats-4220-$$\",\"issuedAt\":\"2026-01-01T00:00:00Z\",\"expiresAt\":\"2026-01-01T00:10:00Z\",\"sessionState\":\"open\",\"hostAccount\":\"bats\"}" \
-    "$API/v1/identity/sessions"
+    --data "{\"name\":\"$name\",\"label\":\"bats\",\"comment\":\"bats 4220\",\"conversationId\":\"bats-4220-$$\",\"runOf\":\"$sess\",\"startedAt\":\"2026-01-01T00:00:00Z\"}" \
+    "$API/v1/identity/sessionruns"
   test "$output" = "201"
 
-  # #4220 — and a session can be ENDED, which nothing could do before this card.
-  run curl -s --max-time 10 -X PUT -H 'Content-Type: application/json' -H "@$HDR" \
-    --data "{\"label\":\"bats\",\"tokenId\":\"bats-4220-$$\",\"issuedAt\":\"2026-01-01T00:00:00Z\",\"expiresAt\":\"2026-01-01T00:10:00Z\",\"sessionState\":\"closed\",\"endedAt\":\"2026-01-01T00:05:00Z\",\"hostAccount\":\"bats\"}" \
-    "$API/v1/identity/sessions/$name"
-  printf '%s' "$output" | grep -q '"ok"'
-  run curl -s --max-time 10 "$API/v1/identity/sessions/$name"
-  printf '%s' "$output" | grep -q '"endedAt"'
-  printf '%s' "$output" | grep -q 'closed'
+  # and its own row can be ended
+  run curl -s --max-time 10 -o /dev/null -w '%{http_code}' -X PATCH -H 'Content-Type: application/json' -H "@$HDR" \
+    --data '{"runEndedAt":"2026-01-01T00:05:00Z"}' "$API/v1/identity/sessionruns/$name"
+  test "$output" = "200"
+  run curl -s --max-time 10 "$API/v1/identity/sessionruns/$name"
+  printf '%s' "$output" | grep -q '"runEndedAt"'
 }
 
 @test "#4409 the row the door test writes is gone after teardown" {
+  sess="$(silas_session)"; [ -n "$sess" ] || skip "silas has no open pane session to run under"
   name="bats-4220-residue-$$"
   echo "$name" >> "$BATS_TEST_TMPDIR/created"
   run curl -s --max-time 10 -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -H "@$HDR" \
-    --data "{\"name\":\"$name\",\"label\":\"bats\",\"ownedBy\":\"principal-silas\",\"tokenId\":\"bats-4220r-$$\",\"issuedAt\":\"2026-01-01T00:00:00Z\",\"expiresAt\":\"2026-01-01T00:10:00Z\",\"sessionState\":\"open\",\"hostAccount\":\"bats\"}" \
-    "$API/v1/identity/sessions"
+    --data "{\"name\":\"$name\",\"label\":\"bats\",\"comment\":\"bats 4220\",\"conversationId\":\"bats-4220r-$$\",\"runOf\":\"$sess\",\"startedAt\":\"2026-01-01T00:00:00Z\"}" \
+    "$API/v1/identity/sessionruns"
   test "$output" = "201"
   teardown
   : > "$BATS_TEST_TMPDIR/created"
   # NEGATIVE PROOF that the read can see a row: it saw this one before teardown ran
-  run curl -s --max-time 10 "$API/v1/identity/sessions/$name"
-  test "$(printf '%s' "$output" | grep -cF "bats-4220r-$$")" -eq 0
+  run curl -s --max-time 10 -o /dev/null -w '%{http_code}' "$API/v1/identity/sessionruns/$name"
+  test "$output" = "404"
 }
 
 @test "#4220 the door names the graph the MODEL declares, not a built-in" {

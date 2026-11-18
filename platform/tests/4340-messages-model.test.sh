@@ -66,7 +66,7 @@ else echo "FAIL KeyRegistryEntry does not declare the security graph with its pu
 cat > "$TMP/key.ttl" <<'TTL'
 @prefix c: <https://jeffbridwell.com/chorus#> .
 c:principal-jeff a c:Principal .
-c:k-good a c:KeyRegistryEntry ; c:forPrincipal c:principal-jeff ; c:keyId "BUZZ_JEFF_NOSTR_KEY" ; c:permittedScope "urn:chorus:buzz" ; c:nostrPubkey "a42ccebeb2be92f57434f9d25243fb98be918f07752993283eeb95c98857c62a" .
+c:k-good a c:KeyRegistryEntry ; c:ownedBy c:principal-jeff ; c:forPrincipal c:principal-jeff ; c:keyId "BUZZ_JEFF_NOSTR_KEY" ; c:permittedScope "urn:chorus:buzz" ; c:nostrPubkey "a42ccebeb2be92f57434f9d25243fb98be918f07752993283eeb95c98857c62a" .
 c:k-bad a c:KeyRegistryEntry ; c:forPrincipal c:principal-jeff ; c:keyId "BUZZ_X" ; c:permittedScope "urn:chorus:buzz" ; c:nostrPubkey "nsec1-this-is-a-private-key" .
 TTL
 rep=$(shacl validate --shapes "$ROOT/roles/silas/ontology/security-model-3618.ttl" --data "$TMP/key.ttl" 2>/dev/null | tr '\n' ' ' | sed 's/\[ *a *sh:ValidationResult/\n/g')

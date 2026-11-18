@@ -382,7 +382,7 @@ pub fn known_issue(lines: &[(String, String, String)], check: &str, class: &str,
 /// The known issues, compiled in from the source tree the binary is built from: a card's slot
 /// binary carries its card's lines, the installed one carries main's. No path is looked up at run
 /// time, so a run from any directory reads the same list.
-pub const KNOWN_ISSUES_TSV: &str = include_str!("../../../../designing/schemas/validator-known-issues.tsv");
+pub const KNOWN_ISSUES_TSV: &str = include_str!("../../../../designing/domains/domains/validator-known-issues.tsv");
 
 pub fn parse_known_issues(tsv: &str) -> Vec<(String, String, String)> {
     tsv.lines()

@@ -54,7 +54,8 @@ fixture() { printf '%s%s\n%s\n' "$PREFIX" "$SUB" "$1" > "$BATS_TEST_TMPDIR/$2.tt
 }
 
 @test "control: a Teammate that signs in as a Principal conforms, with no actorKind copy" {
-  f=$(fixture 'chorus:t2 a chorus:Teammate ; rdfs:label "Kade" ; chorus:signsInAs chorus:p2 .' t2)
+  # #5002 AC1 — an Actor declares its owner (every live Actor row has one)
+  f=$(fixture 'chorus:t2 a chorus:Teammate ; rdfs:label "Kade" ; chorus:signsInAs chorus:p2 ; chorus:ownedBy chorus:p2 . chorus:p2 a chorus:Principal .' t2)
   [ "$(verdict "$f")" = CONFORMS ] || return 1
 }
 

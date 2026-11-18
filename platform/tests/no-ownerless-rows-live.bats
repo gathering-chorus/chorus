@@ -123,13 +123,13 @@ PY
   in_werk && skip "after-land check: a card's werk has not landed"
   sample_reads > "$BATS_TEST_TMPDIR/reads"
   [ -s "$BATS_TEST_TMPDIR/reads" ] || { echo "the door listed nothing"; return 1; }
-  run unreadable_named "$ROOT/designing/schemas/validator-known-issues.tsv" "$BATS_TEST_TMPDIR/reads"
+  run unreadable_named "$ROOT/designing/domains/domains/validator-known-issues.tsv" "$BATS_TEST_TMPDIR/reads"
   echo "$(wc -l < "$BATS_TEST_TMPDIR/reads") reads; $output"
   [ "$status" -eq 0 ] || return 1
 }
 
 @test "AC3 NEGATIVE PROOF: an unreadable row outside every group is red; a grouped one and a readable one pass" {
-  g="$ROOT/designing/schemas/validator-known-issues.tsv"
+  g="$ROOT/designing/domains/domains/validator-known-issues.tsv"
   printf 'Appointment\tappt-x\t404\nCard\tcard-1\t200\n' > "$BATS_TEST_TMPDIR/ok"
   run unreadable_named "$g" "$BATS_TEST_TMPDIR/ok"
   [ "$status" -eq 0 ] || return 1
