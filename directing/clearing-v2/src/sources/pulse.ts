@@ -50,6 +50,14 @@ export function shortPrincipal(id: string | undefined): string {
 }
 
 /** pulse's unmeasured entries as "source: reason; …", or undefined when there are none. */
+/** #4997 — the pulse source that reads Session rows (actor-state fetchSessionsFact). */
+export const SESSIONS_SOURCE = 'athena:identity:sessions';
+
+/** True when pulse's structured unmeasured entries name the sessions source. */
+export function sessionsSourceUnread(entries: PulseUnmeasured[] | undefined): boolean {
+  return (entries || []).some((u) => u.source === SESSIONS_SOURCE);
+}
+
 export function unmeasuredText(entries: PulseUnmeasured[] | undefined): string | undefined {
   if (!entries || entries.length === 0) return undefined;
   return entries.map((u) => `${u.source}: ${u.reason}`).join('; ');
@@ -86,6 +94,8 @@ export function toActorRow(a: PulseActor): ActorRow {
     waiting: w ? [w.what, w.on ? `on ${shortPrincipal(w.on)}` : '', w.since ? `since ${formatBostonWhen(w.since)}` : ''].filter(Boolean).join(' ') : undefined,
     // display filter: live sessions listed, the rest counted (pulse decides live)
     sessions: liveSessionLines(a.sessions || []),
+    liveSessions: (a.sessions || []).filter((s) => s.live === true).length,
+    sessionsUnread: sessionsSourceUnread(a.unmeasuredSource),
     unmeasured: unmeasuredText(a.unmeasuredSource),
     reachability: a.reachability,
   };

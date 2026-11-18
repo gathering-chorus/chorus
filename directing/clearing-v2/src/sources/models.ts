@@ -25,6 +25,10 @@ export interface ActorRow {
   /** "reply on kade since …" when pulse names what the actor waits on. */
   waiting?: string;
   sessions: string[];
+  /** #4997 — how many of pulse's sessions for this actor are live (pulse's own boolean, not the display text). */
+  liveSessions?: number;
+  /** #4997 — pulse could not read Session rows for this actor (its unmeasuredSource names the sessions source). */
+  sessionsUnread?: boolean;
   /** pulse's unmeasuredSource for this actor, as "source: reason". */
   unmeasured?: string;
   /** #4895 — pulse's reachability for this actor (its delivery Presence), verbatim. */
@@ -35,6 +39,8 @@ export interface RolesData {
   actors: ActorRow[];
   /** Set when actor-state could not be read, or pulse listed unmeasured sources: shown by name, never as a zero. */
   unmeasured?: string;
+  /** #4997 — pulse could not read Session rows at all (a page-level unmeasured entry names the sessions source). */
+  sessionsUnread?: boolean;
 }
 
 export interface TodayCardItem {

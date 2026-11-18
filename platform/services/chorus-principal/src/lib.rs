@@ -833,6 +833,8 @@ fn establish(ctx: &Ctx, role: &str, run_stamp: Option<String>, pane_arg: Option<
                 }
                 LoginState::Pending { why, .. } if with_run => { eprintln!("chorus-principal: establish {}: login pending — {}", role, why); return 1; }
                 LoginState::Pending { why, .. } => eprintln!("establish: {}  pending — {}; the next turn retries", role, why),
+                // #4997 — a refused login fails closed: no session, and no runtime started on it
+                LoginState::Refused { why, .. } => { eprintln!("chorus-principal: establish {}: login refused — {}", role, why); return 1; }
                 _ => {}
             }
             0
