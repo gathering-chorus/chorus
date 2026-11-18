@@ -33,7 +33,7 @@ shape_says_door() { # $@ shape files
 
 guard() { # $@ shape files — 1 (and the sites) when a shape says door while role writes remain
   shape_says_door "$@" || return 0
-  local w; w="$(role_session_writes "$ROOT")"
+  local w; w="$(role_session_writes "${GUARD_ROOT:-$ROOT}")"
   [ -z "$w" ] && return 0
   echo "$w"; return 1
 }
@@ -55,10 +55,17 @@ guard() { # $@ shape files — 1 (and the sites) when a shape says door while ro
   [ "$status" -eq 0 ] || return 1
 }
 
-@test "AC5 guard NEGATIVE PROOF: a shape flipped to door while role writes remain is red" {
-  T="$BATS_TEST_TMPDIR"
+@test "AC5 guard NEGATIVE PROOF: a shape flipped to door while a role write remains is red" {
+  T="$BATS_TEST_TMPDIR"; F="$T/root"
+  mkdir -p "$F/platform/services/chorus-principal/src" "$F/platform/scripts/lib"
+  printf '    let url = format!("{}/v1/identity/sessions", ctx.api);\n' > "$F/platform/services/chorus-principal/src/lib.rs"
+  : > "$F/platform/scripts/lib/person_session.py"
   printf 'chorus:SessionShape chorus:writeAuthority "door" .\n' > "$T/shape.ttl"
-  run guard "$T/shape.ttl"
+  GUARD_ROOT="$F" run guard "$T/shape.ttl"
   [ "$status" -eq 1 ] || return 1
   [[ "$output" == *"identity/sessions"* ]] || return 1
+  # and with no role write left in the tree, the same flipped shape passes
+  : > "$F/platform/services/chorus-principal/src/lib.rs"
+  GUARD_ROOT="$F" run guard "$T/shape.ttl"
+  [ "$status" -eq 0 ] || return 1
 }

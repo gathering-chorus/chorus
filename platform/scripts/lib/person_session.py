@@ -124,24 +124,22 @@ def open_session(webid, tok, now, lasts, sparql, http, api, log):
         log(f"person-session: principal-{principal} has no hostAccount; no Session row written")
         return None
     id_token = tok.get("id_token", "")
+    if not id_token:
+        log(f"person-session: {principal} has no verified login; no Session row asked for")
+        return None
+    # #4517 AC6 — the door writes his Session row from his own verified login (Jeff 11-18
+    # 00:17); this asks, naming only the channel. Owner, start and expiry are the door's.
     try:
-        status, listing = http("GET", f"{api}/v1/identity/sessions?{role_sessions_query()}", None, None)
-        roles = open_role_sessions(listing) if status == 200 else []
-    except Exception:
-        roles = []
-    name = slug(f"{principal}-browser-{int(now)}")
-    row = session_row(principal, id_token, roles, now, lasts, name, host_account)
-    try:
-        status, reply = http("POST", f"{api}/v1/identity/sessions", id_token, row)
+        status, reply = http("POST", f"{api}/v1/identity/logins", id_token, {"channel": "browser"})
     except Exception as e:
         log(f"person-session: {principal} sign-in row NOT written: {e}")
         return None
-    if status not in (200, 201):
+    if status not in (200, 201) or not (reply or {}).get("name"):
         log(f"person-session: {principal} sign-in row NOT written: HTTP {status} {json.dumps(reply)[:200]}")
         return None
-    stored = (reply or {}).get("name") or name
-    log(f"person-session: {principal} signed in, session {stored}, binds {len(roles)} role session(s)")
-    return {"principal": principal, "row": dict(row, name=stored),
+    stored = reply["name"]
+    log(f"person-session: {principal} signed in, session {stored}")
+    return {"principal": principal, "row": {"name": stored},
             "refresh_token": tok.get("refresh_token", ""), "id_token": id_token,
             "exp": int(tok.get("expires_in", 0) or 0) + int(now)}
 
@@ -161,36 +159,38 @@ def live_bearer(rec, now, refresh, log, why):
 
 
 def touch_session(rec, now, expires_at, http, api, refresh, log):
-    """#4500 — he is still here: his row's lastSeenAt is now and its expiresAt follows
-    the renewed cookie. Returns the updated record (tokens may be fresh), or None."""
+    """#4500 — he is still here. #4517 AC6 — his (possibly refreshed) login renews his own
+    open row at the door: lastSeenAt now, expiresAt the login's own (never later), tokenId the
+    new login. `expires_at` is kept for the caller's signature; the door decides the expiry.
+    Returns the updated record (tokens may be fresh), or None."""
     bearer = live_bearer(rec, now, refresh, log, "renewal could not touch")
     if not bearer:
         return None
-    row = dict(rec["row"], lastSeenAt=iso(now), expiresAt=iso(expires_at))
+    name = rec["row"]["name"]
     try:
-        status, _ = http("PUT", f"{api}/v1/identity/sessions/{urllib.parse.quote(row['name'])}", bearer, row)
+        status, _ = http("POST", f"{api}/v1/identity/logins", bearer, {"channel": "browser", "renews": name})
     except Exception as e:
         log(f"person-session: touch failed: {e}")
         return None
     if status not in (200, 204):
-        log(f"person-session: {rec.get('principal')} session {row['name']} NOT renewed (HTTP {status})")
+        log(f"person-session: {rec.get('principal')} session {name} NOT renewed (HTTP {status})")
         return None
-    return dict(rec, row=row)
+    return dict(rec)
 
 
 def close_session(rec, now, http, api, refresh, log):
-    """Sign-out: PUT his row closed. refresh(rt) -> tok dict or None."""
+    """Sign-out: #4517 AC6 — his login asks the door to end his row; the door stamps how."""
     bearer = live_bearer(rec, now, refresh, log, "sign-out could not close")
     if not bearer:
         return False
-    row = dict(rec["row"], sessionState="closed", endedAt=iso(now))
+    name = rec["row"]["name"]
     try:
-        status, _ = http("PUT", f"{api}/v1/identity/sessions/{urllib.parse.quote(row['name'])}", bearer, row)
+        status, _ = http("POST", f"{api}/v1/identity/logouts", bearer, {"session": name})
     except Exception as e:
         log(f"person-session: close failed: {e}")
         return False
     ok = status in (200, 204)
-    log(f"person-session: {rec.get('principal')} signed out, session {row['name']} {'closed' if ok else f'NOT closed (HTTP {status})'}")
+    log(f"person-session: {rec.get('principal')} signed out, session {name} {'closed' if ok else f'NOT closed (HTTP {status})'}")
     return ok
 
 
@@ -246,9 +246,10 @@ def close_expired_sessions(principal, id_token, now, keep, http, api, log):
             continue
         if exp > iso(now):
             continue
+        # #4517 AC6 — through the door's logout, as him: the door stamps endedAt (now, no
+        # longer the row's own expiresAt: the caller cannot say how a session ended)
         try:
-            st, _ = http("PATCH", f"{api}/v1/identity/sessions/{urllib.parse.quote(r['name'])}", id_token,
-                         {"sessionState": "closed", "endedAt": exp})
+            st, _ = http("POST", f"{api}/v1/identity/logouts", id_token, {"session": r["name"]})
         except Exception:
             st = 0
         if st in (200, 204):

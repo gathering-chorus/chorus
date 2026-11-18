@@ -127,7 +127,7 @@ mod supersede {
             |_| (502, "{}".into()), |_| panic!("a failed create must not supersede"), |_| {}, NOW);
         assert_eq!(c, 502);
         let jeff = Caller { principal: "jeff", jti: "b1", expires_at: "x" };
-        let (c, _) = handle_login(&jeff, r#"{"channel":"browser"}"#, |_| Ok(None), serves, |_| Ok(None),
+        let (c, _) = handle_login(&jeff, r#"{"channel":"browser"}"#, |_| Ok(Some("jeffbridwell".into())), serves, |_| Ok(None),
             |_| (201, "{}".into()), |_| panic!("a browser login must not supersede"), |_| {}, NOW);
         assert_eq!(c, 201);
     }
@@ -143,7 +143,7 @@ mod browser_touch {
     fn a_repeat_browser_login_touches_and_a_pane_does_not() {
         let jeff = Caller { principal: "jeff", jti: "b1", expires_at: "x" };
         let touched = RefCell::new(Vec::<String>::new());
-        let (c, _) = handle_login(&jeff, r#"{"channel":"browser"}"#, |_| Ok(None), |_| Ok(false), |_| Ok(Some("jeff-b".into())),
+        let (c, _) = handle_login(&jeff, r#"{"channel":"browser"}"#, |_| Ok(Some("jeffbridwell".into())), |_| Ok(false), |_| Ok(Some("jeff-b".into())),
             |_| panic!("a repeat writes no new row"), |_| panic!("a repeat supersedes nothing"), |n| touched.borrow_mut().push(n.into()), NOW);
         assert_eq!(c, 200);
         assert_eq!(touched.borrow().as_slice(), ["jeff-b"]);
@@ -164,7 +164,7 @@ mod browser_touch {
         let touch = |_: &str| if touch_due(last.get(), now.get()) { writes.set(writes.get() + 1); last.set(Some(now.get())); };
         for step in [0u64, 60] {
             now.set(1_400 + step);
-            handle_login(&jeff, r#"{"channel":"browser"}"#, |_| Ok(None), |_| Ok(false), |_| Ok(Some("jeff-b".into())),
+            handle_login(&jeff, r#"{"channel":"browser"}"#, |_| Ok(Some("jeffbridwell".into())), |_| Ok(false), |_| Ok(Some("jeff-b".into())),
                 |_| (201, String::new()), |_| {}, touch, NOW);
         }
         assert_eq!(writes.get(), 1, "two touches 60 s apart wrote {} times", writes.get());

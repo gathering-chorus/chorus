@@ -102,7 +102,12 @@ pub fn plan_login(
         }
         "browser" => {
             if obj.contains_key("hostAccount") {
-                return Err((422, "a browser login carries no hostAccount".into()));
+                return Err((422, "a browser login carries no hostAccount; the door reads it from the Principal".into()));
+            }
+            // SessionShape requires one hostAccount: the door takes it from the Principal row
+            match facts.host_account {
+                Some(h) if !h.is_empty() => { row.insert("hostAccount".into(), json!(h)); }
+                _ => return Err((403, format!("{} has no hostAccount on its Principal row; a Session needs one", login.principal))),
             }
         }
         other => return Err((422, format!("channel must be pane or browser, not '{other}'"))),
@@ -225,14 +230,18 @@ mod tests {
     }
 
     #[test]
-    fn a_browser_login_carries_no_host_account_and_is_owned_by_the_person() {
+    fn a_browser_login_takes_its_host_account_from_the_principal_and_is_owned_by_the_person() {
         let jeff = VerifiedLogin { principal: "jeff", token_id: "b7", expires_at: "x" };
-        let r = plan_login(&jeff, &PrincipalFacts { host_account: None }, &json!({"channel":"browser"}), |_| false, None, NOW);
+        let his = PrincipalFacts { host_account: Some("jeffbridwell") };
+        let r = plan_login(&jeff, &his, &json!({"channel":"browser"}), |_| false, None, NOW);
         let Outcome::Create(_, row) = r.unwrap() else { panic!("expected a row") };
         assert_eq!(row["ownedBy"], "principal-jeff");
-        assert!(row.get("hostAccount").is_none());
-        let bad = plan_login(&jeff, &PrincipalFacts { host_account: None }, &json!({"channel":"browser","hostAccount":"x"}), |_| false, None, NOW);
-        assert_eq!(bad.unwrap_err().0, 422);
+        assert_eq!(row["hostAccount"], "jeffbridwell", "the shape requires it; the door takes it from his Principal");
+        let bad = plan_login(&jeff, &his, &json!({"channel":"browser","hostAccount":"x"}), |_| false, None, NOW);
+        assert_eq!(bad.unwrap_err().0, 422, "the body never names the account");
+        // NEGATIVE PROOF: no hostAccount on his Principal, no row the shape would refuse
+        let none = plan_login(&jeff, &PrincipalFacts { host_account: None }, &json!({"channel":"browser"}), |_| false, None, NOW);
+        assert_eq!(none.unwrap_err().0, 403);
     }
 
     #[test]
