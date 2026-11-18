@@ -75,3 +75,65 @@ PY
   run owned_by_domain_owner '{"data":[{"name":"rust","ownedBy":"principal-kade"},{"name":"zz-probe-1"}]}' principal-kade
   [ "$status" -eq 1 ] || { echo "an ownerless probe is red"; return 1; }
 }
+
+# #5002 AC3 (Silas 11:01: a ratchet, sampled). $1 groups json, $2 reads ("Class<TAB>name<TAB>code" lines):
+# every row the door cannot read by name falls in a named group (class + name pattern);
+# one outside every group is red.
+unreadable_named() {
+  python3 - "$1" "$2" <<'PY'
+import json, re, sys
+groups = json.load(open(sys.argv[1]))["groups"]
+outside = []
+for line in open(sys.argv[2]):
+    cls, name, code = line.rstrip("\n").split("\t")
+    if code == "200":
+        continue
+    if not any(g["class"] == cls and re.search(g["match"], name) for g in groups):
+        outside.append(f"{cls}/{name} ({code})")
+print("unreadable outside a named group: " + (", ".join(outside[:10]) or "none"))
+sys.exit(1 if outside else 0)
+PY
+}
+
+sample_reads() { # 5 listed rows per collection, read by name: Class<TAB>name<TAB>code
+  python3 - "$DOOR" <<'PY'
+import json, sys, urllib.request, urllib.parse
+door = sys.argv[1]
+for p in json.load(urllib.request.urlopen(door + "/", timeout=20))["primitives"]:
+    try:
+        names = [r["name"] for r in json.load(urllib.request.urlopen(door + p["collection"] + "?limit=5", timeout=40)).get("data", [])]
+    except Exception:
+        continue
+    for n in names:
+        try:
+            urllib.request.urlopen(door + p["collection"] + "/" + urllib.parse.quote(n, safe=""), timeout=20); code = "200"
+        except urllib.error.HTTPError as e:
+            code = str(e.code)
+        except Exception:
+            code = "unanswered"
+        print(f"{p['kind']}\t{n}\t{code}")
+PY
+}
+
+@test "AC3 every door-listed row reads by name or sits in a named group (sampled)" {
+  in_werk && skip "after-land check: a card's werk has not landed"
+  sample_reads > "$BATS_TEST_TMPDIR/reads"
+  [ -s "$BATS_TEST_TMPDIR/reads" ] || { echo "the door listed nothing"; return 1; }
+  run unreadable_named "$ROOT/designing/schemas/unreadable-rows-5002.json" "$BATS_TEST_TMPDIR/reads"
+  echo "$(wc -l < "$BATS_TEST_TMPDIR/reads") reads; $output"
+  [ "$status" -eq 0 ] || return 1
+}
+
+@test "AC3 NEGATIVE PROOF: an unreadable row outside every group is red; a grouped one and a readable one pass" {
+  g="$ROOT/designing/schemas/unreadable-rows-5002.json"
+  printf 'Appointment\tappt-x\t404\nCard\tcard-1\t200\n' > "$BATS_TEST_TMPDIR/ok"
+  run unreadable_named "$g" "$BATS_TEST_TMPDIR/ok"
+  [ "$status" -eq 0 ] || return 1
+  printf 'Appointment\tappointment-new\t404\n' > "$BATS_TEST_TMPDIR/bad"
+  run unreadable_named "$g" "$BATS_TEST_TMPDIR/bad"
+  [ "$status" -eq 1 ] || return 1
+  [[ "$output" == *"Appointment/appointment-new"* ]] || return 1
+  printf 'Card\tcard-1\tunanswered\n' > "$BATS_TEST_TMPDIR/un"
+  run unreadable_named "$g" "$BATS_TEST_TMPDIR/un"
+  [ "$status" -eq 1 ] || { echo "an unanswered read is never counted as readable"; return 1; }
+}
