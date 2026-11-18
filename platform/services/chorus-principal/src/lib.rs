@@ -26,9 +26,10 @@
 //!      authn for agents"; "agents must login to chorus"; "and then follow
 //!      authz rules". Before the pane is started the role's token is obtained
 //!      (chorus-identity-token), checked to name THAT role's WebID and to be
-//!      unexpired, recorded as a Session row through the security API
-//!      (/v1/identity/sessions, owned by the principal), and announced on the
-//!      spine as session.login. The pane inherits CHORUS_SESSION_TOKEN_FILE —
+//!      unexpired, then the login asks the door (POST /v1/identity/logins);
+//!      the door writes the Session row itself, owned by the principal (#4517:
+//!      this tool writes no Session row), and it is announced on the spine as
+//!      session.login. The pane inherits CHORUS_SESSION_TOKEN_FILE —
 //!      the token file, never the token on a command line. No token, wrong
 //!      principal, expired, or row refused → REFUSED, nothing started.
 //!
