@@ -22,9 +22,20 @@ write should be let in. This compares that with what the door actually does.
           create body: 403 = the door refuses, 422 = the door allows (the body
           was judged, so authz passed), anything else = unmeasured, named.
           Nothing is ever written. Prints a runner-format line for verdict.
-  verdict <plan.txt> <runner.out>
+  verdict <plan.txt> <runner.out> [door-written.txt]
           reads the 4267 runner's lines for those classes and prints every class
           where the door disagrees with the rows. Exit 1 if any, 0 if none.
+          #5002 AC6 — a class in door-written.txt (one per line) must be refused
+          whatever the rows grant: grants are per graph, the door-only rule per
+          class. A door-written class the door lets a session write is red.
+  door-written <shape.ttl> ...
+          prints every class whose shape says chorus:writeAuthority "door".
+  owned   <api>
+          prints {class: true|false}: whether the class carries ownedBy (the
+          door's own rule, row_owner_governed), read from each class's openapi.
+  quartet <permissions.json> <class-graphs.json> <owned.json>
+          #5002 AC6 (Jeff 11-18) — the quartet test principal holds Append, and
+          Write only on graphs whose classes carry no ownedBy. Exit 1 if not.
           A NOT-PERM the door gives as door-managed or deploy-only (#4661) is
           not a scope question: no principal writes those classes.
 
@@ -99,10 +110,15 @@ def runner_results(lines):
     return out
 
 
-def verdict(planned, results):
+def verdict(planned, results, door_written=frozenset()):
     """Every class where the door and the rows disagree, as readable lines."""
     wrong = []
     for want, cls in planned:
+        if cls in door_written:
+            got, detail = results.get(cls, ("MISSING", "the runner printed no line"))
+            if got != "NOT-PERM":
+                wrong.append(f"{cls}: door-written class, door answered {got} {detail}".rstrip())
+            continue
         if want == "unknown":
             wrong.append(f"{cls}: the door did not say which graph serves it, so its scope is unmeasured")
             continue
@@ -121,6 +137,50 @@ def verdict(planned, results):
             rows = "rows append (own row)" if want == "append" else "rows allow"
             wrong.append(f"{cls}: {rows}, door answered {got} {detail}".rstrip())
     return wrong
+
+
+def door_written(paths):
+    """Classes whose shape carries chorus:writeAuthority "door" (subject chorus:<Class>Shape)."""
+    import re
+    out = set()
+    for path in paths:
+        subject = None
+        for line in open(path):
+            m = re.match(r"chorus:(\w+)Shape\b", line)
+            if m:
+                subject = m.group(1)
+            if subject and re.search(r'chorus:writeAuthority\s+"door"', line):
+                out.add(subject)
+    return sorted(out)
+
+
+def fetch_owned(api):
+    import urllib.request
+    out = {}
+    for kind, coll in fetch_collections(api):
+        try:
+            spec = json.load(urllib.request.urlopen(api + coll + "/openapi.json", timeout=40))
+            props = spec.get("components", {}).get("schemas", {}).get(kind, {}).get("properties", {})
+            out[kind] = "ownedBy" in props
+        except Exception:
+            out[kind] = None  # unread: never counted as ownerless
+    return out
+
+
+def quartet(perms, graphs, owned):
+    """Append held; Write only on graphs none of whose classes carry ownedBy."""
+    rows = perms.get("data", perms) if isinstance(perms, dict) else perms
+    mine = [r for r in rows if r.get("agent") == "principal-quartet"]
+    bad = []
+    if not any(r.get("mode") == APPEND for r in mine):
+        bad.append("holds no Append row")
+    for g in sorted({r.get("accessTo", "") for r in mine if r.get("mode") == WRITE}):
+        classes = [c for c, cg in graphs.items() if cg == g]
+        held = [c for c in classes if owned.get(c) is not False]
+        if not classes or held:
+            why = ", ".join(held) if held else "no class the door serves"
+            bad.append(f"Write on {g}: {why} (owned or unread)")
+    return bad
 
 
 def main(argv):
@@ -142,9 +202,21 @@ def main(argv):
     if len(argv) == 5 and argv[1] == "classify":
         print(classify(argv[2], argv[3], open(argv[4]).read()))
         return 0
-    if len(argv) == 4 and argv[1] == "verdict":
+    if len(argv) >= 3 and argv[1] == "door-written":
+        for c in door_written(argv[2:]):
+            print(c)
+        return 0
+    if len(argv) == 3 and argv[1] == "owned":
+        json.dump(fetch_owned(argv[2]), sys.stdout)
+        return 0
+    if len(argv) == 5 and argv[1] == "quartet":
+        bad = quartet(json.load(open(argv[2])), json.load(open(argv[3])), json.load(open(argv[4])))
+        print("quartet: " + ("; ".join(bad) or "Append held, Write only on ownerless graphs"))
+        return 1 if bad else 0
+    if len(argv) in (4, 5) and argv[1] == "verdict":
         planned = [tuple(l.split()) for l in open(argv[2]) if l.strip()]
-        wrong = verdict(planned, runner_results(open(argv[3])))
+        door = frozenset(l.strip() for l in open(argv[4]) if l.strip()) if len(argv) == 5 else frozenset()
+        wrong = verdict(planned, runner_results(open(argv[3])), door)
         for w in wrong:
             print(w)
         print(f"{len(planned)} classes checked · {len(wrong)} where the door and the Permission rows disagree")
