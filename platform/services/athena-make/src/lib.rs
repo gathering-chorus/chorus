@@ -878,6 +878,10 @@ pub fn deploy_only(write_authority: &str) -> bool {
     write_authority.eq_ignore_ascii_case("deploy")
 }
 
+/// #4517 AC5 — "door": rows the door writes itself when it verifies a login (Session);
+/// no session may write them, whatever its grants.
+pub fn door_written(write_authority: &str) -> bool { write_authority.eq_ignore_ascii_case("door") }
+
 /// Authentication alone is not write authority. A model Principal may exist
 /// without a holdsRole edge (guest/service identity); such a principal gets an
 /// empty resolved agent id and must never create an entity with ownedBy="".
@@ -3860,6 +3864,10 @@ pub fn handle_write_scoped(method: &str, path: &str, body: &str, table: &RouteTa
         Some(o) => o,
         None => return write_resp("not-found", "no such write route"),
     };
+    if door_written(&table.write_authority) {
+        emit_write_spine(caller_role, method, "", "", "authz");
+        return write_resp("authz", &format!("'{}' rows are written by the door when it verifies a login, never by a session", class_local));
+    }
     if let Some(refused) = create_refusal(&op, &table.instances_graph, scope, caller_role)
         .or_else(|| ownerless_edit_refusal(&op, &table.fields, &table.instances_graph, scope, caller_role)) {
         emit_write_spine(caller_role, method, "", "", "authz");
