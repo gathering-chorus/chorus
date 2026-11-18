@@ -31,6 +31,9 @@ one_ok() { # $1 crate dir, rest: cargo test args — exactly the named test ran 
 
 @test "AC3 the door's claim: only {ownedBy: itself}, only on an ownerless row, only with Write" {
   one_ok athena-make --test coverage_3701_hermetic a_claim_on_an_ownerless_row_reaches_the_dal_and_nothing_else_does_4517
+  one_ok athena-make --lib claims::tests::exactly_the_callers_own_name_is_a_claim
+  # NEGATIVE PROOF: a claim naming another owner is 403, an extra field 422
+  one_ok athena-make --lib claims::tests::negative_proofs_extra_fields_and_other_owners_are_refused
 }
 
 @test "AC3 the DAL's claim: the Write holder claims for itself; owned, unwritable and missing rows refused" {
