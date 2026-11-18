@@ -21,7 +21,7 @@ fn a_new_login_is_created_by_the_door_as_the_caller() {
     assert!(body.contains("\"created\": true") && body.contains("\"name\": \"kade-"), "the answer names the row: {body}");
     let row: serde_json::Value = serde_json::from_str(&wrote.borrow()).unwrap();
     assert_eq!(row["ownedBy"], "principal-kade");
-    assert_eq!(row["startedBy"], "principal-door");
+    assert_eq!(row["startedBy"], "door", "a bare name: the DAL refuses principal-principal-door");
     assert_eq!(row["tokenId"], "j1");
     assert!(row["name"].as_str().unwrap().starts_with("kade-"));
 }

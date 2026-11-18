@@ -14,8 +14,10 @@
 
 use serde_json::{json, Map, Value};
 
-/// The principal the door writes Session rows as (`startedBy`).
-pub const DOOR_PRINCIPAL: &str = "principal-door";
+/// The principal the door names in `startedBy`: a link to chorus:principal-door, written as
+/// the bare name, since the DAL mints the `principal-` prefix and refuses a name that already
+/// carries it (double-prefix, ADR-040 Rule 0).
+pub const DOOR_PRINCIPAL: &str = "door";
 
 /// A login the door has already verified (signature, issuer, expiry).
 pub struct VerifiedLogin<'a> {
