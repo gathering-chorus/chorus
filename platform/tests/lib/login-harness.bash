@@ -142,8 +142,10 @@ case "\$url" in */v1/identity/logins) cp "\$b" "$T/curl.body"; lc=\$(cat "$T/cur
   python3 -c 'import json,sys
 b=json.load(open(sys.argv[1])); role=b.get("actsAs","role-x").removeprefix("role-")
 nm=role+"-door"+sys.argv[3]   # each new login gets its own row, as the door names it per login id
-row=dict(b, name=nm, ownedBy="principal-"+role, startedBy="principal-door", sessionState="open")
-json.dump(row, open(sys.argv[2],"w")); print(json.dumps({"name": "session-"+nm, "created": True}))' "\$b" "$T/bodies/\$(printf %03d \$n)-POST-identity_sessions.json" "\$n"
+# as identity-login plans it: actsAs bare, startedBy the door, startedAt now; compact JSON, as the door writes it
+import datetime; now=datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+row=dict(b, name=nm, actsAs=role, ownedBy="principal-"+role, startedBy="door", startedAt=now, sessionState="open")
+json.dump(row, open(sys.argv[2],"w"), separators=(",",":")); print(json.dumps({"name": "session-"+nm, "created": True}))' "\$b" "$T/bodies/\$(printf %03d \$n)-POST-identity_sessions.json" "\$n"
   printf '201\n'; exit 0 ;; esac
 if [ -n "\$m" ]; then
   n=\$(ls "$T/bodies" | wc -l | tr -d ' '); route=\$(echo "\$url" | sed -E 's#.*/v1/##; s#/#_#g')

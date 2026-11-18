@@ -155,6 +155,7 @@ chorus:principal-quartet a chorus:Principal ;
 chorus:principal-door a chorus:Principal ;
     rdfs:label "door (writes Session rows; a stamp, never a login)" ;
     chorus:principalKind "service" ;
+    chorus:hostAccount "jeffbridwell" ;   # #4348: athena-make, the door, runs as this account (measured 2026-11-18)
     chorus:canSignIn "false" .
 
 # #4154 — the crawler service principal. The walker writes CodeFile / Test rows
