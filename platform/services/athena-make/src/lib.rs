@@ -3870,20 +3870,6 @@ pub fn handle_write_scoped(method: &str, path: &str, body: &str, table: &RouteTa
         emit_write_spine(caller_role, method, "", "", if refused.0 == 503 { "unavailable" } else { "authz" });
         return refused;
     }
-    // #3573 (bounds) — cap the structured write body before any graph work. A single
-    // entity write is < 1 KiB; an unbounded body is the runaway/oversized vector.
-    if body.len() > MAX_WRITE_BYTES {
-        return write_resp("validation", &format!(
-            "write body {} bytes exceeds {}-byte cap", body.len(), MAX_WRITE_BYTES));
-    }
-    // #4102 — revisions are written by the door at replace, never by a caller
-    if table.class.ends_with("#Version") {
-        return write_resp("validation", "revisions are kept by the door when a row is replaced; they cannot be written directly");
-    }
-    // #4101 — the stamps are the door's, never the body's
-    if let Some(k) = body_sets_a_stamp(body) {
-        return write_resp("validation", &format!("'{}' is stamped by the door from the write itself; it cannot be set in the body", k));
-    }
     // entity name (None for create/create-batch) + injection-safety
     let entity: Option<String> = match &op {
         // #4185 — delete-batch checks each named row's owner in its own handler.
@@ -3920,6 +3906,20 @@ pub fn handle_write_scoped(method: &str, path: &str, body: &str, table: &RouteTa
                 return write_resp("authz", &format!("not this row's owner (ownedBy {}); {}", owned.as_deref().unwrap_or("absent — the row has no owner"), row_that_would_open(caller_role, &table.instances_graph)));
             }
         }
+    }
+    // #4517 AC1 — body checks run only after authz (a refused caller gets 403 whatever it sent).
+    // #3573 — cap the body: a single entity write is < 1 KiB; unbounded is the runaway vector.
+    if body.len() > MAX_WRITE_BYTES {
+        return write_resp("validation", &format!(
+            "write body {} bytes exceeds {}-byte cap", body.len(), MAX_WRITE_BYTES));
+    }
+    // #4102 — revisions are written by the door at replace, never by a caller
+    if table.class.ends_with("#Version") {
+        return write_resp("validation", "revisions are kept by the door when a row is replaced; they cannot be written directly");
+    }
+    // #4101 — the stamps are the door's, never the body's
+    if let Some(k) = body_sets_a_stamp(body) {
+        return write_resp("validation", &format!("'{}' is stamped by the door from the write itself; it cannot be set in the body", k));
     }
     match &op {
         WriteOp::AddEdge { name, edge } | WriteOp::RemoveEdge { name, edge } => {

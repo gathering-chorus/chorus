@@ -1504,3 +1504,19 @@ fn negative_proof_4715_a_failed_patch_is_one_call_and_changes_nothing() {
     assert_eq!(mine.len(), 1, "one DAL call for the whole patch: {mine:?}");
     assert!(mine[0].starts_with("apply "), "{mine:?}");
 }
+
+/// #4517 AC1 — a refused caller gets 403 whatever the body. Before this card the
+/// three body checks (oversize, revision class, stamped field) answered 422 ahead
+/// of the row-owner verdict, so a caller with no right to the row learned the
+/// body's rules. NEGATIVE PROOF: the same stamped body is 422 to the owner (the
+/// body check still runs) and 403 to nobody (authz first).
+#[test]
+fn a_refused_caller_gets_403_before_the_body_checks_4517() {
+    let stamped = "{\"writeCount\":\"9\"}";
+    let nobody = bearer(&mint_token(NOBODY_WEBID, None));
+    let (c, _, b) = http("PUT", "/domains/pulse", &[("Authorization", nobody.as_str())], stamped);
+    assert_eq!(c, 403, "a non-owner must be refused before the stamp check: {}", b);
+    let wren = bearer(&mint_token(WREN_WEBID, None));
+    let (c, _, b) = http("PUT", "/domains/pulse", &[("Authorization", wren.as_str())], stamped);
+    assert_eq!(c, 422, "the owner still meets the stamp check: {}", b);
+}
