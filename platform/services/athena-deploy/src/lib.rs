@@ -176,6 +176,10 @@ pub struct Retirement {
     pub retire_name_prefix: String,
     pub rows_ceiling: String,
     pub versions_ceiling: String,
+    /// #5002 (code review) — the last day (YYYY-MM-DD, UTC) a name-prefix line may run. A staged
+    /// line replays on every deploy; without an end it would become a standing sweep that
+    /// deletes a running test's own probes. Required for this kind.
+    pub until: String,
     pub status: String,
 }
 
@@ -204,7 +208,7 @@ pub enum RetireAction {
     /// #5002 AC4 (Jeff 11-18 10:23; guards Silas 10:28/10:33) — instance rows whose door name
     /// starts with `prefix` (never in the ontology, security or provenance graphs), and the
     /// provenance Version rows whose ofRow names such a row. Refused above either ceiling.
-    NamePrefix { prefix: String, rows_ceiling: String, versions_ceiling: String },
+    NamePrefix { prefix: String, rows_ceiling: String, versions_ceiling: String, until: String },
 }
 
 /// Read one JSONL line. `Ok(None)` is a blank line. A line that is present but
@@ -251,6 +255,7 @@ pub fn parse_retirement(line: &str) -> Result<Option<Retirement>, String> {
         retire_name_prefix: field("retire_name_prefix")?,
         rows_ceiling: field("rows_ceiling")?,
         versions_ceiling: field("versions_ceiling")?,
+        until: field("until")?,
         status: if status.is_empty() { "staged".into() } else { status },
     }))
 }
@@ -296,6 +301,7 @@ pub fn retirement_action(r: &Retirement, default_graph: &str) -> RetireAction {
             prefix: r.retire_name_prefix.clone(),
             rows_ceiling: r.rows_ceiling.clone(),
             versions_ceiling: r.versions_ceiling.clone(),
+            until: r.until.clone(),
         };
     }
     if !r.retire_graph.is_empty() {
@@ -421,6 +427,15 @@ pub fn name_prefix_inbound_query(prefix: &str) -> String {
          FILTER(?p != <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> && ?x != ?s) \
          FILTER NOT EXISTS {{ {{ SELECT DISTINCT (?s AS ?x) WHERE {{ {rows} }} }} }} }}"
     )
+}
+
+/// #5002 — may a name-prefix line still run on `today` (YYYY-MM-DD)? A missing or malformed
+/// `until` refuses (fail-closed); past it, the line is spent and does nothing.
+pub fn name_prefix_window(until: &str, today: &str) -> Result<bool, String> {
+    let ok = |d: &str| d.len() == 10 && d.as_bytes()[4] == b'-' && d.as_bytes()[7] == b'-'
+        && d.chars().enumerate().all(|(i, c)| i == 4 || i == 7 || c.is_ascii_digit());
+    if !ok(until) { return Err(format!("name-prefix-until-missing-or-malformed:{until}")); }
+    Ok(today <= until)
 }
 
 /// The ceiling check: None = within it; Some(reason) = refuse. An unreadable ceiling and an
@@ -2635,9 +2650,20 @@ fn run_retirement_with(action: &RetireAction, line: usize, ctx: &StoreCtx, retir
             ]);
             Ok(())
         }
-        RetireAction::NamePrefix { prefix, rows_ceiling, versions_ceiling } => {
+        RetireAction::NamePrefix { prefix, rows_ceiling, versions_ceiling, until } => {
             if !name_prefix_ok(prefix) {
                 return Err(refuse(format!("name-prefix-unsafe:{prefix}")));
+            }
+            let today = std::env::var("ATHENA_RETIRE_TODAY").ok().filter(|t| !t.is_empty()).unwrap_or_else(||
+                Command::new("date").args(["-u", "+%Y-%m-%d"]).output()
+                    .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default());
+            match name_prefix_window(until, &today) {
+                Err(why) => return Err(refuse(why)),
+                Ok(false) => {
+                    println!("athena-deploy: name prefix {prefix}: past its until {until} — spent, nothing done");
+                    return Ok(());
+                }
+                Ok(true) => {}
             }
             let ask = |q: &str| curl(&["-s", "--data-urlencode", &format!("query={q}"),
                 "-H", "Accept: application/sparql-results+json", &ctx.query]).ok().and_then(|b| count_from_answer(&b));

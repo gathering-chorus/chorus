@@ -248,9 +248,10 @@ fn main() {
         for key in fresh {
             report.line(format!("graph-issue|{key}"));
         }
-        keys.extend(found);
+        keys.extend(found.iter().cloned());
         match verdict {
-            Verdict::Found(n) => total += if baseline.is_some() { new_here } else { n },
+            // #5002 (code review) — count what is left after the known issues, baseline or not
+            Verdict::Found(_) => total += if baseline.is_some() { new_here } else { found.len() },
             Verdict::Clean => {}
             Verdict::Unmeasured(ref why) => {
                 unmeasured += 1;
@@ -285,9 +286,10 @@ fn main() {
                 for key in fresh {
                     report.line(format!("graph-issue|{key}"));
                 }
-                keys.extend(found);
+                keys.extend(found.iter().cloned());
                 match verdict {
-                    Verdict::Found(n) => total += if baseline.is_some() { new_here } else { n },
+                    // #5002 (code review) — count what is left after the known issues, baseline or not
+            Verdict::Found(_) => total += if baseline.is_some() { new_here } else { found.len() },
                     Verdict::Clean => {}
                     Verdict::Unmeasured(ref why) => {
                         unmeasured += 1;

@@ -8,6 +8,7 @@ row-not-found-at-the-door	ChunkMembership	prefix:chunkmembership-	490	old prefix
 row-not-found-at-the-door	EventType	prefix:eventtype-	467	old prefix eventtype- (door slug event-type-)
 row-not-found-at-the-door	Appointment	prefix:appt-	244	old prefix appt- (door slug appointment-)
 row-not-found-at-the-door	UnitDomainMapping	contains:.	77	dotted names the door's name rule refuses (400)
+row-served-without-iri	UnitDomainMapping	contains:.	77	the same dotted names: the door answers 400, which the validator reads as served without an iri (code review 15:36)
 row-not-found-at-the-door	UnitDomainMapping	prefix:unitdomain-	10	old prefix unitdomain-
 row-not-found-at-the-door	APISurface	prefix:surface-	21	old prefix surface- (door slug a-p-i-surface-)
 row-not-found-at-the-door	APISurface	prefix:api-	1	old prefix api-

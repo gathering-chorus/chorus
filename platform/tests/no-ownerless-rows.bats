@@ -41,9 +41,52 @@ PY
   echo "$output" | grep -qE "test result: ok\. 1 passed" || return 1
 }
 
+# #5002 AC1 (quality review 15:36) — $1 a shapes file (turtle, riot-parsed), rest: classes whose
+# owner rule must be REQUIRED (sh:minCount 1). Reads the model, not a list of lines.
+owner_required() {
+  local f="$1"; shift
+  python3 - "$f" "$@" <<'PY'
+import subprocess, sys
+f, classes = sys.argv[1], sys.argv[2:]
+q = """PREFIX sh: <http://www.w3.org/ns/shacl#> PREFIX c: <https://jeffbridwell.com/chorus#>
+SELECT ?cls (MAX(?m) AS ?min) WHERE { ?sh sh:targetClass ?cls ; sh:property ?p . ?p sh:path c:ownedBy .
+  OPTIONAL { ?p sh:minCount ?m } } GROUP BY ?cls"""
+out = subprocess.run(["sparql", "--data", f, "--results", "TSV", q], capture_output=True, text=True).stdout
+got = {}
+for l in out.splitlines()[1:]:
+    c, _, m = l.partition("\t")
+    got[c.strip("<>").rsplit("#", 1)[-1]] = m.split("^^")[0].strip('"')
+bad = [c for c in classes if got.get(c) != "1"]
+print("owner required on " + str(len(classes) - len(bad)) + "/" + str(len(classes)) + ("; not required: " + ", ".join(bad) if bad else ""))
+sys.exit(1 if bad else 0)
+PY
+}
+
+REQUIRED="Endpoint PipelineRun ServiceInstance Alert Deployment Page TestType Practice QualityFinding Actor Persona KeyRegistryEntry ToolType Knowledge Operation Memory"
+
+@test "AC1 the 16 fully-owned classes REQUIRE an owner in the shapes (sh:minCount 1), read from the model" {
+  riot --output=ttl "$ROOT"/roles/*/ontology/*.ttl > "$BATS_TEST_TMPDIR/all.ttl" 2>/dev/null || return 1
+  run owner_required "$BATS_TEST_TMPDIR/all.ttl" $REQUIRED
+  echo "$output"
+  [ "$status" -eq 0 ] || return 1
+}
+
+@test "AC1 NEGATIVE PROOF: an owner rule without sh:minCount 1 is red; with it, green" {
+  printf '%s\n' '@prefix sh: <http://www.w3.org/ns/shacl#> . @prefix c: <https://jeffbridwell.com/chorus#> .' \
+    'c:AShape sh:targetClass c:A ; sh:property [ sh:path c:ownedBy ; sh:maxCount 1 ] .' \
+    'c:BShape sh:targetClass c:B ; sh:property [ sh:path c:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ] .' > "$BATS_TEST_TMPDIR/f.ttl"
+  run owner_required "$BATS_TEST_TMPDIR/f.ttl" B
+  [ "$status" -eq 0 ] || return 1
+  run owner_required "$BATS_TEST_TMPDIR/f.ttl" A B
+  [ "$status" -eq 1 ] || return 1
+  [[ "$output" == *"not required: A"* ]] || return 1
+}
+
 @test "AC1 after the land: the live validator names only the remainder" {
   in_werk && skip "after-land check: a card's werk has not landed"
   run bash -c "'$HOME/.chorus/bin/athena-validate' --store-only 2>&1"
+  # the validator must have run to its summary (a missing or crashed binary is red, code review 15:36)
+  [[ "$output" == *"graph-summary|"* ]] || { echo "athena-validate did not run to its summary"; return 1; }
   run only_remainder "$output"
   echo "$output"
   [ "$status" -eq 0 ] || return 1
