@@ -36,3 +36,7 @@ cargo_ok() { # $1 crate dir, rest: cargo test args — passes when it ran tests 
 @test "AC5 the DAL: a Session is owned by the login that writes it, never another" {
   cargo_ok athena-model --lib session_owner_4517
 }
+
+@test "AC5 the door records a refused login itself, with its reason (and never an accepted one)" {
+  cargo_ok athena-make --test logins_4517 the_door_records_a_refused_login_with_its_reason
+}

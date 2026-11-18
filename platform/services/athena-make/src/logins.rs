@@ -283,3 +283,20 @@ pub fn handle_renewal(
         Err((code, why)) => (code, error(match code { 401 => "authn", 403 => "authz", 404 => "not-found", 409 => "conflict", _ => "validation" }, &why)),
     }
 }
+
+/// #4517 AC5 — the door records a refused login itself (it is the one that said no): the
+/// spine line for a logins/logouts answer, or None when the answer was not a refusal.
+/// `principal` is empty when the login itself did not verify.
+pub fn refusal_event(code: u16, principal: &str, body: &str) -> Option<Vec<String>> {
+    if code != 401 && code != 403 { return None; }
+    let why = serde_json::from_str::<Value>(body).ok()
+        .and_then(|v| v.get("message").and_then(Value::as_str).map(str::to_string))
+        .unwrap_or_else(|| format!("HTTP {code}"));
+    Some(vec![
+        "session.login.refused".into(),
+        if principal.is_empty() { "unknown".into() } else { principal.to_string() },
+        format!("http={code}"),
+        format!("reason={}", why.replace('\n', " ")),
+        "by=door".into(),
+    ])
+}

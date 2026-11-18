@@ -35,3 +35,14 @@ setup() { ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"; }
   [ "$status" -eq 0 ] || { echo "$output" | grep FAIL; return 1; }
   grep -qF "PASS NEGATIVE: renewal never writes the Session row itself" <<<"$output" || return 1
 }
+
+@test "AC6 status and the Teammates tile read the Session rows the door wrote (#4997's checks)" {
+  run bash -c "cd '$ROOT/platform/services/chorus-principal' && cargo test --release --quiet --test status_truth_4997 2>&1"
+  echo "$output" | tail -3
+  [ "$status" -eq 0 ] || return 1
+  echo "$output" | grep -qE "test result: ok\. [1-9][0-9]* passed" || return 1
+  run bash -c "cd '$ROOT/directing/clearing-v2' && npx jest tests/teammates-login-4997.test.ts 2>&1"
+  echo "$output" | tail -3
+  [ "$status" -eq 0 ] || return 1
+  echo "$output" | grep -qE "Tests: +[1-9][0-9]* passed" || return 1
+}

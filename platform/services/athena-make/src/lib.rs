@@ -7021,10 +7021,12 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                     let now_secs = unix_now_secs();
                     let auth_hdr = header("authorization");
                     let token = bearer_token(&auth_hdr);
+                    let mut refused_by = String::new();
                     let (code, body) = match oidc::verify_any(token, &oidc_verifier, now_secs) {
                         Err(_) => (401u16, "{ \"error\": \"authn-missing\", \"message\": \"a verified login is required to open a session\" }".to_string()),
                         Ok(claims) => {
                             let who = oidc_verifier.principal_for(&claims.web_id, now_secs).unwrap_or_else(|| claims.agent_id.clone());
+                            refused_by = who.clone();
                             let caller = logins::Caller { principal: &who, jti: &claims.jti, expires_at: &logins::iso_from_secs(claims.exp) };
                             let body_str = req.splitn(2, "\r\n\r\n").nth(1).unwrap_or("");
                             match tables.iter().find(|t| t.class.ends_with("#Session")) {
@@ -7062,6 +7064,11 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                             }
                         }
                     };
+                    // #4517 AC5 — the door records a refused login itself, with its reason
+                    if let Some(args) = logins::refusal_event(code, &refused_by, &body) {
+                        let home = std::env::var("CHORUS_HOME").unwrap_or_else(|_| format!("{}/CascadeProjects/chorus", std::env::var("HOME").unwrap_or_default()));
+                        let _ = Command::new("bash").arg(format!("{}/platform/scripts/chorus-log", home)).args(&args).output();
+                    }
                     let resp = http_response_ct(status_line(code), &body, "application/json");
                     let _ = stream.write_all(resp.as_bytes());
                     return;

@@ -236,3 +236,18 @@ fn every_link_on_a_door_written_row_names_its_target_bare() {
     assert_eq!(row["startedBy"], "door");
     assert_eq!(row["actsAs"], "kade");
 }
+
+/// #4517 AC5 — a refused login is recorded by the door, with its reason. NEGATIVE PROOF:
+/// an accepted login (201) or a repeat (200) records no refusal.
+#[test]
+fn the_door_records_a_refused_login_with_its_reason() {
+    use athena_make::logins::refusal_event;
+    let e = refusal_event(403, "kade", r#"{ "error": "authz", "message": "kade does not serve 'role-silas'" }"#).unwrap();
+    assert_eq!(e[0], "session.login.refused");
+    assert_eq!(e[1], "kade");
+    assert!(e.iter().any(|a| a == "reason=kade does not serve 'role-silas'"), "{e:?}");
+    assert!(e.iter().any(|a| a == "by=door"));
+    let unverified = refusal_event(401, "", r#"{ "error": "authn-missing", "message": "a verified login is required to open a session" }"#).unwrap();
+    assert_eq!(unverified[1], "unknown");
+    assert!(refusal_event(201, "kade", "{}").is_none() && refusal_event(200, "kade", "{}").is_none());
+}

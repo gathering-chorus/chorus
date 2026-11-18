@@ -45,7 +45,8 @@
 #    11431  2026-11-18  #4517 AC6 (Wren): +45, a refreshed browser login renews its own open
 #                       row (the rule is identity-login's plan_renewal; this is the wiring).
 #    11436  2026-11-18  #4517 AC6 (Wren): an expired row ends at its own expiresAt (logout reads it).
-FROZEN_LINES=11436  # #4517 AC6 — see history above
+#    11460  2026-11-18  #4517 AC5 (Wren): the door records a refused login on the spine (refusal_event).
+FROZEN_LINES=11460  # #4517 AC6 — see history above
 set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 count() { cat "$1"/*.rs 2>/dev/null | wc -l | tr -d ' '; }

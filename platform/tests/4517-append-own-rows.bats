@@ -19,3 +19,12 @@ setup() {
   [ "$status" -eq 0 ]
   echo "$output" | grep -qE "test result: ok\. 8 passed" || return 1
 }
+
+@test "AC4 named: Append never opens another owner's row, and Write still does (both halves in one test)" {
+  run bash -c "cd '$ROOT/platform/services/athena-make' && cargo test --release --quiet --test create_needs_write_row_4517 an_append_row_never_opens_another_owners_row 2>&1"
+  echo "$output" | tail -3
+  [ "$status" -eq 0 ] || return 1
+  echo "$output" | grep -qE "test result: ok\. 1 passed" || return 1
+  grep -q 'permission_opens(held, GRAPH, &granted()), OwnerVerdict::Allow, "Write still opens it"' \
+    "$ROOT/platform/services/athena-make/tests/create_needs_write_row_4517.rs" || return 1
+}
