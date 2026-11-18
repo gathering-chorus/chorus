@@ -548,6 +548,7 @@ chorus:DemoVerdictShape a sh:NodeShape ;
     sh:property [ sh:path chorus:result ; sh:minCount 1 ]  .
 
 chorus:DeploymentShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal ] ;  # #5002 AC1 (Jeff 11-18 10:04)
     sh:targetClass chorus:Deployment ; sh:node chorus:CoreShape ;
     sh:property [ sh:path chorus:cdhash ; sh:minCount 1 ; sh:maxCount 1 ] ;
     sh:property [ sh:path chorus:cardId ; sh:maxCount 1 ] ;
@@ -583,6 +584,7 @@ chorus:CardDiffShape a sh:NodeShape ;
     sh:property [ sh:path chorus:cardId ; sh:minCount 1 ]  .
 
 chorus:QualityFindingShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal ] ;  # #5002 AC1 (Jeff 11-18 10:04)
     sh:targetClass chorus:QualityFinding ; sh:node chorus:CoreShape ;
     sh:property [ sh:path chorus:cardId ; sh:minCount 1 ] ;
     sh:property [ sh:path chorus:ts ; sh:minCount 1 ]  .
@@ -663,6 +665,7 @@ chorus:ScenarioVerifiedByShape a sh:NodeShape ;
 # refuses, so that move rides with Teammate-as-Actor later. Both carry required
 # fields, so 4022 can walk them (it skipped Actor: no required field).
 chorus:PersonaShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal ] ;  # #5002 AC1 (Jeff 11-18 10:04)
     sh:targetClass chorus:Persona ; sh:node chorus:CoreShape ;
     sh:property chorus:PersonaShape-label ;
     sh:property chorus:PersonaShape-playsRole .
@@ -673,6 +676,7 @@ chorus:PersonaShape-playsRole a sh:PropertyShape ;
     sh:message "playsRole names the part the persona plays: Jeff, a peer role, an outsider" .
 
 chorus:ActorShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal ] ;  # #5002 AC1 (Jeff 11-18 10:04)
     sh:targetClass chorus:Actor ; sh:node chorus:CoreShape ;
     sh:property chorus:ActorShape-label ;
     sh:property chorus:ActorShape-actorKind ;

@@ -85,6 +85,7 @@ chorus:DomainOrderShape a sh:NodeShape ;
 # =============================================================================
 
 chorus:RoleShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:ownedBy ; sh:maxCount 1 ; sh:class chorus:Principal ] ;  # #5002 AC1 (Jeff 11-18 10:04)
   sh:targetClass chorus:Role ; sh:node chorus:CoreShape ;
   # #4187 — pin removed 2026-09-18. The roles domain claims Role, AgentRole and
   # HumanRole, so the home derives from the model; the six Role rows were copied

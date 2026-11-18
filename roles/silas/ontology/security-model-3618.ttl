@@ -410,6 +410,7 @@ chorus:PrincipalWorkerHoldsNoRole a sh:NodeShape ;
     ] .
 
 chorus:KeyRegistryEntryShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal ] ;  # #5002 AC1 (Jeff 11-18 10:04)
     sh:targetClass chorus:KeyRegistryEntry ; sh:node chorus:CoreShape ;
     # #4340 — the declared home is where the rows are. The five nostr keys
     # (bridge, jeff, wren, kade, marknakib) live in the security graph; without
@@ -436,6 +437,7 @@ chorus:KeyRegistryEntryShape-permittedScope a sh:PropertyShape ;
     sh:message "scopes stay inside the chorus realm" .
 
 chorus:APISurfaceShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:ownedBy ; sh:maxCount 1 ; sh:class chorus:Principal ] ;  # #5002 AC1 (Jeff 11-18 10:04)
     sh:targetClass chorus:APISurface ; sh:node chorus:CoreShape ;
     sh:property chorus:APISurfaceShape-label ;
     sh:property chorus:APISurfaceShape-servedBy .
@@ -447,6 +449,7 @@ chorus:APISurfaceShape-servedBy a sh:PropertyShape ;
     sh:path chorus:servedBy ; sh:minCount 1 .
 
 chorus:GateShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:ownedBy ; sh:maxCount 1 ; sh:class chorus:Principal ] ;  # #5002 AC1 (Jeff 11-18 10:04)
     sh:targetClass chorus:Gate ; sh:node chorus:CoreShape ;
     sh:property chorus:GateShape-label ;
     sh:property chorus:GateShape-ownerRole .

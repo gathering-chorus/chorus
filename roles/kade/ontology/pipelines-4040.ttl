@@ -180,6 +180,7 @@ chorus:typeOrder a owl:DatatypeProperty ;
     rdfs:comment "Where the type starts in the run's one queue (1 first). Every type has one, each once." ;
     rdfs:domain chorus:TestType ; rdfs:range xsd:integer .
 chorus:TestTypeShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal ] ;  # #5002 AC1 (Jeff 11-18 10:04)
     sh:targetClass chorus:TestType ; sh:node chorus:CoreShape ;
     sh:property [ sh:path rdfs:label ; sh:minCount 1 ; sh:maxCount 1 ] ;
     sh:property [ sh:path chorus:typeOrder ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ] .
@@ -190,6 +191,7 @@ chorus:TestTypeShape a sh:NodeShape ;
 # pin to the v1 catch-all, which is what stranded 144 rows there.
 
 chorus:PipelineShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:ownedBy ; sh:maxCount 1 ; sh:class chorus:Principal ] ;  # #5002 AC1 (Jeff 11-18 10:04)
     sh:targetClass chorus:Pipeline ; sh:node chorus:CoreShape ;
     sh:property [ sh:path rdfs:label ; sh:minCount 1 ] ;
     sh:property [ sh:path chorus:pipelineStatus ; sh:minCount 1 ] ;
@@ -210,6 +212,7 @@ chorus:PipelineShape a sh:NodeShape ;
     sh:property [ sh:path chorus:onFailureRun ; sh:maxCount 1 ] .
 
 chorus:PipelineStepShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:ownedBy ; sh:maxCount 1 ; sh:class chorus:Principal ] ;  # #5002 AC1 (Jeff 11-18 10:04)
     sh:targetClass chorus:PipelineStep ; sh:node chorus:CoreShape ;
     sh:property [ sh:path chorus:executor ; sh:minCount 1 ] ;
     sh:property [ sh:path chorus:stepOrder ; sh:minCount 1 ] ;
@@ -223,6 +226,7 @@ chorus:PipelineStepShape a sh:NodeShape ;
 # Tightens the existing chorus:PipelineRunShape (werk-domains.ttl — traceId):
 # triples on the same subject merge in the store; both constraints apply.
 chorus:PipelineRunShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal ] ;  # #5002 AC1 (Jeff 11-18 10:04)
     sh:targetClass chorus:PipelineRun ; sh:node chorus:CoreShape ;
     sh:property [ sh:path chorus:forPipeline ; sh:minCount 1 ] ;
     # #4047 — the metrics were TBox-only, so the door refused every one as
