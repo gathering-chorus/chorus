@@ -315,8 +315,51 @@ const GIT_TRUST: &str = concat!(
     "  - GIT_CONFIG_VALUE_0: ${CHORUS_WERK_BASE}/${ROLE}-${CARD}\n",
 );
 
+/// #5006 — whether a DAG's steps may run a role's werk slot binaries.
+/// The card's own build, test and demo run its slot (#4474 run 12: under the
+/// scheduler the verbs resolved to the installed ones, so the card's own
+/// werk-demo never ran); a land and a go run what is on main, never a slot.
+/// Both say so explicitly (CHORUS_USE_SLOT, read by chorus-runner and the
+/// werk-deploy launcher), so a value inherited from the scheduler never decides.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Slots {
+    /// The card's own steps: the role's slot first on PATH, and the opt-in.
+    Card,
+    /// Land and go: no slot on PATH, and the opt-in explicitly off.
+    Installed,
+}
+
+/// #5006 — the only DAGs that run a card's own build: its build and demo
+/// (cicd), its tests (cicd-test), its demo reviews (demo) and its model run
+/// (athena). Every other DAG — lands, gos, the nightly, schedules, and what a
+/// land enqueues after accept (clearing-evaluate) — runs the installed binaries.
+pub const SLOT_PIPELINES: &[&str] = &["cicd", "cicd-test", "demo", "athena"];
+
+/// The slot rule for a DAG, by its name: one list, nothing inferred.
+pub fn slots_for(dag: &str) -> Slots {
+    if SLOT_PIPELINES.contains(&dag) { Slots::Card } else { Slots::Installed }
+}
+
+impl Slots {
+    pub fn env(self) -> &'static str {
+        match self {
+            Slots::Card => "  - CHORUS_USE_SLOT: \"1\"\n  - PATH: ${CHORUS_WERK_BASE}/${ROLE}-bin:${PATH}\n",
+            Slots::Installed => "  - CHORUS_USE_SLOT: \"0\"\n",
+        }
+    }
+
+    /// A straight DAG's env: the card's own werk-test build first on PATH, then
+    /// the role's slot (#4540); or, installed, neither.
+    pub fn straight_env(self) -> &'static str {
+        match self {
+            Slots::Card => "  - CHORUS_USE_SLOT: \"1\"\n  - PATH: ${CHORUS_WERK_BASE}/${ROLE}-${CARD}/platform/services/werk-test/target/release:${CHORUS_WERK_BASE}/${ROLE}-bin:${PATH}\n",
+            Slots::Installed => "  - CHORUS_USE_SLOT: \"0\"\n",
+        }
+    }
+}
+
 /// The header both halves share: params, the machine's env, the failure nudge.
-fn preamble(out: &mut String, description: &str, queue: &str, params: &[&str], routes: &str, on_success: Option<&str>) {
+fn preamble(out: &mut String, description: &str, queue: &str, params: &[&str], routes: &str, on_success: Option<&str>, slots: Slots) {
     out.push_str(HEADER);
     out.push_str(&format!("description: {}\n", quote(description)));
     out.push_str(&format!("queue: {queue}\n"));
@@ -344,10 +387,7 @@ fn preamble(out: &mut String, description: &str, queue: &str, params: &[&str], r
         "  - CHORUS_TRACE_ID: ${DAG_RUN_ID}\n",
     ));
     out.push_str(GIT_TRUST);
-    // #4474 run 12: under the scheduler the verbs resolved to the installed
-    // ones, so the card's own werk-demo never ran. The role's slot comes
-    // first, as chorus-env-setup.sh does for a role's shell (#2995).
-    out.push_str("  - PATH: ${CHORUS_WERK_BASE}/${ROLE}-bin:${PATH}\n");
+    out.push_str(slots.env());
     // #4474 run 15: a v2 run failed at test and nobody heard for 40 minutes; v1's
     // pipeline nudges, and no role polls (Jeff: "the pipeline nudges you"). dagu's
     // own failure handler tells the builder role, through the one nudge door.
@@ -593,7 +633,7 @@ pub fn generate(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>> {
     // go half routes the go)
     let card_end = rows.iter().position(|r| r.executor == "human").unwrap_or(rows.len());
     let mut out = String::new();
-    preamble(&mut out, &format!("werk v2 — pipeline {pipeline}, generated from the graph"), CARD_QUEUE, &["CARD", "ROLE"], &fail_routes_in(&rows, &rows[..card_end]), None);
+    preamble(&mut out, &format!("werk v2 — pipeline {pipeline}, generated from the graph"), CARD_QUEUE, &["CARD", "ROLE"], &fail_routes_in(&rows, &rows[..card_end]), None, slots_for(pipeline));
     let mut prev: Vec<String> = Vec::new();
     let grouped = groups(&rows);
     for (g, group) in grouped.iter().enumerate() {
@@ -637,7 +677,7 @@ pub fn generate_go(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>> 
     let id = dagu_name(&rows, r);
     let prev: Vec<String> = Vec::new();
     let mut out = String::new();
-    preamble(&mut out, &format!("werk v2 — the go of pipeline {pipeline}, generated from the graph"), GO_QUEUE, &["CARD", "ROLE", "CICD_RUN"], &fail_routes_in(&rows, &rows[g..=g]), None);
+    preamble(&mut out, &format!("werk v2 — the go of pipeline {pipeline}, generated from the graph"), GO_QUEUE, &["CARD", "ROLE", "CICD_RUN"], &fail_routes_in(&rows, &rows[g..=g]), None, Slots::Installed);
     out.push_str(&format!("  - name: {id}\n"));
     out.push_str(&format!("    description: {}\n", quote(&r.label)));
     depends_on(&mut out, &prev);
@@ -695,6 +735,7 @@ pub fn generate_go_less(pipeline: &str, rows: &[Row]) -> Result<String, Vec<Stri
         &["CARD", "ROLE"],
         &fail_routes(&rows),
         (pipeline == MODEL_PIPELINE).then_some(MODEL_THEN_WERK),
+        slots_for(pipeline),
     );
     let mut prev: Vec<String> = Vec::new();
     for group in groups(&rows) {
@@ -802,13 +843,11 @@ pub fn generate_straight(pipeline: &str, pipe: &Pipe, rows: &[Row], known: &[Str
         "  - CHORUS_TRACE_ID: {}\n",
     ), trace));
     out.push_str(GIT_TRUST);
-    out.push_str(concat!(
-        // the card's own werk-test build, then the role's slot as cicd does
-        // (#4474 run 12). #4540 — werk-build never fills the slot (#3062) and
-        // main's werk-test knows no steps, so a card that adds a step could not
-        // test itself; with no card (the nightly) the first dir does not exist.
-        "  - PATH: ${CHORUS_WERK_BASE}/${ROLE}-${CARD}/platform/services/werk-test/target/release:${CHORUS_WERK_BASE}/${ROLE}-bin:${PATH}\n",
-    ));
+    // the card's own werk-test build, then the role's slot as cicd does
+    // (#4474 run 12). #4540 — werk-build never fills the slot (#3062) and
+    // main's werk-test knows no steps, so a card that adds a step could not
+    // test itself. #5006 — only the card's own test and demo DAGs get it.
+    out.push_str(slots_for(pipeline).straight_env());
     out.push_str("handler_on:\n");
     // Who hears a failure: a child (it takes its trace from a parent) says
     // nothing — the parent owns failure, so the card is nudged once (Silas
@@ -902,7 +941,7 @@ pub fn generate_land(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>
         return Err(vec!["no human go in the rows: nothing to land".to_string()]);
     };
     let mut out = String::new();
-    preamble(&mut out, &format!("werk v2 — the land of pipeline {pipeline}, generated from the graph"), LAND_QUEUE, &["CARD", "ROLE", "ACCEPTER"], &fail_routes_in(&rows, &rows[go + 1..]), Some(LAND_THEN_MODEL));
+    preamble(&mut out, &format!("werk v2 — the land of pipeline {pipeline}, generated from the graph"), LAND_QUEUE, &["CARD", "ROLE", "ACCEPTER"], &fail_routes_in(&rows, &rows[go + 1..]), Some(LAND_THEN_MODEL), Slots::Installed);
     // #4691 — a human step after the go is a role's (Borg Queen proves the
     // land the way a navigator greens a pair): it names who answers and how
     let errs: Vec<String> = rows[go + 1..].iter().filter(|r| r.executor == "human")

@@ -6,6 +6,10 @@
 use chorus_runner::server::{binary_path, slot_refusal};
 use std::os::unix::fs::PermissionsExt;
 
+// #5006 review — the cases set process env (CHORUS_WERK_BASE, CHORUS_STATE_DIR,
+// CHORUS_USE_SLOT); one at a time, each with its own opt-in.
+static ENV: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn slot(tag: &str, dir_mode: u32, file_mode: u32) -> std::path::PathBuf {
     let base = std::env::temp_dir().join(format!("werk-base-4853-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&base);
@@ -19,7 +23,9 @@ fn slot(tag: &str, dir_mode: u32, file_mode: u32) -> std::path::PathBuf {
 
 #[test]
 fn a_runner_owned_0755_slot_runs_and_group_writable_slots_are_refused_naming_the_path() {
-    // one test: CHORUS_WERK_BASE is process-global
+    let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+    // #5006 — trust is checked on a slot the caller opted into
+    std::env::set_var("CHORUS_USE_SLOT", "1");
     let good = slot("good", 0o755, 0o755);
     std::env::set_var("CHORUS_WERK_BASE", &good);
     assert_eq!(binary_path("werk-build", "wren").unwrap(), good.join("wren-bin/werk-build").display().to_string());
@@ -61,6 +67,8 @@ fn another_accounts_file_is_refused_even_at_0755() {
 #[test]
 fn a_slot_owned_by_the_installer_is_trusted_by_a_role_running_call() {
     use std::os::unix::fs::MetadataExt;
+    let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+    std::env::set_var("CHORUS_USE_SLOT", "1");
     let state = std::env::temp_dir().join(format!("state-4853-{}", std::process::id()));
     std::fs::create_dir_all(state.join("bin")).unwrap();
     std::env::set_var("CHORUS_STATE_DIR", &state);

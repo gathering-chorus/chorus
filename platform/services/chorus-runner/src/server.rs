@@ -104,28 +104,70 @@ pub fn state_dir() -> String {
         .unwrap_or_else(|| format!("{}/.chorus", std::env::var("HOME").unwrap_or_default()))
 }
 
-/// Which binary a tool runs. #4514 — the caller's werk bin slot first, as the
-/// cicd pipeline's PATH does today (${CHORUS_WERK_BASE}/<role>-bin first), so a
-/// card that changes a verb runs its own build; then the installed copy.
+/// Which binary a tool runs (see resolve_binary).
+pub fn binary_path(name: &str, who: &str) -> Result<String, String> {
+    resolve_binary(name, who, slot_opted_in()).map(|(path, _)| path)
+}
+
+/// #5006 — a slot runs only when the caller opted in: the card's own build,
+/// test and demo pipelines set CHORUS_USE_SLOT=1 (chorus-make), the land
+/// pipelines never do. Fail closed: a land, a hand run, the shared runner
+/// service and any caller that did not say so get the installed binary.
+pub fn slot_opted_in() -> bool {
+    std::env::var("CHORUS_USE_SLOT").is_ok_and(|v| v == "1")
+}
+
+/// Which binary a tool runs, and why. #4514 — with the opt-in, the caller's
+/// werk bin slot first, so a card that changes a verb runs its own build in its
+/// own demo; otherwise (#5006) the installed copy, so a land runs what is on main.
 /// #4853 — a slot binary runs as the runner's account, so a slot any other
 /// account could write is refused, never run and never skipped quietly.
-pub fn binary_path(name: &str, who: &str) -> Result<String, String> {
-    if let Ok(base) = std::env::var("CHORUS_WERK_BASE") {
-        let slot = format!("{base}/{who}-bin/{name}");
-        if !who.is_empty() && std::path::Path::new(&slot).is_file() {
-            slot_trusted(std::path::Path::new(&slot))?;
-            return Ok(slot);
+pub fn resolve_binary(name: &str, who: &str, use_slot: bool) -> Result<(String, &'static str), String> {
+    if use_slot {
+        if let Ok(base) = std::env::var("CHORUS_WERK_BASE") {
+            let slot = format!("{base}/{who}-bin/{name}");
+            if !who.is_empty() && std::path::Path::new(&slot).is_file() {
+                slot_trusted(std::path::Path::new(&slot))?;
+                return Ok((slot, "slot: the caller opted in"));
+            }
         }
     }
     let installed = format!("{}/bin/{name}", state_dir());
     if std::path::Path::new(&installed).exists() {
-        return Ok(installed);
+        return Ok((installed, if use_slot { "installed: opted in, no slot for the caller" } else { "installed: no slot opt-in" }));
     }
     // #4515 — a row naming a Chorus script (cards, agent-state.sh): the
     // runner's launchd PATH has ~/.chorus/bin only.
     let home = std::env::var("CHORUS_HOME").unwrap_or_else(|_| format!("{}/CascadeProjects/chorus", std::env::var("HOME").unwrap_or_default()));
     let script = format!("{home}/platform/scripts/{name}");
-    Ok(if !name.contains('/') && std::path::Path::new(&script).is_file() { script } else { name.to_string() })
+    Ok(if !name.contains('/') && std::path::Path::new(&script).is_file() { (script, "chorus script") } else { (name.to_string(), "bare name on PATH") })
+}
+
+/// #5006 — what a call runs, and the runner.binary.resolved line it logs.
+/// An http tool's "binary" is a route: nothing is resolved or logged for it,
+/// so no slot is stat'd or trust-checked for a call that runs no binary.
+pub fn resolve_for_call(tool: &str, binary: &str, who: &str, http: bool, trace: &str) -> Result<(String, Option<String>), String> {
+    if http {
+        return Ok((binary.to_string(), None));
+    }
+    let use_slot = slot_opted_in();
+    let (path, why) = resolve_binary(binary, who, use_slot)?;
+    let line = resolution_line(tool, who, &path, why, use_slot, trace);
+    Ok((path, Some(line)))
+}
+
+/// #5006 — one line per resolution, so a land that ran a slot is visible.
+pub fn resolution_line(tool: &str, who: &str, path: &str, why: &str, use_slot: bool, trace: &str) -> String {
+    serde_json::json!({
+        "event": "runner.binary.resolved",
+        "tool": tool,
+        "caller": who,
+        "path": path,
+        "why": why,
+        "slot_opt_in": use_slot,
+        "trace": trace,
+    })
+    .to_string()
 }
 
 /// #4853 — the account this runner runs as (read once).
@@ -178,7 +220,7 @@ pub fn slot_refusal(owner_uid: u32, mode: u32, runner_uid: u32) -> Option<String
 /// #4514 — everything a tool call decides before it runs, shared by the MCP
 /// server and `chorus-runner call` (one path, Silas 19:11): who it runs as,
 /// its arguments checked against the generated schema, its argv, the binary
-/// (the caller's werk slot first), and the child's environment.
+/// (installed, or the caller's slot when it opted in: #5006), and the child's environment.
 pub struct Prepared {
     pub who: String,
     pub binary: String,
@@ -227,7 +269,10 @@ pub fn prepare_with(tool: &SkillTool, args: &serde_json::Map<String, serde_json:
     } else {
         None
     };
-    let binary = binary_path(&tool.binary, &who).map_err(|e| (e, 403))?;
+    let (binary, resolved) = resolve_for_call(&tool.name, &tool.binary, &who, http.is_some(), trace).map_err(|e| (e, 403))?;
+    if let Some(line) = resolved {
+        eprintln!("{line}");
+    }
     Ok(Prepared { binary, argv, env: crate::skills::child_env(&who, &token, trace), who, http })
 }
 

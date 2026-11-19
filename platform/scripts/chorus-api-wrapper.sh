@@ -7,12 +7,12 @@ set -euo pipefail
 
 # #3197 — source the ONE env file. CHORUS_ROOT/HOME/WERK_BASE/BIN +
 # WERK_<ROLE>_BIN land in this process's env (and so in the node app's
-# process.env), instead of each consumer re-deriving them. This is also what
-# lets werk-targeted deploys spawned by the API resolve a role's bin slot.
+# process.env), instead of each consumer re-deriving them. The slot paths are
+# paths only: no child of this API runs a slot (#5006, no opt-in below).
 source "$(dirname "${BASH_SOURCE[0]}")/chorus-env-setup.sh"
-# #4414 — the API resolves a role's slot per request (werk-targeted deploys): it opts in.
-# Set here, never in chorus-env-setup.sh, which Jeff's shell also sources.
-export CHORUS_USE_SLOT=1
+# #5006 — no slot opt-in here: every child of the prod API (and anything it
+# starts) runs the installed binaries. A demo variant API opts in in its own
+# plist (werk-deploy demo_env), and the card's build/demo DAGs opt in (chorus-make).
 
 API_DIR="$CHORUS_ROOT/platform/api"
 APP_ENV="$CHORUS_ROOT/../jeff-bridwell-personal-site/.env"
