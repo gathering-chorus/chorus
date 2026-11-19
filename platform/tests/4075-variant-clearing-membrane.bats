@@ -35,7 +35,7 @@ start_clearing() {
   TOKEN="t5005$$$RANDOM"
   printf '%s' "$TOKEN" > "$W/home/.chorus/bridge-auth-token"
   ( cd "$ROOT/directing/clearing" && \
-    HOME="$W/home" COMMAND_CHANNEL_PORT="$PORT" CLEARING_HTTPS_PORT=0 \
+    HOME="$W/home" CLEARING_CHORUS_HOME="$W/home/.chorus" COMMAND_CHANNEL_PORT="$PORT" CLEARING_HTTPS_PORT=0 \
     CHORUS_API_URL="http://127.0.0.1:9" CHORUS_API_BASE="http://127.0.0.1:9" PULSE_URL="http://127.0.0.1:9" \
     CHORUS_LOG_FILE="$W/spine.log" CLEARING_SPINE_FILE="$W/spine.log" CLEARING_MSG_FILE="$store.msgs.json" CLEARING_JOURNAL="$store" \
     CHORUS_CLEARING_REQUIRE_DPOP=0 BUZZ_ROOM_ENABLED=0 \

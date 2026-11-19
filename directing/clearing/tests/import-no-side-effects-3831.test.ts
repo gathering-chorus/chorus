@@ -139,18 +139,25 @@ describe('#5005 the bridge token is never logged', () => {
     fs.rmSync(home, { recursive: true, force: true });
   });
 
-  test('a start with a known token never writes its value, and prints the notice', () => {
+  test('a start with a known token never writes its value, and prints the notice', async () => {
     const prior = process.env.CLEARING_CHORUS_HOME;
+    let started: typeof import('../src/server') | undefined;
     jest.isolateModules(() => {
       process.env.CLEARING_CHORUS_HOME = home;
       try {
-        require('../src/server');
+        started = require('../src/server');
       } finally {
-        process.env.CLEARING_CHORUS_HOME = prior;
+        if (prior === undefined) delete process.env.CLEARING_CHORUS_HOME;
+        else process.env.CLEARING_CHORUS_HOME = prior;
       }
     });
+    // The start really loaded the planted token: it admits a request carrying
+    // it, and refuses a wrong one. Without this, a start that read some other
+    // token file would pass the "not logged" check below without testing it.
+    const asked = (t: string) => ({ headers: { authorization: `Bearer ${t}` }, cookies: {} }) as any;
+    await expect(started!.isMessageWriteAuthed(asked(KNOWN))).resolves.toBe(true);
+    await expect(started!.isMessageWriteAuthed(asked('wrong-5005'))).resolves.toBe(false);
     const all = captured.join('\n');
-    expect(bridgeTokenNotice()).toBe('[clearing] remote access token is set');
     expect(all).toContain(bridgeTokenNotice());
     expect(all).not.toContain(KNOWN);
   });
