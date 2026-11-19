@@ -184,3 +184,33 @@ Feature: A principal logs in, works, and logs out
     When Jeff runs "chorus-principal login wren"
     Then it is refused with "nobody is signed in"
     And nothing is started
+
+  # #5015 — the human's path (Jeff 11-18: "a power-on self-test for the agents, but there's
+  # no power-on self-test for the human"). His browser signs in through the shared door;
+  # steps: step_definitions/browser_signin_steps.ts (guard functions, stub door).
+  @browser
+  Scenario: Jeff signs in from his browser and his session is recorded
+    When Jeff signs in on his phone
+    Then his phone's sign-in carries a recorded session
+
+  @browser
+  Scenario: An idle hour does not sign Jeff out
+    Given Jeff has signed in on his phone
+    When his phone sits idle for an hour
+    And he opens the Clearing on his phone
+    Then he is signed in and his sign-in is renewed
+
+  @browser
+  Scenario: Jeff is signed in on his phone and his desktop at once
+    Given Jeff has signed in on his phone
+    And Jeff has signed in on his desktop
+    Then Jeff has two recorded sessions
+    And he is signed in on both
+
+  @browser
+  Scenario: Signing out on one device leaves the other signed in
+    Given Jeff has signed in on his phone
+    And Jeff has signed in on his desktop
+    When Jeff signs out on his phone
+    Then his phone is signed out
+    And he is still signed in on his desktop

@@ -470,9 +470,24 @@ impl OidcVerifier {
         // bridge only.
         let scope = self.scopes_for(&web_id, now_secs);
         let agent_id = self.role_for(&web_id, now_secs).unwrap_or_default();
-        let jti = auth::json_string(payload, "jti").unwrap_or_default();
+        // #5015 — every login has an id. A token with no jti (a CSS browser id_token)
+        // gets the hash of its own signature: unique per token, stable for that token,
+        // set here once so no login kind reaches the door without one (the door
+        // refused "" with 401 "login has no id" and Jeff's browser sign-ins wrote no row).
+        let jti = auth::json_string(payload, "jti")
+            .filter(|j| !j.is_empty())
+            .unwrap_or_else(|| login_id_from_signature(&sig_bytes));
         Ok(Claims { agent_id, web_id, aud, exp, scope, jti })
     }
+}
+
+/// #5015 — the login id for a token that carries no jti: "sig-" + the first 32 hex
+/// chars of sha256(signature bytes). Distinct from any CSS jti shape.
+pub fn login_id_from_signature(sig_bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let d = Sha256::digest(sig_bytes);
+    let hex: String = d.iter().map(|b| format!("{:02x}", b)).collect();
+    format!("sig-{}", &hex[..32])
 }
 
 /// THE one verify entry the seam calls for every token. The header `alg`
@@ -983,7 +998,28 @@ mod tests {
         let with = format!(r#"{{"iss":"{}","aud":"chorus","webid":"{}","exp":{},"jti":"login-7.a/b"}}"#, ISSUER, wren_webid(), NOW + 3600);
         let c = v.verify(&mint_es256(&css_key(), KID, &with), NOW).expect("verifies");
         assert_eq!(c.jti, "login-7.a/b");
-        assert_eq!(v.verify(&token_valid(), NOW).expect("verifies").jti, "", "no jti in the token, none invented");
+        // #5015 supersedes: a token with no jti now carries its signature's hash.
+        let none = v.verify(&token_valid(), NOW).expect("verifies").jti;
+        assert!(none.starts_with("sig-") && none.len() == 36, "no jti → signature id, got {none:?}");
+    }
+
+    /// #5015 AC1 — every login kind gets a login id. A token with no jti (Jeff's CSS
+    /// browser id_token) gets sig-<sha256 of its signature>: non-empty, stable for the
+    /// same token, different for a different token. NEGATIVE PROOF: with the fallback
+    /// removed the id is "" and the door's login route answers 401 "login has no id".
+    #[test]
+    fn a_login_with_no_jti_gets_its_signature_id_5015() {
+        let v = verifier();
+        let t1 = token_valid();
+        let a = v.verify(&t1, NOW).expect("verifies").jti;
+        let b = v.verify(&t1, NOW).expect("verifies").jti;
+        assert!(!a.is_empty(), "no-jti login got no id: the door would refuse it");
+        assert_eq!(a, b, "the same token must give the same login id");
+        let other = format!(r#"{{"iss":"{}","aud":"chorus","webid":"{}","exp":{}}}"#, ISSUER, wren_webid(), NOW + 1800);
+        let c = v.verify(&mint_es256(&css_key(), KID, &other), NOW).expect("verifies").jti;
+        assert_ne!(a, c, "two different tokens must not share a login id");
+        let sig = token_valid().rsplit('.').next().unwrap().to_string();
+        assert_eq!(a, login_id_from_signature(&auth::b64url_decode(&sig).unwrap()));
     }
 
     // case 2 — forged-401: signature byte-tampered → refused, reason signature.

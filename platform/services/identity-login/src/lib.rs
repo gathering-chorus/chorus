@@ -296,6 +296,19 @@ mod tests {
         assert!(why.contains("login has no id"), "{why}");
     }
 
+    /// #5015 AC1 — a login whose id came from its signature (chorus-oidc gives a token
+    /// with no jti "sig-" + sha256 of its signature) is recorded: the door writes its
+    /// Session row (201) instead of 401 "login has no id". The negative proof is the case
+    /// above: the same login with an empty id is refused.
+    #[test]
+    fn a_login_with_a_signature_id_is_recorded_5015() {
+        let sig_id = VerifiedLogin { principal: "kade", token_id: "sig-of-the-token-signature", expires_at: "x" };
+        match plan_login(&sig_id, &facts(), &json!({"channel":"pane","hostAccount":"chorus-kade"}), serves_kade, None, NOW) {
+            Ok(Outcome::Create(name, _)) => assert!(!name.is_empty(), "the row has a name"),
+            other => panic!("a signature-id login must create its Session row, got {other:?}"),
+        }
+    }
+
     mod renewal {
         use super::super::*;
         const NOW: &str = "2026-11-18T06:40:00Z";
