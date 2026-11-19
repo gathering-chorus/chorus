@@ -247,6 +247,10 @@ pub fn product(store: &Store, name: &str) -> Result<Product, ModelError> {
     if owned.is_empty() {
         return Err(ModelError(format!("product '{name}' has no domains in the model (c:{name} a c:Product ; c:hasDomain …)")));
     }
+    // #4995 (AC4) — a product only composes domains; a class it defines itself has no domain
+    if let Some(c) = select(store, &format!("SELECT ?c WHERE {{ c:{name} a c:Product ; c:definesVocabulary ?c }} ORDER BY ?c LIMIT 1"))?.first() {
+        return Err(ModelError(format!("{name} defines {} itself: a product only composes domains; move the class into one of its domains", c["c"])));
+    }
     // #4742 — the product's child routes are the domains it owns, then the ones it composes
     // (a composition, not an orchestration); a domain it also owns is served once, as owned.
     let composed = select(store, &format!(
@@ -287,35 +291,44 @@ pub fn domain_out(store: &Store, name: &str) -> Result<String, ModelError> {
         [] => return Err(ModelError("no Property row holds athena-gen.domain_out (the template for where a domain's API lands)".into())),
         _ => return Err(ModelError(format!("{} Property rows hold athena-gen.domain_out; keep one", rows.len()))),
     };
-    let step = select(store, &format!("SELECT ?s WHERE {{ c:{name} c:atStep ?s }}"))?;
-    let Some(step) = step.first().map(|r| r["s"].trim_start_matches("value-stream-step-").to_string()) else {
-        return Err(ModelError(format!("{name} declares no atStep: its API's home is <step>/domains/{name} (ADR-041)")));
+    let steps = select(store, &format!("SELECT DISTINCT ?s WHERE {{ c:{name} c:atStep ?s }}"))?;
+    let step = match steps.as_slice() {
+        [one] => one["s"].trim_start_matches("value-stream-step-").to_string(),
+        [] => return Err(ModelError(format!("{name} declares no atStep: its API's home is <step>/domains/{name} (ADR-041)"))),
+        _ => return Err(ModelError(format!("{name} declares {} atStep values: one home per domain (ADR-041)", steps.len()))),
     };
     Ok(template.replace("{step}", &step).replace("{domain}", name))
+}
+
+/// #4995 (AC4) — ONE domain, built from its own rows: its classes (definesVocabulary),
+/// each with its fields. The single place a domain is turned into classes; a product
+/// and a domain unit both call it, passing the unit's settings (namespace, graph prefix).
+pub fn domain_slice(store: &Store, dname: &str, composed: bool, unit: &str, declared: &[(String, String)]) -> Result<Domain, ModelError> {
+    // #4519 — a class with no instancesGraph lives under the unit's own graph prefix
+    let prefix = declared.iter().find(|(k, _)| k == "store.graph_prefix").map(|(_, v)| v.clone());
+    // #4519 reopen — the unit's classes are named in its own namespace; none declared is refused
+    let Some(ns) = declared.iter().find(|(k, _)| k == "model.namespace").map(|(_, v)| v.clone()) else {
+        return Err(ModelError(format!("{unit} declares no model.namespace: add a Property row (c:{unit} c:hasProperty …)")));
+    };
+    let mut domain = Domain { name: dname.to_string(), composed, classes: Vec::new() };
+    for c in select_iri(store, &format!("SELECT DISTINCT ?c WHERE {{ c:{dname} c:definesVocabulary ?c }} ORDER BY ?c"))? {
+        let iri = &c["c"];
+        if !iri.starts_with(&ns) {
+            return Err(ModelError(format!(
+                "{dname} defines {iri}, which is not in {unit}'s namespace {ns}: a product serves only its own classes")));
+        }
+        domain.classes.push(class(store, dname, iri, prefix.as_deref(), unit)?);
+    }
+    Ok(domain)
 }
 
 /// #4995 — the one path that turns domains into classes. A product and a domain both
 /// come through here; the product adds only which domains it owns and composes.
 fn build(store: &Store, name: &str, domains: &[(String, bool)]) -> Result<Product, ModelError> {
     let mut out = Product { name: name.to_string(), domains: Vec::new(), operations: Vec::new(), domain_unit: false };
-    // #4519 — a class with no instancesGraph lives under the unit's own graph prefix
     let declared = settings(store, name)?;
-    let prefix = declared.iter().find(|(k, _)| k == "store.graph_prefix").map(|(_, v)| v.clone());
-    // #4519 reopen — the unit's classes are named in its own namespace; none declared is refused
-    let Some(ns) = declared.iter().find(|(k, _)| k == "model.namespace").map(|(_, v)| v.clone()) else {
-        return Err(ModelError(format!("{name} declares no model.namespace: add a Property row (c:{name} c:hasProperty …)")));
-    };
     for (dname, composed) in domains {
-        let mut domain = Domain { name: dname.clone(), composed: *composed, classes: Vec::new() };
-        for c in select_iri(store, &format!("SELECT DISTINCT ?c WHERE {{ c:{dname} c:definesVocabulary ?c }} ORDER BY ?c"))? {
-            let iri = &c["c"];
-            if !iri.starts_with(&ns) {
-                return Err(ModelError(format!(
-                    "{dname} defines {iri}, which is not in {name}'s namespace {ns}: a product serves only its own classes")));
-            }
-            domain.classes.push(class(store, dname, iri, prefix.as_deref(), name)?);
-        }
-        out.domains.push(domain);
+        out.domains.push(domain_slice(store, dname, *composed, name, &declared)?);
     }
     // #4744 — an operation lives in one of the unit's own domains, or it is refused by name
     for o in select(store, &format!(

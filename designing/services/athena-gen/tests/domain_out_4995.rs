@@ -69,3 +69,46 @@ fn the_repo_resolves_principles_to_its_adr_041_home() {
     let (store, _) = load(&athena_gen::model::model_files(&root)).unwrap();
     assert_eq!(domain_out(&store, "principles").unwrap_or_else(|e| panic!("{}", e.0)), "shaping/domains/principles/api");
 }
+
+/// Borg Queen 18:45 — a domain at two steps has no one home: refused, never the first.
+#[test]
+fn a_domain_at_two_steps_is_refused_by_name() {
+    let ttl = format!("{FIXTURE}\n{TEMPLATE}\nc:principles c:atStep c:value-stream-step-designing .\n");
+    let (store, _) = load(&[fixture("out-two-steps", &ttl)]).unwrap();
+    let e = domain_out(&store, "principles").expect_err("refused").0;
+    assert!(e.contains("principles declares 2 atStep values"), "{e}");
+}
+
+/// AC6's other clauses (Borg Queen 18:46): repoTarget, athena-make's live route mount,
+/// is untouched, and no existing crate moved.
+#[test]
+fn repo_target_and_existing_crates_are_untouched() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let (store, _) = load(&athena_gen::model::model_files(&root)).unwrap();
+    let q = "SELECT ?v WHERE { <https://jeffbridwell.com/chorus#principles> <https://jeffbridwell.com/chorus#repoTarget> ?v }";
+    let r = oxigraph::sparql::SparqlEvaluator::new().parse_query(q).unwrap().on_store(&store).execute().unwrap();
+    let vals: Vec<String> = match r {
+        oxigraph::sparql::QueryResults::Solutions(s) => s.map(|x| x.unwrap().get("v").unwrap().to_string()).collect(),
+        _ => panic!("not a select"),
+    };
+    assert_eq!(vals, vec!["\"loom/principles\"".to_string()]);
+    assert!(root.join("directing/products/pulse/api/Cargo.toml").is_file(), "pulse's crate did not move");
+}
+
+/// NEGATIVE PROOF at the binary: a refused domain writes nothing.
+#[test]
+fn the_binary_writes_nothing_when_refused() {
+    for (tag, cut) in [("no-step", "c:principles c:atStep c:value-stream-step-shaping ."), ("no-row", "\"athena-gen.domain_out\"")] {
+        let root = std::env::temp_dir().join(format!("athena-gen-4995-refused-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("designing/data")).unwrap();
+        let t = if tag == "no-row" { TEMPLATE.replace(cut, "\"something.else\"") } else { TEMPLATE.replace(cut, "") };
+        std::fs::write(root.join("designing/data/m.ttl"), format!("{FIXTURE}\n{t}")).unwrap();
+        std::fs::create_dir_all(root.join("platform/services/chorus-oidc")).unwrap();
+        let st = std::process::Command::new(env!("CARGO_BIN_EXE_athena-gen"))
+            .args(["generate", "--root"]).arg(&root).args(["--domain", "principles"]).output().unwrap();
+        assert!(!st.status.success(), "{tag}: must refuse");
+        assert!(!root.join("shaping").exists(), "{tag}: nothing may be written");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}
