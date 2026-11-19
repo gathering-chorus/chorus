@@ -28,6 +28,7 @@ fn pulse() -> Product {
             }],
         }],
         operations: Vec::new(),
+        domain_unit: false,
     }
 }
 

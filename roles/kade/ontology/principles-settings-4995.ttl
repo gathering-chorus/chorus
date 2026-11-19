@@ -1,0 +1,78 @@
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+
+# #4995 — the settings the principles domain's own API reads (`athena-gen generate
+# --domain principles`). The domain is the generator's unit (Jeff 11-12), so its
+# settings hang off the Domain row, not off a product: no borrowed settings.
+# Same keys as pulse-api's (pulse-settings-4490.ttl). Secrets are NAMED, never written:
+# the store.*_var settings hold the name of the environment variable.
+# server.bind 3393: free on Library 2026-11-19 18:2x; nothing deploys this crate yet
+# (switching :3340's principles route is a follow-on card).
+
+chorus:principles chorus:hasProperty
+    chorus:property-principles-server-bind, chorus:property-principles-store-kind,
+    chorus:property-principles-store-endpoint, chorus:property-principles-store-user-var,
+    chorus:property-principles-store-password-var, chorus:property-principles-store-path,
+    chorus:property-principles-identity-issuer, chorus:property-principles-identity-graph-prefix,
+    chorus:property-principles-events-command, chorus:property-principles-model-namespace,
+    chorus:property-principles-model-prefix, chorus:property-principles-store-graph-prefix .
+
+chorus:property-principles-server-bind a chorus:Property ; chorus:ownedBy chorus:principal-wren ;
+    rdfs:label "principles API: where it listens" ;
+    chorus:propertyKey "server.bind" ; chorus:propertyValue "127.0.0.1:3393" ;
+    chorus:propertyValueType "string" ; chorus:propertyScope "instance" .
+
+chorus:property-principles-store-kind a chorus:Property ; chorus:ownedBy chorus:principal-wren ;
+    rdfs:label "principles API: which store backend" ;
+    chorus:propertyKey "store.kind" ; chorus:propertyValue "sparql" ;
+    chorus:propertyValueType "string" ; chorus:propertyScope "instance" .
+
+chorus:property-principles-store-endpoint a chorus:Property ; chorus:ownedBy chorus:principal-wren ;
+    rdfs:label "principles API: the SPARQL endpoint of the store row it uses" ;
+    chorus:propertyKey "store.endpoint" ; chorus:propertyValue "http://localhost:3030/pods" ;
+    chorus:propertyValueType "string" ; chorus:propertyScope "instance" .
+
+chorus:property-principles-store-user-var a chorus:Property ; chorus:ownedBy chorus:principal-wren ;
+    rdfs:label "principles API: NAME of the env var holding the store user" ;
+    chorus:propertyKey "store.user_var" ; chorus:propertyValue "FUSEKI_ADMIN_USER" ;
+    chorus:propertyValueType "string" ; chorus:propertyScope "instance" .
+
+chorus:property-principles-store-password-var a chorus:Property ; chorus:ownedBy chorus:principal-wren ;
+    rdfs:label "principles API: NAME of the env var holding the store password" ;
+    chorus:propertyKey "store.password_var" ; chorus:propertyValue "FUSEKI_ADMIN_PASSWORD" ;
+    chorus:propertyValueType "string" ; chorus:propertyScope "instance" .
+
+chorus:property-principles-store-path a chorus:Property ; chorus:ownedBy chorus:principal-wren ;
+    rdfs:label "principles API: the embedded store's folder (used when store.kind is embedded)" ;
+    chorus:propertyKey "store.path" ; chorus:propertyValue "/Users/jeffbridwell/.chorus/data/principles-api" ;
+    chorus:propertyValueType "string" ; chorus:propertyScope "instance" .
+
+chorus:property-principles-identity-issuer a chorus:Property ; chorus:ownedBy chorus:principal-wren ;
+    rdfs:label "principles API: the identity issuer whose tokens it accepts" ;
+    chorus:propertyKey "identity.issuer" ; chorus:propertyValue "https://id.lightlifeurbangardens.com/" ;
+    chorus:propertyValueType "string" ; chorus:propertyScope "instance" .
+
+chorus:property-principles-identity-graph-prefix a chorus:Property ; chorus:ownedBy chorus:principal-wren ;
+    rdfs:label "principles API: where principals live" ;
+    chorus:propertyKey "identity.graph_prefix" ; chorus:propertyValue "urn:chorus:" ;
+    chorus:propertyValueType "string" ; chorus:propertyScope "instance" .
+
+chorus:property-principles-events-command a chorus:Property ; chorus:ownedBy chorus:principal-wren ;
+    rdfs:label "principles API: the logger that writes its events to the spine (empty = stderr)" ;
+    chorus:propertyKey "events.command" ; chorus:propertyValue "" ;
+    chorus:propertyValueType "string" ; chorus:propertyScope "instance" .
+
+chorus:property-principles-model-namespace a chorus:Property ; chorus:ownedBy chorus:principal-wren ;
+    rdfs:label "principles API: the namespace its classes are named in" ;
+    chorus:propertyKey "model.namespace" ; chorus:propertyValue "https://jeffbridwell.com/chorus#" ;
+    chorus:propertyValueType "string" ; chorus:propertyScope "instance" .
+
+chorus:property-principles-model-prefix a chorus:Property ; chorus:ownedBy chorus:principal-wren ;
+    rdfs:label "principles API: the short prefix callers may write" ;
+    chorus:propertyKey "model.prefix" ; chorus:propertyValue "chorus" ;
+    chorus:propertyValueType "string" ; chorus:propertyScope "instance" .
+
+chorus:property-principles-store-graph-prefix a chorus:Property ; chorus:ownedBy chorus:principal-wren ;
+    rdfs:label "principles API: where its rows live" ;
+    chorus:propertyKey "store.graph_prefix" ; chorus:propertyValue "urn:chorus:domains:" ;
+    chorus:propertyValueType "string" ; chorus:propertyScope "instance" .

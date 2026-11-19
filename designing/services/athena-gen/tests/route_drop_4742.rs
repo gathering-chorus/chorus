@@ -17,7 +17,7 @@ fn product(classes: &[(&str, &str)]) -> Product {
         let dom = domains.iter_mut().find(|x| x.name == *d).unwrap();
         dom.classes.push(Class { name: seg.to_string(), segment: seg.to_string(), graph: format!("urn:g:{d}"), store: "graph".into(), fields: Vec::new() });
     }
-    Product { name: "pulse".into(), domains, operations: Vec::new() }
+    Product { name: "pulse".into(), domains, operations: Vec::new(), domain_unit: false }
 }
 
 const OLD: &str = r#"pub const CLASSES: &[ClassDef] = &[

@@ -8,6 +8,8 @@ pub const MODEL_VERSION: &str = "1.30.0";
 pub const NS: &str = "https://jeffbridwell.com/chorus#";
 pub const PREFIX: &str = "chorus";
 pub const GRAPH_PREFIX: &str = "urn:chorus:domains:";
+/// #4995 — true: this crate is one domain's, served at /<domain>/<segment>.
+pub const DOMAIN_UNIT: bool = false;
 
 /// Declared settings and their defaults, from the product's Property rows (see settings.rs for the lookup order).
 pub const SETTINGS: &[(&str, &str)] = &[

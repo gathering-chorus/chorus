@@ -20,7 +20,7 @@ mod embedded_tests;
 #[cfg(test)]
 mod requirements_tests;
 
-use model::{ClassDef, API_VERSION, CLASSES, CRATE_VERSION, MODEL_VERSION, PRODUCT};
+use model::{ClassDef, API_VERSION, CLASSES, CRATE_VERSION, DOMAIN_UNIT, MODEL_VERSION, PRODUCT};
 use serde_json::{json, Value};
 use std::io::Read;
 use store::Engine as _;
@@ -186,7 +186,12 @@ pub fn route(ctx: &Ctx, method: &str, url: &str, authorization: Option<&str>, bo
     if path == "/health" {
         return (200, json!({ "status": "ok", "product": PRODUCT, "productVersion": CRATE_VERSION, "apiVersion": API_VERSION }));
     }
-    let parts: Vec<&str> = path.trim_matches('/').split('/').collect();
+    let mut parts: Vec<&str> = path.trim_matches('/').split('/').collect();
+    // #4995 — a domain's crate serves /<domain>/<segment>; read it on the one dispatch
+    // path below as /<domain>/<domain>/<segment>, so domain and product crates share it
+    if DOMAIN_UNIT {
+        parts.insert(0, PRODUCT);
+    }
     // #4757 — no root header here: pulse serves its header from its sources (:3475/pulse)
     // #4744 — an operation (a live computation the model declares) answers under the same read rule
     if parts.len() >= 3 && parts[0] == PRODUCT && method == "GET" && ops::has(parts[1], parts[2]) {
