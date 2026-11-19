@@ -18,7 +18,8 @@ JAVA="${JAVA:-/opt/homebrew/opt/openjdk/bin/java}"
 
 setup() {
   [ -r "$FUSEKI_HOME/fuseki-server.jar" ] || skip "UNMEASURED: no Fuseki jar at $FUSEKI_HOME"
-  LAN="$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || true)"
+  # /usr/sbin is not on the pipeline's PATH (11-19 land: both cases skipped)
+  LAN="$(/usr/sbin/ipconfig getifaddr en0 2>/dev/null || /usr/sbin/ipconfig getifaddr en1 2>/dev/null || true)"
   [ -n "$LAN" ] || skip "UNMEASURED: this host has no LAN address, so no non-loopback read can be made"
   case "$LAN" in 127.*|::1) skip "UNMEASURED: the LAN address $LAN is loopback";; esac
   T="$(mktemp -d)"
