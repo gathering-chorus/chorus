@@ -23,7 +23,9 @@ LOKI="${LOKI_URL:-http://localhost:3102}"
 OWNER_HOME="${CLEARING_OWNER_HOME:-${CHORUS_ROOT%/CascadeProjects/chorus}}"
 TOKEN_FILE="${CLEARING_TOKEN_FILE:-$OWNER_HOME/.chorus/bridge-auth-token}"
 STREAM="{filename=\"$OWNER_HOME/Library/Logs/Chorus/chorus-bridge.log\"}"
-NOTICE='[clearing] remote access token is set'
+# The notice is read from server.ts, its one home: if it is renamed or moved
+# this file fails loudly here, never reports UNMEASURED on a stale string.
+NOTICE=$(sed -n "/export function bridgeTokenNotice/,/^}/s/.*return '\\(.*\\)';/\\1/p" "$CHORUS_ROOT/directing/clearing/src/server.ts")
 
 # loki_ts <filter> <start_ns> <first|last> → ns timestamp of the first/last match, or empty
 loki_ts() {
@@ -39,6 +41,7 @@ if ts: print(ts[0] if sys.argv[1] == "first" else ts[-1])
 }
 
 setup() {
+  [ -n "$NOTICE" ] || { echo "bridgeTokenNotice() not found in directing/clearing/src/server.ts"; return 1; }
   curl -sf -m 5 "$LOKI/ready" >/dev/null || skip "UNMEASURED: Loki not reachable at $LOKI"
   # Loki keeps 30 days; look back 29.
   START=$(python3 -c 'import time; print(int((time.time()-29*86400)*1e9))')

@@ -21,8 +21,9 @@
 
 import { execFileSync } from 'child_process';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
-import { socketSessionAuthed, startBackgroundWork } from '../src/server';
+import { bridgeTokenNotice, socketSessionAuthed, startBackgroundWork } from '../src/server';
 
 const CLEARING = path.join(__dirname, '..');
 /** socketSessionAuthed takes the raw Cookie header. Empty = nobody signed in. */
@@ -97,5 +98,60 @@ describe('#3831 importing the module does not start it', () => {
     await expect(socketSessionAuthed(NO_COOKIE)).resolves.toBe(false);
     expect(exitsCleanly('setInterval(() => {}, 1000);', 4000)).toBe(false);
     expect(exitsCleanly("require('fs').watchFile(__filename, () => {});", 4000)).toBe(false);
+  });
+});
+
+/**
+ * #5005 — what a start logs: the Clearing never writes its remote-access token.
+ * server.ts printed the bridge token at every start ("remote access token:
+ * <value>"), so every boot put the live secret into chorus-bridge.log and from
+ * there into Loki. This plants a known token, loads the module fresh the way a
+ * start does, and captures the console AND stdout/stderr. It fails if the value
+ * appears anywhere, and requires the notice so a capture that saw nothing cannot
+ * pass by silence. NEGATIVE PROOF: with the old line restored, it fails.
+ * It lives in this file, not its own, because of the directory-layout ratchet
+ * (ADR-041): a new file under directing/clearing/tests counts as one more.
+ */
+describe('#5005 the bridge token is never logged', () => {
+  const KNOWN = 'tok5005' + 'a1b2c3d4e5f60718293a4b5c6d7e8f90';
+  let home: string;
+  let captured: string[];
+  const restore: Array<() => void> = [];
+
+  beforeEach(() => {
+    home = fs.mkdtempSync(path.join(os.tmpdir(), 'clearing-5005-'));
+    fs.writeFileSync(path.join(home, 'bridge-auth-token'), KNOWN + '\n');
+    captured = [];
+    const grab = (...a: unknown[]) => { captured.push(a.map(String).join(' ')); };
+    for (const m of ['log', 'info', 'warn', 'error', 'debug'] as const) {
+      const spy = jest.spyOn(console, m).mockImplementation(grab);
+      restore.push(() => spy.mockRestore());
+    }
+    for (const stream of [process.stdout, process.stderr]) {
+      const orig = stream.write;
+      (stream as any).write = (chunk: unknown) => { captured.push(String(chunk)); return true; };
+      restore.push(() => { (stream as any).write = orig; });
+    }
+  });
+
+  afterEach(() => {
+    while (restore.length) restore.pop()!();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  test('a start with a known token never writes its value, and prints the notice', () => {
+    const prior = process.env.CLEARING_CHORUS_HOME;
+    jest.isolateModules(() => {
+      process.env.CLEARING_CHORUS_HOME = home;
+      try {
+        require('../src/server');
+      } finally {
+        process.env.CLEARING_CHORUS_HOME = prior;
+      }
+    });
+    const all = captured.join('\n');
+    expect(bridgeTokenNotice()).toBe('[clearing] remote access token is set');
+    expect(all).toContain(bridgeTokenNotice());
+    expect(all).not.toContain(KNOWN);
   });
 });
