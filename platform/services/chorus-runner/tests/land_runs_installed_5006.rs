@@ -14,8 +14,8 @@
 //! gets the slot, so the check tells the two apart; today's ordering (slot
 //! first, no opt-in needed) fails the first case.
 //! AC2: a demo/build call that opts in still gets its slot (#4514).
-//! AC3: every resolution says which path and why, as one runner.binary.resolved line.
-use chorus_runner::server::{binary_path, resolution_line, resolve_binary};
+//! AC3 (the runner.binary.resolved line) is binary_resolved_line_5006.rs.
+use chorus_runner::server::binary_path;
 use std::os::unix::fs::PermissionsExt;
 use std::sync::Mutex;
 
@@ -71,24 +71,6 @@ fn negative_proof_the_same_fixture_with_the_opt_in_gets_the_slot() {
     // still never another role's slot (#4514)
     assert_eq!(binary_path("athena-deploy", "kade").unwrap(), w.installed);
     std::env::remove_var("CHORUS_USE_SLOT");
-}
-
-#[test]
-fn every_resolution_says_which_path_and_why() {
-    let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
-    let w = world("why");
-    let (slot, why_slot) = resolve_binary("athena-deploy", "wren", true).unwrap();
-    let (inst, why_inst) = resolve_binary("athena-deploy", "wren", false).unwrap();
-    assert_eq!((slot.as_str(), inst.as_str()), (w.slot.as_str(), w.installed.as_str()));
-    for (path, why, opt) in [(&slot, why_slot, true), (&inst, why_inst, false)] {
-        let line: serde_json::Value = serde_json::from_str(&resolution_line("athena-deploy", "wren", path, why, opt, "t5006")).unwrap();
-        assert_eq!(line["event"], "runner.binary.resolved");
-        assert_eq!(line["path"], path.as_str());
-        assert_eq!(line["why"], why);
-        assert_eq!(line["slot_opt_in"], opt);
-        assert_eq!(line["trace"], "t5006");
-    }
-    assert_ne!(why_slot, why_inst, "the two choices must be told apart in the line");
 }
 
 /// Wren 11-19: an opt-in is read from the env of the process that resolves the
