@@ -276,6 +276,13 @@ export function refusalLine(status: number, method: string, path: string, why: s
   return `[clearing-v2] gate.refused ${now.toISOString()} status=${status} why=${why} ${method} ${path} host=${host} scheme=${scheme} cookies=${cookieNames(seen.cookies || '')} ua="${ua.replace(/"/g, "'").slice(0, 120)}"`;
 }
 
+/** #5015 AC4 — what a refused request arrived on: host, scheme and its cookie header (names only reach the log). */
+export function requestSeen(req: Request, cookies: string): { host: string; scheme: string; cookies: string } {
+  const h = req.headers;
+  const tls = (req.socket as { encrypted?: boolean }).encrypted ? 'https' : 'http';
+  return { host: String(h['x-forwarded-host'] || h.host || ''), scheme: String(h['x-forwarded-proto'] || tls), cookies };
+}
+
 /** The marker this server sets when it sends a browser to sign in; it lasts half a minute. */
 export const BOUNCE_COOKIE = 'cv2_signin_bounce';
 const BOUNCE_SET = `${BOUNCE_COOKIE}=1; Path=/; Max-Age=30; HttpOnly; SameSite=Lax`;
@@ -332,11 +339,7 @@ export function sessionGate(
     }
     // AC1's unnamed case (2026-11-15): the phone arrived with no sign-in 36 minutes after one, and
     // nothing recorded whether it sent no cookie or a cookie this server refused. Now it is recorded.
-    limited(refusalLine(d.kind === 'redirect' ? 302 : d.status, req.method, req.path, why || 'unknown', String(req.headers['user-agent'] || ''), new Date(), {
-      host: String(req.headers['x-forwarded-host'] || req.headers.host || ''),
-      scheme: String(req.headers['x-forwarded-proto'] || ((req.socket as { encrypted?: boolean }).encrypted ? 'https' : 'http')),
-      cookies,
-    }));
+    limited(refusalLine(d.kind === 'redirect' ? 302 : d.status, req.method, req.path, why || 'unknown', String(req.headers['user-agent'] || ''), new Date(), requestSeen(req, cookies)));
     // never let a browser or the edge keep a copy of a refusal, or of the room, across a sign-in change
     res.setHeader('Cache-Control', 'no-store');
     if (d.kind === 'redirect') { res.append('Set-Cookie', BOUNCE_SET); res.redirect(302, d.location); return; }
