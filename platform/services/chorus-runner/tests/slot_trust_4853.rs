@@ -20,6 +20,8 @@ fn slot(tag: &str, dir_mode: u32, file_mode: u32) -> std::path::PathBuf {
 #[test]
 fn a_runner_owned_0755_slot_runs_and_group_writable_slots_are_refused_naming_the_path() {
     // one test: CHORUS_WERK_BASE is process-global
+    // #5006 — trust is checked on a slot the caller opted into
+    std::env::set_var("CHORUS_USE_SLOT", "1");
     let good = slot("good", 0o755, 0o755);
     std::env::set_var("CHORUS_WERK_BASE", &good);
     assert_eq!(binary_path("werk-build", "wren").unwrap(), good.join("wren-bin/werk-build").display().to_string());

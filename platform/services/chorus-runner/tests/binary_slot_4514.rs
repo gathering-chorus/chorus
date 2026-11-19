@@ -15,6 +15,8 @@ fn the_callers_slot_wins_and_another_roles_slot_is_never_used() {
     std::fs::set_permissions(base.join("wren-bin/werk-build"), std::fs::Permissions::from_mode(0o755)).unwrap();
     std::fs::set_permissions(base.join("wren-bin"), std::fs::Permissions::from_mode(0o755)).unwrap();
     std::env::set_var("CHORUS_WERK_BASE", &base);
+    // #5006 — a slot needs the opt-in the card's build/demo DAGs set
+    std::env::set_var("CHORUS_USE_SLOT", "1");
     assert_eq!(binary_path("werk-build", "wren").unwrap(), base.join("wren-bin/werk-build").display().to_string());
     assert!(!binary_path("werk-build", "kade").unwrap().contains("wren-bin"), "kade ran wren's slot");
     assert!(!binary_path("werk-build", "").unwrap().contains("-bin/"), "no caller picked a slot");
