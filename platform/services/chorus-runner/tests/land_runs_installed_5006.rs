@@ -90,3 +90,20 @@ fn every_resolution_says_which_path_and_why() {
     }
     assert_ne!(why_slot, why_inst, "the two choices must be told apart in the line");
 }
+
+/// Wren 11-19: an opt-in is read from the env of the process that resolves the
+/// binary, so a call forwarded to the shared runner (:3342) drops it and gets
+/// the installed verb. That is deliberate: the forward carries no opt-in, so a
+/// role session cannot claim one on the shared runner. Every card/build/demo
+/// step runs under dagu as the installer's account (dagu start-all is
+/// jeffbridwell's, the owner of ~/.chorus/bin), and the installer's own call
+/// never forwards: it resolves in its own process, where the DAG's opt-in is.
+/// NEGATIVE PROOF: any other account's call does forward.
+#[test]
+fn a_pipeline_steps_call_resolves_in_process_so_its_opt_in_holds() {
+    use chorus_runner::forward::forwards;
+    let installer = 501;
+    assert!(!forwards(installer, Some(installer)), "the installer's own call forwarded: a card DAG's opt-in would be lost");
+    assert!(forwards(503, Some(installer)), "another account's call ran in process");
+    assert!(!forwards(503, None), "no known installer: nothing forwards (the caller fails closed on its own)");
+}
