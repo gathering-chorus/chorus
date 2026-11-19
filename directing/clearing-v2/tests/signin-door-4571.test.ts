@@ -181,6 +181,30 @@ test('negative proof: with no door configured the refusal still names why, and i
     });
   });
 
+  describe('#5015 AC4 a refusal names its host, scheme and cookie names, never a value', () => {
+    const { sessionGate } = require('../src/share-session');
+    function refuse(headers: Record<string, string>): string {
+      const lines: string[] = [];
+      const gate = sessionGate(() => null, 'https://chorus.example.test/_auth/', () => false, () => 'no-cookie', (l: string) => lines.push(l));
+      const req: any = { headers, method: 'GET', path: '/clearing-v2/', socket: { remoteAddress: '127.0.0.1' } };
+      const res: any = { append: () => res, setHeader: () => res, redirect: () => res, status: () => res, json: () => res };
+      gate(req, res, () => { throw new Error('a refused request must not reach the room'); });
+      expect(lines).toHaveLength(1);
+      return lines[0];
+    }
+    test('other cookies of this site but not ours: names logged, values never', () => {
+      const line = refuse({ host: 'lightlifeurbangardens.com', 'x-forwarded-proto': 'https', 'cf-ray': '8f0', 'user-agent': 'iPhone',
+        cookie: 'cv2_signin_bounce=1; theme=PLANTED-VALUE-5015' });
+      expect(line).toMatch(/host=lightlifeurbangardens\.com scheme=https cookies=cv2_signin_bounce,theme /);
+      expect(line).not.toContain('PLANTED-VALUE-5015');
+    });
+    // NEGATIVE PROOF of the "none at all" reading: no Cookie header logs cookies=-, distinct from any name list
+    test('no cookies at all logs cookies=-', () => {
+      const line = refuse({ host: 'lightlifeurbangardens.com', 'x-forwarded-proto': 'https', 'cf-ray': '8f0', 'user-agent': 'iPhone' });
+      expect(line).toMatch(/ cookies=- /);
+    });
+  });
+
   // The decision is only worth something if the real app asks it on every route.
   describe('#4966 the real app asks the gate on every route', () => {
     const KEY = Buffer.from('test-secret-cookie-key-for-session-32b');
@@ -315,7 +339,7 @@ test('negative proof: with no door configured the refusal still names why, and i
         const stale = cookieFor(-60);
         await fetch(`${base}/api/tiles`, { headers: { ...CF, ...UA, cookie: stale } });
         await fetch(`${base}/api/tiles`, { headers: { ...CF, ...UA, cookie: 'chorus_share_session=abc.def' } });
-        expect(lines[0]).toMatch(/^\[clearing-v2\] gate\.refused \S+ status=302 why=no-cookie GET \/ ua="Mozilla\/5\.0 \(iPhone\)/);
+        expect(lines[0]).toMatch(/^\[clearing-v2\] gate\.refused \S+ status=302 why=no-cookie GET \/ host=\S+ scheme=\S+ cookies=- ua="Mozilla\/5\.0 \(iPhone\)/);
         expect(lines[1]).toMatch(/status=401 why=expired GET \/api\/tiles/);
         expect(lines[2]).toMatch(/status=401 why=bad-signature/);
         expect(lines.join('\n')).not.toContain(stale.split('=')[1]);

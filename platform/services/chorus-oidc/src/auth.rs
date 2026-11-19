@@ -42,7 +42,7 @@ pub struct Claims {
     pub exp: u64,
     pub scope: Vec<String>, // #3564 — target graphs this token permits (empty = legacy/unscoped)
     /// #4517 AC5 — the login's own id (the token's `jti`); one Session row per login.
-    /// Empty when the token carries none: the door then refuses to open a session.
+    /// When the token carries none (or ""), the hash of what it signed (#5015), never empty.
     pub jti: String,
 }
 
