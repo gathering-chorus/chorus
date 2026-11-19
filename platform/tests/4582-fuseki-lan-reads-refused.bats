@@ -33,13 +33,15 @@ teardown() {
 # boot <shiro.ini>: a scratch Fuseki on every interface with that security file
 boot() {
   mkdir -p "$T/base"
-  sed 's/\${FUSEKI_ADMIN_PASSWORD}/scratch-4582/' "$1" > "$T/base/shiro.ini"
+  sed -E 's/\$\{FUSEKI_[A-Z_]*PASSWORD\}/scratch-4582/g' "$1" > "$T/base/shiro.ini"
   (cd "$T/base" && FUSEKI_HOME="$FUSEKI_HOME" FUSEKI_BASE="$T/base" exec "$JAVA" -Xmx256m \
      -cp "$FUSEKI_HOME/fuseki-server.jar" org.apache.jena.fuseki.cmd.FusekiCmd \
      --mem --port="$PORT" /pods > "$T/server.log" 2>&1) &
   PID=$!
-  for _ in $(seq 1 60); do curl -sf -o /dev/null --max-time 1 "http://127.0.0.1:$PORT/\$/ping" && break; sleep 0.5; done
-  grep -q "Shiro file: file://$T/base/shiro.ini" "$T/server.log" || { echo "the scratch server did not load our shiro.ini"; cat "$T/server.log"; return 1; }
+  up=""
+  for _ in $(seq 1 60); do curl -sf -o /dev/null --max-time 1 "http://127.0.0.1:$PORT/\$/ping" && { up=1; break; }; sleep 0.5; done
+  [ -n "$up" ] || { echo "the scratch Fuseki never answered /\$/ping"; cat "$T/server.log"; return 1; }
+  grep -qE "Shiro file: file://(/private)?$T/base/shiro.ini" "$T/server.log" || { echo "the scratch server did not load our shiro.ini"; cat "$T/server.log"; return 1; }
 }
 
 code() { curl -s -o /dev/null -w '%{http_code}' --max-time 5 -G --data-urlencode 'query=ASK {}' "http://$1:$PORT/pods/$2"; }
@@ -53,8 +55,15 @@ code() { curl -s -o /dev/null -w '%{http_code}' --max-time 5 -G --data-urlencode
   c=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://$LAN:$PORT/\$/status")
   [ "$c" = 403 ] || { echo "LAN /\$/status answered $c, want 403 (it lists the datasets)"; false; }
   for host in 127.0.0.1 localhost '[::1]'; do
-    c=$(code "$host" query)
-    [ "$c" = 200 ] || { echo "loopback read via $host answered $c, want 200"; false; }
+    for ep in query sparql; do
+      c=$(code "$host" "$ep")
+      [ "$c" = 200 ] || { echo "loopback read of /pods/$ep via $host answered $c, want 200"; false; }
+    done
+    # GSP get of the default graph: answers (not 401/403) on loopback
+    c=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://$host:$PORT/pods/get?default")
+    [ "$c" = 200 ] || { echo "loopback GSP get via $host answered $c, want 200"; false; }
+    c=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://$host:$PORT/\$/status")
+    [ "$c" = 200 ] || { echo "loopback /\$/status via $host answered $c, want 200"; false; }
   done
 }
 

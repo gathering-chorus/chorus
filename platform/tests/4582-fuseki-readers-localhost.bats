@@ -7,20 +7,26 @@
 # 10:05 (ESTABLISHED :3030 = 3 connections, all ::1):
 #   door athena-make :3360, chorus-api, the crawler, cws, the nightly and the
 #   scripts — all localhost:3030 (or a FUSEKI_* variable that defaults to it).
-# The one LAN reader: Bedroom's NiFi photo flow, built by the scripts listed in
-# EXCEPTIONS below; it reads and writes 192.168.86.36:3030. Its write leg has
-# been refused from the LAN since #3579 (July). Decision for that flow is on
-# the card (Kade, convergence owner); until it is taken, these files are named
-# here so a NEW LAN reader fails this check, and a stale entry fails too.
+# The one LAN reader in the repo: Bedroom's NiFi photo flow, built by the
+# scripts in EXCEPTIONS below (nifi-dsl.sh keeps host and port apart); it reads
+# and writes the Library store over the LAN. Its write leg has been refused
+# from the LAN since #3579 (July). Jeff 11-19 11:01: leave it alone, it is
+# Gathering's; it is named here so a NEW LAN reader fails, and a stale entry too.
+# Readers on other machines that are not in this repo cannot be seen here; the
+# card's After the land step measures them.
 #
 # A LAN address is any 192.168.x.x, 10.x.x.x or *.local host before :3030 on a
 # line that is not a comment. Searched with `git grep --cached` so sparse-
 # checkout dirs (roles/*/scripts) are included.
 
 ROOT="$BATS_TEST_DIRNAME/../.."
-LAN_3030='(192\.168\.[0-9]+\.[0-9]+|10\.[0-9]+\.[0-9]+\.[0-9]+|[A-Za-z0-9-]+\.local):3030'
+LAN_HOST='(192\.168\.[0-9]+\.[0-9]+|10\.[0-9]+\.[0-9]+\.[0-9]+|172\.(1[6-9]|2[0-9]|3[01])\.[0-9]+\.[0-9]+|100\.[0-9]+\.[0-9]+\.[0-9]+|[A-Za-z0-9-]+\.(local|lan))'
+# a LAN host before :3030, or a Fuseki host variable defaulting to one with the
+# port kept apart (review 11-19: nifi-dsl.sh sets FUSEKI_HOST and FUSEKI_PORT)
+LAN_3030="(${LAN_HOST}:3030|FUSEKI_[A-Z_]*(HOST|URL)[A-Z_]*[^A-Za-z0-9]+[^ ]*${LAN_HOST})"
 EXCEPTIONS=(
   roles/kade/scripts/build-nifi-photos-flow.py
+  platform/scripts/nifi-dsl.sh
   building/products/convergence/one-shots/build-nifi-iphone-native.py
   building/products/convergence/one-shots/configure-nifi-pipeline.sh
   building/products/convergence/one-shots/fix-all-processors.py
@@ -61,7 +67,8 @@ is_exception() { local p; for p in "${EXCEPTIONS[@]}"; do [ "$p" = "$1" ] && ret
     "platform/scripts/new-reader.sh:4:curl -s http://$PLANTED:3030/pods/query" \
     'platform/scripts/other.py:9:URL = "http://jeffs-mac-mini.local:3030/pods/sparql"' \
     'platform/scripts/doc.sh:2:# Library (Jeffs-Mac-Mini-M1-3.local:3030) is primary' \
+    'platform/scripts/split.sh:5:FUSEKI_HOST="${FUSEKI_HOST:-jeffs-mac-mini.lan}"' \
     'platform/scripts/ok.sh:3:curl -s http://localhost:3030/pods/query' | lan_readers)"
-  [ "$out" = "$(printf '%s\n' platform/scripts/new-reader.sh platform/scripts/other.py)" ] || { echo "got: $out"; false; }
+  [ "$out" = "$(printf '%s\n' platform/scripts/new-reader.sh platform/scripts/other.py platform/scripts/split.sh)" ] || { echo "got: $out"; false; }
   ! is_exception platform/scripts/new-reader.sh || return 1
 }
