@@ -112,7 +112,12 @@ try {
   require('fs').mkdirSync(CHORUS_HOME, { recursive: true });
   require('fs').writeFileSync(BRIDGE_TOKEN_FILE, BRIDGE_TOKEN);
 }
-console.log(`[clearing] remote access token: ${BRIDGE_TOKEN}`);
+// #5005 — the start says a token is set, never its value: every start used to
+// print the live token into the service log, and from there into Loki.
+export function bridgeTokenNotice(): string {
+  return '[clearing] remote access token is set';
+}
+console.log(bridgeTokenNotice());
 
 // #4412 — one sign-in for Chorus (Jeff, 2026-10-12: "only 1 login / sign in
 // flow", "its for chorus not a page"). The door (the share guard, /_auth/)

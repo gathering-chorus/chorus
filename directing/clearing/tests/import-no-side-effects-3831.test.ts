@@ -21,8 +21,9 @@
 
 import { execFileSync } from 'child_process';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
-import { socketSessionAuthed, startBackgroundWork } from '../src/server';
+import { bridgeTokenNotice, socketSessionAuthed, startBackgroundWork } from '../src/server';
 
 const CLEARING = path.join(__dirname, '..');
 /** socketSessionAuthed takes the raw Cookie header. Empty = nobody signed in. */
@@ -97,5 +98,67 @@ describe('#3831 importing the module does not start it', () => {
     await expect(socketSessionAuthed(NO_COOKIE)).resolves.toBe(false);
     expect(exitsCleanly('setInterval(() => {}, 1000);', 4000)).toBe(false);
     expect(exitsCleanly("require('fs').watchFile(__filename, () => {});", 4000)).toBe(false);
+  });
+});
+
+/**
+ * #5005 — what a start logs: the Clearing never writes its remote-access token.
+ * server.ts printed the bridge token at every start ("remote access token:
+ * <value>"), so every boot put the live secret into chorus-bridge.log and from
+ * there into Loki. This plants a known token, loads the module fresh the way a
+ * start does, and captures the console AND stdout/stderr. It fails if the value
+ * appears anywhere, and requires the notice so a capture that saw nothing cannot
+ * pass by silence. NEGATIVE PROOF: with the old line restored, it fails.
+ * It lives in this file, not its own, because of the directory-layout ratchet
+ * (ADR-041): a new file under directing/clearing/tests counts as one more.
+ */
+describe('#5005 the bridge token is never logged', () => {
+  const KNOWN = 'tok5005' + 'a1b2c3d4e5f60718293a4b5c6d7e8f90';
+  let home: string;
+  let captured: string[];
+  const restore: Array<() => void> = [];
+
+  beforeEach(() => {
+    home = fs.mkdtempSync(path.join(os.tmpdir(), 'clearing-5005-'));
+    fs.writeFileSync(path.join(home, 'bridge-auth-token'), KNOWN + '\n');
+    captured = [];
+    const grab = (...a: unknown[]) => { captured.push(a.map(String).join(' ')); };
+    for (const m of ['log', 'info', 'warn', 'error', 'debug'] as const) {
+      const spy = jest.spyOn(console, m).mockImplementation(grab);
+      restore.push(() => spy.mockRestore());
+    }
+    for (const stream of [process.stdout, process.stderr]) {
+      const orig = stream.write;
+      (stream as any).write = (chunk: unknown) => { captured.push(String(chunk)); return true; };
+      restore.push(() => { (stream as any).write = orig; });
+    }
+  });
+
+  afterEach(() => {
+    while (restore.length) restore.pop()!();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  test('a start with a known token never writes its value, and prints the notice', async () => {
+    const prior = process.env.CLEARING_CHORUS_HOME;
+    let started: typeof import('../src/server') | undefined;
+    jest.isolateModules(() => {
+      process.env.CLEARING_CHORUS_HOME = home;
+      try {
+        started = require('../src/server');
+      } finally {
+        if (prior === undefined) delete process.env.CLEARING_CHORUS_HOME;
+        else process.env.CLEARING_CHORUS_HOME = prior;
+      }
+    });
+    // The start really loaded the planted token: it admits a request carrying
+    // it, and refuses a wrong one. Without this, a start that read some other
+    // token file would pass the "not logged" check below without testing it.
+    const asked = (t: string) => ({ headers: { authorization: `Bearer ${t}` }, cookies: {} }) as any;
+    await expect(started!.isMessageWriteAuthed(asked(KNOWN))).resolves.toBe(true);
+    await expect(started!.isMessageWriteAuthed(asked('wrong-5005'))).resolves.toBe(false);
+    const all = captured.join('\n');
+    expect(all).toContain(bridgeTokenNotice());
+    expect(all).not.toContain(KNOWN);
   });
 });
