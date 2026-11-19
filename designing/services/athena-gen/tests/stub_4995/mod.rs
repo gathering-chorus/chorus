@@ -1,3 +1,4 @@
+// @domain: domains
 //! #4995 — the in-test SPARQL store both doors read (AC3 equality, AC5 parity): an
 //! in-memory oxigraph behind a std TcpListener on port 0, speaking the SPARQL 1.1
 //! protocol both clients use (POST {endpoint}/query, raw or form body).

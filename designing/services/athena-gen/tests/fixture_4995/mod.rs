@@ -1,3 +1,4 @@
+// @domain: domains
 //! #4995 — the principles domain fixture the #4995 tests share.
 #![allow(dead_code)]
 use std::path::PathBuf;

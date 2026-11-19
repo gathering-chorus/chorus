@@ -70,7 +70,17 @@ done <<<"$mobs"
 installed="${CHORUS_BIN:-$HOME/.chorus/bin}"
 slot="$CHORUS_WERK_BASE/$role-bin"
 changed_verbs() { # the card's changed paths on stdin
-  awk -F/ '$2=="services" && NF>3 {print $1"/services/"$3} $2=="products" && $4=="api" && NF>4 {print $1"/products/"$3"/api"} $2=="domains" && $4=="api" && NF>4 {print $1"/domains/"$3"/api"}' |
+  local paths
+  paths="$(cat)"
+  {
+    awk -F/ '$2=="services" && NF>3 {print $1"/services/"$3} $2=="products" && $4=="api" && NF>4 {print $1"/products/"$3"/api"} $2=="domains" && $4=="api" && NF>4 {print $1"/domains/"$3"/api"}' <<<"$paths"
+    # #4995 — a shared file is compiled into every crate that include!s it, so a change
+    # to it changes those verbs: keep the card's own builds (Borg Queen 18:55)
+    sed -n 's|^platform/services/shared/\([^/]*\.rs\)$|\1|p' <<<"$paths" | while read -r f; do
+      { grep -rl --include='*.rs' "shared/$f\"" "$werk"/platform/services/*/src "$werk"/*/services/*/src 2>/dev/null || true; } |
+        sed -e "s|^$werk/||" -e 's|/src/.*||'
+    done
+  } | { grep -v '^platform/services/shared$' || true; } |
     sort -u | while read -r dir; do
       [ -f "$werk/$dir/Cargo.toml" ] || continue
       sed -n 's/^name *= *"\(.*\)".*/\1/p' "$werk/$dir/Cargo.toml"
