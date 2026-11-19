@@ -172,7 +172,8 @@ pub fn write(ctx: &Ctx, caller: &auth::Caller, method: &str, class: &ClassDef, n
         "delete" => ctx.store.delete(class.graph, &s),
         "create" => ctx.store.write(class.graph, &s, Some(class.name), &cells, false),
         "replace" => ctx.store.write(class.graph, &s, Some(class.name), &cells, true),
-        _ => ctx.store.write(class.graph, &s, None, &cells, false),
+        // #4995 — a patch names its class too, so a field is written under the class's own IRIs
+        _ => ctx.store.write(class.graph, &s, Some(class.name), &cells, false),
     };
     if let Err(m) = result { rules::event(&ctx.events, &caller.principal, op, class, &name, "store-error"); return error(503, "store", &m); }
     rules::event(&ctx.events, &caller.principal, op, class, &name, "ok");

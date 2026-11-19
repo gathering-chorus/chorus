@@ -77,7 +77,7 @@ fn the_streams_route_serves_the_logs_calls() {
     let store = routed(log("route"));
     let who = Box::leak(Box::new(crate::auth::build("http://127.0.0.1:9/", |_| None)));
     let ctx = crate::Ctx { store: &store, who, events: String::new(), reads_public: true };
-    let (code, out) = crate::route(&ctx, "GET", &format!("/{}/{}/{}?limit=200", crate::model::PRODUCT, class.domain, class.segment), None, "");
+    let (code, out) = crate::route(&ctx, "GET", &format!("{}?limit=200", crate::model::route_of(class)), None, "");
     assert_eq!(code, 200, "{out}");
     let names: Vec<String> = out["data"].as_array().unwrap().iter().map(|r| r["name"].as_str().unwrap().to_string()).collect();
     assert_eq!(names, ["c", "b", "a"]);
@@ -91,6 +91,6 @@ fn negative_proof_an_unreadable_log_is_unmeasured_not_empty() {
     let store = routed("/nonexistent/4766/chorus.log".into());
     let who = Box::leak(Box::new(crate::auth::build("http://127.0.0.1:9/", |_| None)));
     let ctx = crate::Ctx { store: &store, who, events: String::new(), reads_public: true };
-    let (code, out) = crate::route(&ctx, "GET", &format!("/{}/{}/{}", crate::model::PRODUCT, class.domain, class.segment), None, "");
+    let (code, out) = crate::route(&ctx, "GET", &crate::model::route_of(class), None, "");
     assert_eq!(code, 503, "{out}");
 }

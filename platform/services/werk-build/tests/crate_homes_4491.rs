@@ -27,3 +27,19 @@ fn crates_in_the_adr_041_tree_are_build_units() {
     assert_eq!(rust, vec!["athena-gen", "pulse-api", "werk-pull"], "{units:?}");
     let _ = fs::remove_dir_all(&root);
 }
+
+/// #4995 — a domain's own API (`<step>/domains/<domain>/api`, ADR-041 amendment) is a
+/// build unit, so werk-build and werk-test build it. NEGATIVE PROOF: a domain folder
+/// holding only its model (no api/ crate) is not a unit.
+#[test]
+fn a_domains_own_api_is_a_build_unit() {
+    let root = std::env::temp_dir().join(format!("wb-4995-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    krate(&root, "shaping/domains/principles/api", "principles-api", true);
+    fs::create_dir_all(root.join("shaping/domains/values")).unwrap();
+    fs::write(root.join("shaping/domains/values/Cargo.toml"), "[package]\nname = \"values\"\n").unwrap();
+    let units = discover_build_units_in_tree(&root);
+    let rust: Vec<&str> = units.iter().filter_map(|u| match u { BuildUnit::RustCrate(n) => Some(n.as_str()), _ => None }).collect();
+    assert_eq!(rust, vec!["principles-api"], "{units:?}");
+    let _ = fs::remove_dir_all(&root);
+}

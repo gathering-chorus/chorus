@@ -89,7 +89,11 @@ pub fn model_rs(p: &Product, model_version: &str, settings: &[(String, String)])
          pub const API_VERSION: &str = \"v1\";\npub const MODEL_VERSION: &str = {mv};\npub const NS: &str = {ns};\n\
          pub const PREFIX: &str = {px};\npub const GRAPH_PREFIX: &str = {gp};\n\
          /// #4995 — true: this crate is one domain's, served at /<domain>/<segment>.\n\
-         pub const DOMAIN_UNIT: bool = {du};\n\n",
+         pub const DOMAIN_UNIT: bool = {du};\n\n\
+         /// #4995 — the route a class is served at: /<domain>/<segment> in a domain's crate,\n\
+         /// /<product>/<domain>/<segment> in a product's.\n\
+         pub fn route_of(c: &ClassDef) -> String {{\n    \
+         if DOMAIN_UNIT {{ format!(\"/{{}}/{{}}\", c.domain, c.segment) }} else {{ format!(\"/{{}}/{{}}/{{}}\", PRODUCT, c.domain, c.segment) }}\n}}\n\n",
         name = p.name, pn = lit(&p.name), mv = lit(model_version),
         // #4519 — the product's own namespace, prefix and graphs (generate refuses a
         // product that declares none, so these are never a Chorus default)
@@ -102,7 +106,7 @@ pub fn model_rs(p: &Product, model_version: &str, settings: &[(String, String)])
     }
     s.push_str("];\n\n");
     s.push_str(
-        "pub struct FieldDef {\n    pub name: &'static str,\n    pub link: bool,\n    pub datatype: &'static str,\n    pub required: bool,\n    pub many: bool,\n    pub allowed: &'static [&'static str],\n}\n\n\
+        "#[derive(Clone, Copy)]\npub struct FieldDef {\n    pub name: &'static str,\n    /// #4995 — every predicate IRI with this name, the namespace's first (read: first with a value; write: all)\n    pub iris: &'static [&'static str],\n    pub link: bool,\n    pub datatype: &'static str,\n    pub required: bool,\n    pub many: bool,\n    pub allowed: &'static [&'static str],\n}\n\n\
          pub struct ClassDef {\n    pub domain: &'static str,\n    pub name: &'static str,\n    pub kind: &'static str,\n    pub plural: &'static str,\n    pub segment: &'static str,\n    pub graph: &'static str,\n    /// #4766 — where the rows live: \"graph\" or \"spine\" (the spine log, read from its end)\n    pub store: &'static str,\n    /// #4742 — homed in another product and composed here: read-only\n    pub composed: bool,\n    pub fields: &'static [FieldDef],\n}\n\n\
          pub const CLASSES: &[ClassDef] = &[\n",
     );
@@ -115,8 +119,9 @@ pub fn model_rs(p: &Product, model_version: &str, settings: &[(String, String)])
             for f in &c.fields {
                 let allowed: Vec<String> = f.allowed.iter().map(|a| lit(a)).collect();
                 s.push_str(&format!(
-                    "            FieldDef {{ name: {}, link: {}, datatype: {}, required: {}, many: {}, allowed: &[{}] }},\n",
+                    "            FieldDef {{ name: {}, iris: &[{}], link: {}, datatype: {}, required: {}, many: {}, allowed: &[{}] }},\n",
                     lit(&f.name),
+                    f.iris.iter().map(|i| lit(i)).collect::<Vec<_>>().join(", "),
                     matches!(f.kind, Kind::Link { .. }),
                     lit(match &f.kind { Kind::Literal { datatype } => datatype.as_str(), Kind::Link { .. } => "" }),
                     f.required,
@@ -311,8 +316,13 @@ pub fn old_routes(model_rs: &str, product: &str) -> Vec<String> {
         let rest = &line[line.find(&format!("{key}: \""))? + key.len() + 3..];
         Some(rest[..rest.find('"')?].to_string())
     };
+    // #4995 — a domain's crate served /<domain>/<segment>; read the shape the old crate had
+    let domain_unit = model_rs.contains("pub const DOMAIN_UNIT: bool = true");
     model_rs
         .lines()
-        .filter_map(|l| Some(format!("/{product}/{}/{}", quoted(l, "domain")?, quoted(l, "segment")?)))
+        .filter_map(|l| {
+            let (d, seg) = (quoted(l, "domain")?, quoted(l, "segment")?);
+            Some(if domain_unit { format!("/{d}/{seg}") } else { format!("/{product}/{d}/{seg}") })
+        })
         .collect()
 }

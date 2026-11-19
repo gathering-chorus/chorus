@@ -31,7 +31,9 @@ chorus:WidgetShape a sh:NodeShape ; sh:targetClass chorus:Widget ;
 fn fixture_inputs() -> Vec<(String, Vec<athena_gen::model::ToolArg>)> {
     let dir = std::env::temp_dir().join(format!("tool-inputs-4513-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    let f = dir.join("fixture.ttl");
+    // #4995 — one file per test thread: parallel tests wrote one shared file, and a read
+    // that landed mid-write saw half a fixture (2 of 6 failed, by turns)
+    let f = dir.join(format!("fixture-{:?}.ttl", std::thread::current().id()).replace(['(', ')', ' '], ""));
     std::fs::write(&f, FIXTURE).unwrap();
     let (store, skipped) = athena_gen::model::load(&[f]).unwrap();
     assert!(skipped.is_empty(), "{skipped:?}");

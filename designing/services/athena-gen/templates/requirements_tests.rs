@@ -89,8 +89,15 @@ impl RowStore for Mem {
     }
 }
 
+/// A class with a link field: the crate's own, or (#4995 — a domain like principles has
+/// none but ownedBy) its first class with one test link field added, as decimal_class does.
 fn class_with_link() -> &'static ClassDef {
-    CLASSES.iter().find(|c| c.fields.iter().any(|f| f.link && f.name != "ownedBy")).expect("a class with a link field")
+    CLASSES.iter().find(|c| c.fields.iter().any(|f| f.link && f.name != "ownedBy")).unwrap_or_else(|| {
+        let owned = CLASSES.first().expect("a class");
+        let mut f: Vec<crate::model::FieldDef> = owned.fields.to_vec();
+        f.push(crate::model::FieldDef { name: "relatesTo", iris: &[], link: true, datatype: "", required: false, many: false, allowed: &[] });
+        Box::leak(Box::new(ClassDef { fields: Box::leak(f.into_boxed_slice()), composed: false, ..*owned }))
+    })
 }
 
 fn ctx(store: &Mem) -> Ctx<'_> {
@@ -238,11 +245,11 @@ fn an_unsigned_read_of_a_private_product_is_refused() {
     let who = Box::leak(Box::new(auth::build("http://127.0.0.1:9/", |_| None)));
     let private = Ctx { store: &store, who, events: String::new(), reads_public: false };
     let c = CLASSES.first().expect("a class");
-    let (code, out) = crate::route(&private, "GET", &format!("/{}/{}/{}", crate::model::PRODUCT, c.domain, c.segment), None, "");
+    let (code, out) = crate::route(&private, "GET", &crate::model::route_of(c), None, "");
     assert_eq!(code, 401, "{out}");
     // negative proof: the same read on a public product answers
     let public = Ctx { store: &store, who, events: String::new(), reads_public: true };
-    let (code, _) = crate::route(&public, "GET", &format!("/{}/{}/{}", crate::model::PRODUCT, c.domain, c.segment), None, "");
+    let (code, _) = crate::route(&public, "GET", &crate::model::route_of(c), None, "");
     assert_eq!(code, 200);
 }
 
@@ -253,8 +260,8 @@ fn every_collection_answers_under_the_product_route() {
     let who = Box::leak(Box::new(auth::build("http://127.0.0.1:9/", |_| None)));
     let public = Ctx { store: &store, who, events: String::new(), reads_public: true };
     for c in CLASSES {
-        let (code, out) = crate::route(&public, "GET", &format!("/{}/{}/{}", crate::model::PRODUCT, c.domain, c.segment), None, "");
-        assert_eq!(code, 200, "/{}/{}/{}: {out}", crate::model::PRODUCT, c.domain, c.segment);
+        let (code, out) = crate::route(&public, "GET", &crate::model::route_of(c), None, "");
+        assert_eq!(code, 200, "{}: {out}", crate::model::route_of(c));
     }
 }
 
@@ -290,7 +297,7 @@ fn a_write_to_a_composed_domain_is_refused_and_writes_nothing() {
 fn decimal_class() -> &'static ClassDef {
     let owned = CLASSES.first().expect("a class");
     let f: &'static [crate::model::FieldDef] = Box::leak(Box::new([crate::model::FieldDef {
-        name: "reading", link: false, datatype: "decimal", required: false, many: false, allowed: &[] }]));
+        name: "reading", iris: &[], link: false, datatype: "decimal", required: false, many: false, allowed: &[] }]));
     Box::leak(Box::new(ClassDef { fields: f, composed: false, ..*owned }))
 }
 

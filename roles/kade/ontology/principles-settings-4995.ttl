@@ -15,7 +15,8 @@ chorus:principles chorus:hasProperty
     chorus:property-principles-store-password-var, chorus:property-principles-store-path,
     chorus:property-principles-identity-issuer, chorus:property-principles-identity-graph-prefix,
     chorus:property-principles-events-command, chorus:property-principles-model-namespace,
-    chorus:property-principles-model-prefix, chorus:property-principles-store-graph-prefix .
+    chorus:property-principles-model-prefix, chorus:property-principles-store-graph-prefix,
+    chorus:property-principles-reads-public .
 
 chorus:property-principles-server-bind a chorus:Property ; chorus:ownedBy chorus:principal-wren ;
     rdfs:label "principles API: where it listens" ;
@@ -76,3 +77,18 @@ chorus:property-principles-store-graph-prefix a chorus:Property ; chorus:ownedBy
     rdfs:label "principles API: where its rows live" ;
     chorus:propertyKey "store.graph_prefix" ; chorus:propertyValue "urn:chorus:domains:" ;
     chorus:propertyValueType "string" ; chorus:propertyScope "instance" .
+
+# #4524 — principles are read without a token, as on the :3360 door today (Borg Queen 18:23)
+chorus:property-principles-reads-public a chorus:Property ; chorus:ownedBy chorus:principal-wren ;
+    rdfs:label "principles API: reads need no sign-in" ;
+    chorus:propertyKey "reads.public" ; chorus:propertyValue "true" ;
+    chorus:propertyValueType "string" ; chorus:propertyScope "instance" .
+
+# #4995 (Jeff 18:40, Wren 18:41) — where athena-gen writes a domain's API: ONE row for every
+# domain, `{step}` from the domain's atStep (ADR-041 <step>/domains/<domain>). Change this
+# row to move them all. repoTarget is athena-make's live route mount and is left alone.
+chorus:service-athena chorus:hasProperty chorus:property-athena-gen-domain-out .
+chorus:property-athena-gen-domain-out a chorus:Property ; chorus:ownedBy chorus:principal-kade ;
+    rdfs:label "athena-gen: where a domain's generated API lands" ;
+    chorus:propertyKey "athena-gen.domain_out" ; chorus:propertyValue "{step}/domains/{domain}/api" ;
+    chorus:propertyValueType "string" ; chorus:propertyScope "global" .

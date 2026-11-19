@@ -231,7 +231,12 @@ fn main() {
     match cmd.as_str() {
         "model" => println!("{:#?}", unit_model(&store, unit, &product)),
         "generate" => {
-            let out = PathBuf::from(arg(&args, "--out").unwrap_or_else(|| die("generate needs --out <dir>")));
+            // #4995 — a domain lands where the model's one template row says; --out overrides
+            let out = match (arg(&args, "--out"), unit) {
+                (Some(o), _) => PathBuf::from(o),
+                (None, Unit::Domain) => root.join(athena_gen::model::domain_out(&store, &product).unwrap_or_else(|e| die(e))),
+                (None, Unit::Product) => die("generate --product needs --out <dir>"),
+            };
             generate(&store, &root, unit, &product, &out, arg(&args, "--verifier").as_ref(), &drops(&args));
         }
         other => die(format!("unknown command '{other}' (model | generate)")),

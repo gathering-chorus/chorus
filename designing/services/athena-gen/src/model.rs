@@ -33,6 +33,11 @@ pub enum Kind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Field {
     pub name: String,
+    /// #4995 — every sh:path with this local name, whole, the unit's namespace first.
+    /// athena-make's rule (#3749/#4291): one field per name; a read takes the first
+    /// IRI that holds a value (chorus: wins ties), a write goes to every IRI. Empty for
+    /// a path that is not an IRI (a blank-node sh:inversePath).
+    pub iris: Vec<String>,
     pub kind: Kind,
     pub required: bool,
     pub many: bool,
@@ -270,6 +275,25 @@ pub fn domain(store: &Store, name: &str) -> Result<Product, ModelError> {
     Ok(p)
 }
 
+/// #4995 (Jeff 18:40 via Wren 18:41) — where a domain's generated API lands, from ONE
+/// athena-gen Property row (`athena-gen.domain_out`, a template over `{step}` and
+/// `{domain}`) and the domain's atStep (value-stream-step-shaping → shaping). Jeff
+/// changes one row to move every domain. Refused by name with no row, two rows, or
+/// no atStep — never a path the code invents.
+pub fn domain_out(store: &Store, name: &str) -> Result<String, ModelError> {
+    let rows = select(store, "SELECT ?v WHERE { ?p c:propertyKey \"athena-gen.domain_out\" ; c:propertyValue ?v }")?;
+    let template = match rows.as_slice() {
+        [one] => one["v"].clone(),
+        [] => return Err(ModelError("no Property row holds athena-gen.domain_out (the template for where a domain's API lands)".into())),
+        _ => return Err(ModelError(format!("{} Property rows hold athena-gen.domain_out; keep one", rows.len()))),
+    };
+    let step = select(store, &format!("SELECT ?s WHERE {{ c:{name} c:atStep ?s }}"))?;
+    let Some(step) = step.first().map(|r| r["s"].trim_start_matches("value-stream-step-").to_string()) else {
+        return Err(ModelError(format!("{name} declares no atStep: its API's home is <step>/domains/{name} (ADR-041)")));
+    };
+    Ok(template.replace("{step}", &step).replace("{domain}", name))
+}
+
 /// #4995 — the one path that turns domains into classes. A product and a domain both
 /// come through here; the product adds only which domains it owns and composes.
 fn build(store: &Store, name: &str, domains: &[(String, bool)]) -> Result<Product, ModelError> {
@@ -350,6 +374,7 @@ fn class(store: &Store, domain: &str, iri: &str, prefix: Option<&str>, product: 
             Kind::Literal { datatype: p.get("datatype").map_or_else(|| "string".into(), |d| local_name(d)) }
         };
         fields.push(Field {
+            iris: if path.starts_with("http") { vec![path.clone()] } else { Vec::new() },
             name: fname,
             kind,
             required: p.get("min").and_then(|m| m.parse::<u32>().ok()).unwrap_or(0) > 0,
@@ -359,6 +384,26 @@ fn class(store: &Store, domain: &str, iri: &str, prefix: Option<&str>, product: 
             allowed,
         });
     }
+    // #4995 — one field per local name (rdfs:label and chorus:label are both `label`):
+    // merge their IRIs, the unit's namespace first, as athena-make serves them
+    let ns = iri.rsplit_once(['#', '/']).map(|(n, _)| &iri[..n.len() + 1]).unwrap_or("");
+    let mut merged: Vec<Field> = Vec::new();
+    for f in fields {
+        match merged.iter_mut().find(|m| m.name == f.name) {
+            Some(m) => {
+                m.iris.extend(f.iris);
+                m.required |= f.required;
+                m.many |= f.many;
+                if m.allowed.is_empty() { m.allowed = f.allowed; }
+            }
+            None => merged.push(f),
+        }
+    }
+    for m in &mut merged {
+        m.iris.sort_by_key(|i| (!i.starts_with(ns), i.clone()));
+        m.iris.dedup();
+    }
+    let fields = merged;
     Ok(Class { segment: segment(domain, &name), name, graph, store: row_store, fields })
 }
 
