@@ -256,9 +256,24 @@ export function gateDecision(r: GateRequest): GateDecision {
   };
 }
 
-/** One line per refused request: when, what, why, and which browser. Never the cookie. */
-export function refusalLine(status: number, method: string, path: string, why: string, ua: string, now: Date = new Date()): string {
-  return `[clearing-v2] gate.refused ${now.toISOString()} status=${status} why=${why} ${method} ${path} ua="${ua.replace(/"/g, "'").slice(0, 120)}"`;
+/** #5015 AC4 — the NAMES of the cookies a request carried, never a value. Jeff's phone kept
+ *  arriving with no sign-in cookie about an hour after signing in; whether it carried other
+ *  cookies of this site (our cookie alone is gone) or none at all (the browser dropped the
+ *  site's data) names the cause. */
+export function cookieNames(cookieHeader: string): string {
+  const names = String(cookieHeader || '').split(';')
+    .map((c) => c.split('=')[0].trim())
+    .filter((n) => /^[A-Za-z0-9_.-]{1,64}$/.test(n));
+  return names.length ? names.join(',') : '-';
+}
+
+/** One line per refused request: when, what, why, which browser, and (#5015 AC4) which host and
+ *  scheme it came in on and which cookie names it carried. Never a cookie value. */
+export function refusalLine(status: number, method: string, path: string, why: string, ua: string, now: Date = new Date(),
+  seen: { host?: string; scheme?: string; cookies?: string } = {}): string {
+  const host = String(seen.host || '-').replace(/[^A-Za-z0-9.:-]/g, '').slice(0, 80) || '-';
+  const scheme = String(seen.scheme || '-').replace(/[^a-z]/g, '').slice(0, 8) || '-';
+  return `[clearing-v2] gate.refused ${now.toISOString()} status=${status} why=${why} ${method} ${path} host=${host} scheme=${scheme} cookies=${cookieNames(seen.cookies || '')} ua="${ua.replace(/"/g, "'").slice(0, 120)}"`;
 }
 
 /** The marker this server sets when it sends a browser to sign in; it lasts half a minute. */
@@ -317,7 +332,11 @@ export function sessionGate(
     }
     // AC1's unnamed case (2026-11-15): the phone arrived with no sign-in 36 minutes after one, and
     // nothing recorded whether it sent no cookie or a cookie this server refused. Now it is recorded.
-    limited(refusalLine(d.kind === 'redirect' ? 302 : d.status, req.method, req.path, why || 'unknown', String(req.headers['user-agent'] || '')));
+    limited(refusalLine(d.kind === 'redirect' ? 302 : d.status, req.method, req.path, why || 'unknown', String(req.headers['user-agent'] || ''), new Date(), {
+      host: String(req.headers['x-forwarded-host'] || req.headers.host || ''),
+      scheme: String(req.headers['x-forwarded-proto'] || ((req.socket as { encrypted?: boolean }).encrypted ? 'https' : 'http')),
+      cookies,
+    }));
     // never let a browser or the edge keep a copy of a refusal, or of the room, across a sign-in change
     res.setHeader('Cache-Control', 'no-store');
     if (d.kind === 'redirect') { res.append('Set-Cookie', BOUNCE_SET); res.redirect(302, d.location); return; }
