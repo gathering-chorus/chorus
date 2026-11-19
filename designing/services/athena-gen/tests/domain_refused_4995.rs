@@ -41,3 +41,13 @@ fn a_domain_not_in_the_model_is_refused_by_name() {
     let e = domain(&store, "nosuch").expect_err("must be refused").0;
     assert!(e.contains("'nosuch' is not in the model"), "{e}");
 }
+
+/// Borg Queen 18:51 — AC2 on the repo's own model, not only a fixture: values is a real
+/// domain (values) that declares no settings of its own, so it is refused by name.
+#[test]
+fn a_real_domain_with_no_settings_is_refused_by_name() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let (store, _) = load(&athena_gen::model::model_files(&root)).unwrap();
+    let e = domain(&store, "values").expect_err("values has no settings of its own").0;
+    assert!(e.contains("'values' declares no settings"), "{e}");
+}

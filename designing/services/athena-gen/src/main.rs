@@ -89,6 +89,15 @@ fn generate(store: &oxigraph::store::Store, root: &Path, unit: Unit, product: &s
         std::fs::write(&f, text).unwrap_or_else(|e| die(e));
         println!("wrote {}", f.display());
     }
+    // #4995 (AC5) — the MCP binding, OpenAPI document and page for each class it serves
+    for (path, text) in athena_gen::surfaces::files(&p, &settings) {
+        let f = out.join(&path);
+        if let Some(dir) = f.parent() {
+            std::fs::create_dir_all(dir).unwrap_or_else(|e| die(e));
+        }
+        std::fs::write(&f, text).unwrap_or_else(|e| die(e));
+        println!("wrote {}", f.display());
+    }
 }
 
 /// #4547 — the touched products the generator builds: those that declare their own

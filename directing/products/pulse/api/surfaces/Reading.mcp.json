@@ -1,0 +1,10 @@
+{
+  "class": "Reading",
+  "binding": "mcp",
+  "convention": "ADR-031 chorus_<plural-resource>_<verb>",
+  "tools": [
+    { "name": "chorus_readings_list", "verb": "list", "route": "GET /pulse/awareness/readings" },
+    { "name": "chorus_readings_get", "verb": "get", "route": "GET /pulse/awareness/readings/:name" },
+    { "name": "chorus_readings_add", "verb": "add", "route": "POST /pulse/awareness/readings", "delegatesTo": "the generated door" }
+  ]
+}

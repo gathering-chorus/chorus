@@ -1,0 +1,10 @@
+{
+  "class": "WaitingOn",
+  "binding": "mcp",
+  "convention": "ADR-031 chorus_<plural-resource>_<verb>",
+  "tools": [
+    { "name": "chorus_waitingons_list", "verb": "list", "route": "GET /pulse/awareness/waitingons" },
+    { "name": "chorus_waitingons_get", "verb": "get", "route": "GET /pulse/awareness/waitingons/:name" },
+    { "name": "chorus_waitingons_add", "verb": "add", "route": "POST /pulse/awareness/waitingons", "delegatesTo": "the generated door" }
+  ]
+}
