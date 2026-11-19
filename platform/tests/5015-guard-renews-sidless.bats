@@ -12,6 +12,7 @@
 # Covers: platform/scripts/chorus-share-guard.py
 # Covers: platform/scripts/lib/person_session.py
 # Covers: platform/tests/fixtures/signed-in-renews-5015.py
+# Covers: platform/tests/fixtures/browser-signin-5015.py
 
 setup() {
   ROOT="${BATS_TEST_DIRNAME}/../.."
@@ -33,4 +34,15 @@ setup() {
   echo "$output"
   [ "$status" -eq 1 ]
   grep -q '^FAIL door 201: an idle hour later the sign-in is ok and renewed' <<<"$output"
+}
+
+@test "the login.feature driver signs in through the guard's real path and renews after an idle hour, never touching ~/.chorus" {
+  D="$ROOT/platform/tests/fixtures/browser-signin-5015.py"
+  S="$BATS_TEST_TMPDIR/st.json"
+  run python3 "$D" "$S" signin phone;  [ "$status" -eq 0 ] || return 1
+  grep -q '"sid": "jeff-browser-sig0001"' <<<"$output" || return 1
+  run python3 "$D" "$S" idle 3700;     [ "$status" -eq 0 ] || return 1
+  run python3 "$D" "$S" visit phone;   [ "$status" -eq 0 ] || return 1
+  grep -q '"state": "ok", "renewed": true' <<<"$output" || return 1
+  [ -f "$S.oidc.json" ] || { echo "the guard's OIDC state did not go to the scenario world"; return 1; }
 }
