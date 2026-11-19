@@ -22,7 +22,7 @@ exec(compile(src, GUARD, "exec"), g)
 FAILS = []
 KEY = b"test-key-5015-not-the-live-one-----"
 JEFF = "https://id.example.test/jeff/profile/card#me"
-TTL, RENEW = 12 * 3600, 600
+TTL, RENEW = g["SESSION_TTL"], g["RENEW_EVERY"]   # the guard's live settings, not copies
 T = 1_795_100_000
 TOK = {"id_token": "header.payload.signature-without-jti", "refresh_token": "r", "expires_in": 3600}
 

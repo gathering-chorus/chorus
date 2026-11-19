@@ -471,21 +471,23 @@ impl OidcVerifier {
         let scope = self.scopes_for(&web_id, now_secs);
         let agent_id = self.role_for(&web_id, now_secs).unwrap_or_default();
         // #5015 — every login has an id. A token with no jti (a CSS browser id_token)
-        // gets the hash of its own signature: unique per token, stable for that token,
+        // gets the hash of what it signed (header.payload, not the signature: an ECDSA
+        // signature is malleable, (r, n-s) also verifies): unique per token, stable for it,
         // set here once so no login kind reaches the door without one (the door
         // refused "" with 401 "login has no id" and Jeff's browser sign-ins wrote no row).
         let jti = auth::json_string(payload, "jti")
             .filter(|j| !j.is_empty())
-            .unwrap_or_else(|| login_id_from_signature(&sig_bytes));
+            .unwrap_or_else(|| login_id_from_signed(&signing_input));
         Ok(Claims { agent_id, web_id, aud, exp, scope, jti })
     }
 }
 
 /// #5015 — the login id for a token that carries no jti: "sig-" + the first 32 hex
-/// chars of sha256(signature bytes). Distinct from any CSS jti shape.
-pub fn login_id_from_signature(sig_bytes: &[u8]) -> String {
+/// chars of sha256 of the signed content (`header.payload`). The signature itself is
+/// not used: an ECDSA signature is malleable, so one token could yield two ids.
+pub fn login_id_from_signed(signing_input: &str) -> String {
     use sha2::{Digest, Sha256};
-    let d = Sha256::digest(sig_bytes);
+    let d = Sha256::digest(signing_input.as_bytes());
     let hex: String = d.iter().map(|b| format!("{:02x}", b)).collect();
     format!("sig-{}", &hex[..32])
 }
@@ -990,8 +992,7 @@ mod tests {
     }
 
     /// #4517 AC5 — the login's own id rides out of verify: one Session row per login is
-    /// keyed on it. NEGATIVE PROOF: a token without a jti verifies with an empty one,
-    /// which the door's login route then refuses (identity-login: no verified login).
+    /// keyed on it. #5015: a token without a jti now carries the hash of what it signed.
     #[test]
     fn the_login_id_comes_back_from_verify_4517() {
         let v = verifier();
@@ -1018,8 +1019,13 @@ mod tests {
         let other = format!(r#"{{"iss":"{}","aud":"chorus","webid":"{}","exp":{}}}"#, ISSUER, wren_webid(), NOW + 1800);
         let c = v.verify(&mint_es256(&css_key(), KID, &other), NOW).expect("verifies").jti;
         assert_ne!(a, c, "two different tokens must not share a login id");
-        let sig = token_valid().rsplit('.').next().unwrap().to_string();
-        assert_eq!(a, login_id_from_signature(&auth::b64url_decode(&sig).unwrap()));
+        let t = token_valid();
+        let signed = t.rsplitn(2, '.').nth(1).unwrap().to_string();
+        assert_eq!(a, login_id_from_signed(&signed), "the id is the hash of what the token signed");
+        // an explicit empty jti is treated as none: it gets the signed-content id, never ""
+        let empty = format!(r#"{{"iss":"{}","aud":"chorus","webid":"{}","exp":{},"jti":""}}"#, ISSUER, wren_webid(), NOW + 1800);
+        let e = v.verify(&mint_es256(&css_key(), KID, &empty), NOW).expect("verifies").jti;
+        assert!(e.starts_with("sig-"), "an empty jti must not reach the door as \"\": got {e:?}");
     }
 
     // case 2 — forged-401: signature byte-tampered → refused, reason signature.

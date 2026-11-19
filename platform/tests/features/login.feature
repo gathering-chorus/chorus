@@ -198,7 +198,7 @@ Feature: A principal logs in, works, and logs out
     Given Jeff has signed in on his phone
     When his phone sits idle for an hour
     And he opens the Clearing on his phone
-    Then he is signed in and his sign-in is renewed
+    Then he is signed in on his phone and his sign-in is renewed
 
   @browser
   Scenario: Jeff is signed in on his phone and his desktop at once

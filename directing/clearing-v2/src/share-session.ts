@@ -264,7 +264,8 @@ export function cookieNames(cookieHeader: string): string {
   const names = String(cookieHeader || '').split(';')
     .map((c) => c.split('=')[0].trim())
     .filter((n) => /^[A-Za-z0-9_.-]{1,64}$/.test(n));
-  return names.length ? names.join(',') : '-';
+  // a public endpoint: the client picks the cookies, so at most 12 names reach one line
+  return names.length ? names.slice(0, 12).join(',') + (names.length > 12 ? `,+${names.length - 12}` : '') : '-';
 }
 
 /** One line per refused request: when, what, why, which browser, and (#5015 AC4) which host and
