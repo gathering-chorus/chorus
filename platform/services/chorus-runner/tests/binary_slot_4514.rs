@@ -3,6 +3,8 @@
 //! #4514 — a verb run through the runner uses the caller's werk bin slot first,
 //! as the cicd pipeline's PATH does, so a card that changes a verb runs its own
 //! build. NEGATIVE PROOF: another role's slot is never used.
+//! #5006 AC2: only with the opt-in the card's build/test/demo DAGs set
+//! (CHORUS_USE_SLOT=1); without it the installed binary runs (land_runs_installed_5006).
 use chorus_runner::server::binary_path;
 
 #[test]

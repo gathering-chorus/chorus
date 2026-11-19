@@ -4,25 +4,29 @@
 //! on main: no slot on PATH and CHORUS_USE_SLOT explicitly "0", so chorus-runner
 //! and the werk-deploy launcher both pick the installed binary. The card's own
 //! build, test and demo DAGs opt in ("1"), or the demo would silently test the
-//! live binary (the reverse risk, Wren 11-19). Read from the committed files,
+//! live binary (the reverse risk, Wren 11-19). One list, SLOT_PIPELINES, pinned
+//! here by name; every other DAG gets the installed binary. Read from the committed files,
 //! which the drift checks prove are what chorus-make generates.
-use chorus_make::Slots;
+use chorus_make::{slots_for, Slots, SLOT_PIPELINES};
 
-/// Why a DAG's env breaks the slot rule for its kind, or None.
+/// Why a DAG's env breaks the slot rule for its name, or None. The rule is
+/// the one list, SLOT_PIPELINES: on it, the opt-in ("1"); off it, the
+/// installed binary ("0") and no slot on PATH. Nothing is inferred from a name.
 fn slot_rule_broken(name: &str, yaml: &str) -> Option<String> {
     let env = yaml.split("\nsteps:").next().unwrap_or(yaml);
     let slot_on_path = env.lines().any(|l| l.starts_with("  - PATH:") && l.contains("${ROLE}-bin"));
     let opt = env.lines().find_map(|l| l.strip_prefix("  - CHORUS_USE_SLOT: ")).map(|v| v.trim_matches('"').to_string());
-    let land_or_go = name.ends_with("-land") || name.ends_with("-go");
-    if land_or_go {
+    if slots_for(name) == Slots::Card {
+        if opt.as_deref() != Some("1") {
+            return Some(format!("{name}: builds, tests or demos the card but does not opt in, has {opt:?}"));
+        }
+    } else {
         if slot_on_path {
-            return Some(format!("{name}: a land/go DAG puts the role's slot on PATH"));
+            return Some(format!("{name}: not on the slot list but puts the role's slot on PATH"));
         }
         if opt.as_deref() != Some("0") {
-            return Some(format!("{name}: a land/go DAG must set CHORUS_USE_SLOT \"0\", has {opt:?}"));
+            return Some(format!("{name}: not on the slot list, must set CHORUS_USE_SLOT \"0\", has {opt:?}"));
         }
-    } else if slot_on_path && opt.as_deref() != Some("1") {
-        return Some(format!("{name}: a card DAG with the slot on PATH must opt in (CHORUS_USE_SLOT \"1\"), has {opt:?}"));
     }
     None
 }
@@ -44,19 +48,23 @@ fn pipelines() -> Vec<(String, String)> {
 }
 
 #[test]
-fn no_land_or_go_dag_reaches_a_slot_and_every_card_dag_opts_in() {
+fn the_slot_list_is_exactly_the_card_build_test_and_demo_dags() {
+    // Pinned (Wren 11-19): a new DAG runs the installed binaries unless someone
+    // adds it here by name, and this line changes with it.
+    assert_eq!(SLOT_PIPELINES, &["cicd", "cicd-test", "demo", "athena"]);
+}
+
+#[test]
+fn every_committed_dag_follows_the_slot_list() {
     let all = pipelines();
     // the guard's targets must exist, or it passes vacuously
-    for must in ["cicd", "cicd-land", "cicd-go", "athena-land", "borg-prove-land", "demo", "cicd-test"] {
+    for must in ["cicd", "cicd-land", "cicd-go", "athena-land", "borg-prove-land", "demo", "cicd-test", "athena", "clearing-evaluate", "nightly"] {
         assert!(all.iter().any(|(n, _)| n == must), "{must}.yaml is gone: this check would pass on nothing");
     }
     let broken: Vec<String> = all.iter().filter_map(|(n, y)| slot_rule_broken(n, y)).collect();
     assert!(broken.is_empty(), "{broken:#?}");
-    // and the card DAGs that build, test and demo really do opt in
-    for card in ["cicd", "demo", "cicd-test", "athena"] {
-        let (_, y) = all.iter().find(|(n, _)| n == card).unwrap();
-        assert!(y.contains("  - CHORUS_USE_SLOT: \"1\"\n"), "{card} does not opt in: its demo would test the live binary");
-    }
+    let opted: Vec<&str> = all.iter().filter(|(_, y)| y.contains("  - CHORUS_USE_SLOT: \"1\"\n")).map(|(n, _)| n.as_str()).collect();
+    assert_eq!(opted, vec!["athena", "cicd", "cicd-test", "demo"], "the DAGs that opt in are not exactly the list");
 }
 
 #[test]
@@ -67,6 +75,10 @@ fn negative_proof_the_rule_catches_each_way_it_can_break() {
     assert!(slot_rule_broken("athena-land", land_no_flag).is_some(), "a land with no explicit opt-out passed");
     let card_no_opt = "env:\n  - PATH: ${CHORUS_WERK_BASE}/${ROLE}-bin:${PATH}\nsteps:\n";
     assert!(slot_rule_broken("cicd", card_no_opt).is_some(), "a card DAG that forgot the opt-in passed");
+    // the hole the code review found: a DAG a land enqueues after accept that opts in
+    let post_land_opted = format!("env:\n{}steps:\n", Slots::Card.straight_env());
+    assert!(slot_rule_broken("clearing-evaluate", &post_land_opted).is_some(), "clearing-evaluate opted into slots and passed");
+    assert!(slot_rule_broken("some-new-dag", &post_land_opted).is_some(), "an unlisted new DAG opted in and passed");
     // the generator's own two env blocks pass for their kinds
     assert!(slot_rule_broken("cicd-land", &format!("env:\n{}steps:\n", Slots::Installed.env())).is_none());
     assert!(slot_rule_broken("cicd", &format!("env:\n{}steps:\n", Slots::Card.env())).is_none());

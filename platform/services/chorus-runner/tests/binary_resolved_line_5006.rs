@@ -40,3 +40,20 @@ fn every_resolution_says_which_path_and_why() {
     assert_ne!(why_slot, why_inst, "the two choices must be told apart in the line");
 }
 
+
+/// The call path: what prepare runs and logs. A binary tool gets its line; an
+/// http tool (its binary is a route) gets none and resolves nothing.
+/// NEGATIVE PROOF: flipping which kind logs fails both halves.
+#[test]
+fn a_binary_call_logs_its_line_and_an_http_call_logs_none() {
+    use chorus_runner::server::resolve_for_call;
+    let (_slot, installed) = world();
+    std::env::remove_var("CHORUS_USE_SLOT");
+    let (path, line) = resolve_for_call("athena-deploy", "athena-deploy", "wren", false, "t5006c").unwrap();
+    assert_eq!(path, installed);
+    let line: serde_json::Value = serde_json::from_str(&line.expect("a binary call logs its resolution")).unwrap();
+    assert_eq!((line["event"].as_str(), line["path"].as_str(), line["slot_opt_in"].as_bool()), (Some("runner.binary.resolved"), Some(installed.as_str()), Some(false)));
+    let (route, none) = resolve_for_call("cards-get", "GET http://127.0.0.1:9/x", "wren", true, "t5006c").unwrap();
+    assert_eq!(route, "GET http://127.0.0.1:9/x");
+    assert!(none.is_none(), "an http call logged a binary resolution");
+}

@@ -143,6 +143,19 @@ pub fn resolve_binary(name: &str, who: &str, use_slot: bool) -> Result<(String, 
     Ok(if !name.contains('/') && std::path::Path::new(&script).is_file() { (script, "chorus script") } else { (name.to_string(), "bare name on PATH") })
 }
 
+/// #5006 — what a call runs, and the runner.binary.resolved line it logs.
+/// An http tool's "binary" is a route: nothing is resolved or logged for it,
+/// so no slot is stat'd or trust-checked for a call that runs no binary.
+pub fn resolve_for_call(tool: &str, binary: &str, who: &str, http: bool, trace: &str) -> Result<(String, Option<String>), String> {
+    if http {
+        return Ok((binary.to_string(), None));
+    }
+    let use_slot = slot_opted_in();
+    let (path, why) = resolve_binary(binary, who, use_slot)?;
+    let line = resolution_line(tool, who, &path, why, use_slot, trace);
+    Ok((path, Some(line)))
+}
+
 /// #5006 — one line per resolution, so a land that ran a slot is visible.
 pub fn resolution_line(tool: &str, who: &str, path: &str, why: &str, use_slot: bool, trace: &str) -> String {
     serde_json::json!({
@@ -207,7 +220,7 @@ pub fn slot_refusal(owner_uid: u32, mode: u32, runner_uid: u32) -> Option<String
 /// #4514 — everything a tool call decides before it runs, shared by the MCP
 /// server and `chorus-runner call` (one path, Silas 19:11): who it runs as,
 /// its arguments checked against the generated schema, its argv, the binary
-/// (the caller's werk slot first), and the child's environment.
+/// (installed, or the caller's slot when it opted in: #5006), and the child's environment.
 pub struct Prepared {
     pub who: String,
     pub binary: String,
@@ -256,10 +269,9 @@ pub fn prepare_with(tool: &SkillTool, args: &serde_json::Map<String, serde_json:
     } else {
         None
     };
-    let use_slot = slot_opted_in();
-    let (binary, why) = resolve_binary(&tool.binary, &who, use_slot).map_err(|e| (e, 403))?;
-    if http.is_none() {
-        eprintln!("{}", resolution_line(&tool.name, &who, &binary, why, use_slot, trace));
+    let (binary, resolved) = resolve_for_call(&tool.name, &tool.binary, &who, http.is_some(), trace).map_err(|e| (e, 403))?;
+    if let Some(line) = resolved {
+        eprintln!("{line}");
     }
     Ok(Prepared { binary, argv, env: crate::skills::child_env(&who, &token, trace), who, http })
 }
