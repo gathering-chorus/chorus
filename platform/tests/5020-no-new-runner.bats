@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # @test-type: contract — reads the tree and runs policy-validate's usage; no store, no network.
 # @domain: policies
-# @card: 5020 · owner: kade
+# @card: #5020 · owner: kade
 # What Jeff sees: one policy runner. The domain lint is a flag on policy-validate (#4959),
 # not a second tool.
 #

@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # @test-type: contract — the plan, its shape and the land's dry run are hermetic; one case runs the referential-integrity row over a fixture dataset.
 # @domain: policies
-# @card: 5020 · owner: kade
+# @card: #5020 · owner: kade
 # What Jeff sees: "complete domain" is policy rows, not prose: one store, one generated API
 # door, no side-door readers or writers, an owner, tests, referential integrity, and its rows
 # conforming to their shapes. Each applies to every domain and runs as `--domain <name>`.

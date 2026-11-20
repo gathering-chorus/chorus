@@ -15,7 +15,7 @@
     "gate": "data",
     "checkKind": "sparql",
     "label": "A domain keeps its rows in one store",
-    "comment": "Complete-domain rule (#5020; Jeff 11-20 09:01, one and only one source of a type of data). Narrowed: the Domain row names exactly one instancesGraph, and at most one store.kind Property.",
+    "comment": "Complete-domain rule (#5020; Jeff 11-20 09:01, one and only one source of a type of data). Narrowed: the Domain row names exactly one instancesGraph, the one store its rows live in.",
     "checkSpec": "SELECT ?problem WHERE { { SELECT (COUNT(DISTINCT ?ig) AS ?n) WHERE { OPTIONAL { GRAPH <urn:chorus:domains:domains> { chorus:{domain} chorus:instancesGraph ?ig } } } } FILTER(?n != 1) BIND(CONCAT(STR(?n), \" instancesGraph values\") AS ?problem) }",
     "status": "ratchet",
     "baseline": "27",

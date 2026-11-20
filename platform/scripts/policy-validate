@@ -46,8 +46,13 @@ def short(iri):
 
 
 def applies_to(r):
+    """The domain names a row is scoped to; a name a check could not carry safely is Broken."""
     a = r.get("appliesTo") or []
-    return sorted({short(x) for x in ([a] if isinstance(a, str) else a) if x})
+    names = sorted({short(x) for x in ([a] if isinstance(a, str) else a) if x})
+    bad = [n for n in names if not DOMAIN_NAME.match(n)]
+    if bad:
+        raise Broken(f"appliesTo names a check cannot carry: {bad[:3]}")
+    return names
 
 
 def all_domains():
@@ -57,7 +62,7 @@ def all_domains():
         names = seam.split()
     else:
         try:
-            with urllib.request.urlopen(f"{DOOR}/v1/domains/domains", timeout=30) as r:
+            with urllib.request.urlopen(f"{DOOR}/v1/domains/domains?limit=500", timeout=30) as r:
                 names = [d.get("name", "") for d in json.load(r).get("data") or []]
         except Exception as e:
             raise Broken(f"cannot read the domains: {e}")
@@ -130,20 +135,22 @@ def count_test(path):
     return [] if p.returncode == 0 else [f"{path} failed"]
 
 
-def write_prom(measured, gate, runtime=False):
+def write_prom(measured, gate, runtime=False, domain=None):
     """node-exporter textfile, written atomically. Called only when every check ran: a run
     that could not measure leaves the old file to age, so the stale rule fires (#3734)."""
     d = os.environ.get("TEXTFILE_DIR", os.path.expanduser("~/CascadeProjects/shared-observability/data/textfile_collector"))
     os.makedirs(d, exist_ok=True)
     esc = lambda s: str(s).replace("\\", "\\\\").replace('"', '\\"')
+    # a domain lint's series carry its domain, so they never collide with the full run's (#5020)
+    dl = f',domain="{esc(domain)}"' if domain else ""
     lines = ["# HELP chorus_policy_violations Violations a policy's check found (#4959).",
              "# TYPE chorus_policy_violations gauge"]
-    lines += [f'chorus_policy_violations{{policy="{esc(n)}",gate="{esc(g)}"}} {v}' for n, g, v, _ in measured]
+    lines += [f'chorus_policy_violations{{policy="{esc(n)}",gate="{esc(g)}"{dl}}} {v}' for n, g, v, _ in measured]
     lines += ["# HELP chorus_policy_baseline Violations a policy allows today; the check fails above it (#4959).",
               "# TYPE chorus_policy_baseline gauge"]
-    lines += [f'chorus_policy_baseline{{policy="{esc(n)}",gate="{esc(g)}"}} {b}' for n, g, _, b in measured]
+    lines += [f'chorus_policy_baseline{{policy="{esc(n)}",gate="{esc(g)}"{dl}}} {b}' for n, g, _, b in measured]
     lines += ["# HELP chorus_policy_checks Policy checks this run measured (#4959).", "# TYPE chorus_policy_checks gauge",
-              f"chorus_policy_checks {len(measured)}"]
+              f"chorus_policy_checks{{{dl[1:]}}} {len(measured)}" if dl else f"chorus_policy_checks {len(measured)}"]
     # one file per selection, so a gate's or the runtime run never overwrites the full run
     name = "chorus_policy" + (f"_{gate}" if gate else "") + ("_runtime" if runtime else "") + ".prom"
     tmp = os.path.join(d, f".{name}.{os.getpid()}")
@@ -206,7 +213,12 @@ def run(rows, gate, domain, prom, runtime):
         kind, name = r.get("checkKind"), r.get("name", "?")
         if not kind or r.get("status") == "retired" or (gate and r.get("gate") != gate):
             continue
-        scope = applies_to(r)
+        try:
+            scope = applies_to(r)
+        except Broken as e:
+            broken += 1
+            print(f"BROKEN {name}: {e}")
+            continue
         if domain is not None and scope and domain not in scope:
             continue
         if (kind == "runtime") != runtime:
@@ -264,7 +276,7 @@ def run(rows, gate, domain, prom, runtime):
         print(f"policy-validate: no check applies to {domain}; an empty lint is not a pass")
         return 2
     if prom and not broken:
-        write_prom(measured, "_".join(x for x in (gate, domain and f"domain_{domain}") if x) or None, runtime)
+        write_prom(measured, "_".join(x for x in (gate, domain and f"domain_{domain}") if x) or None, runtime, domain)
     return 2 if broken else 1 if failed else 0
 
 

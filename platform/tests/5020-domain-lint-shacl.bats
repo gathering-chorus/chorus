@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # @test-type: contract — Jena SHACL over a committed fixture dataset; no store, no network.
 # @domain: policies
-# @card: 5020 · owner: kade
+# @card: #5020 · owner: kade
 # What Jeff sees: a domain whose rows break their shapes is red in its lint, so the shape
 # and the policy push the same domain to green.
 #
@@ -54,9 +54,33 @@ PY
 }
 
 @test "AC5: control: the row given its label conforms, and x is green" {
-  sed -i '' 's/c:x-one a c:Thing \./c:x-one a c:Thing ; rdfs:label "x one" ./' "$T/data.trig"
+  perl -pi -e 's/c:x-one a c:Thing \./c:x-one a c:Thing ; rdfs:label "x one" ./' "$T/data.trig"
   run "$PV" --domain x
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
+
+@test "AC5 NEGATIVE: x's Domain row breaking its shape turns x red (and the domains domain, which holds Domain rows); y stays green" {
+  perl -pi -e 's/c:x-one a c:Thing \./c:x-one a c:Thing ; rdfs:label "x one" ./; s/c:x a c:Domain ; rdfs:label "x" \./c:x a c:Domain ./' "$T/data.trig"
+  run "$PV" --domain x
+  [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+  echo "$output" | grep -q '^FAIL domain-shacl-conforms 1 > 0' || { echo "$output"; return 1; }
+  echo "$output" | grep -q 'chorus#x>' || { echo "$output"; return 1; }
+  run "$PV" --domain domains
+  [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+  run "$PV" --domain y
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
+
+@test "AC5 NEGATIVE: a row outside any named graph is exit 2, never filed under a guessed domain" {
+  printf '<https://jeffbridwell.com/chorus#x-two> <https://jeffbridwell.com/chorus#p> <urn:chorus:domains:y> .\n' >> "$T/data.trig"
+  run "$PV" --domain y
+  [ "$status" -eq 2 ] || { echo "$output"; return 1; }
+}
+
+@test "AC5 NEGATIVE: with riot and shacl missing the check is exit 2, never a pass" {
+  mkdir "$T/bin" && ln -s "$(command -v python3)" "$T/bin/python3"
+  PATH="$T/bin:/bin" run "$COUNT" domain-shacl-conforms x
+  [ "$status" -eq 2 ] || { echo "$output"; return 1; }
 }
 
 @test "AC5 NEGATIVE: data SHACL cannot read is exit 2, never green" {

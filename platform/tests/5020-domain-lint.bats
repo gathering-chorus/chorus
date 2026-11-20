@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # @test-type: contract — runs policy-validate over fixture policies; no store, no door, no network.
 # @domain: policies
-# @card: 5020 · owner: kade
+# @card: #5020 · owner: kade
 # What Jeff sees: `policy-validate --domain <name>` is the lint of one domain. It runs the
 # policies that apply to that domain (appliesTo names it, or is unset: every domain) and
 # lists each red with its rule and what broke it.
@@ -104,4 +104,13 @@ ONLY_X='[ "{domain}" = x ] && echo "x row broken" || true'
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ -s "$T/prom/chorus_policy_domain_y.prom" ]
   [ ! -e "$T/prom/chorus_policy.prom" ]
+  # its series carry the domain, so they never collide with the full run's
+  grep -q 'chorus_policy_violations{policy="per-domain",gate="data",domain="y"} 0' "$T/prom/chorus_policy_domain_y.prom" || return 1
+}
+
+@test "AC1 NEGATIVE: an appliesTo name a check cannot carry is exit 2, never run" {
+  policies "scoped|x;touch-pwned|0|echo {domain}"
+  run "$PV"
+  [ "$status" -eq 2 ] || { echo "$output"; return 1; }
+  echo "$output" | grep -q 'BROKEN scoped' || { echo "$output"; return 1; }
 }

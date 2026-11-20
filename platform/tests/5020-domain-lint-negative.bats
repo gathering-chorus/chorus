@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # @test-type: contract — runs each complete-domain row's own check over its committed fixture; no store, no network.
 # @domain: policies
-# @card: 5020 · owner: kade
+# @card: #5020 · owner: kade
 # What Jeff sees: a domain that breaks a complete-domain rule comes up red in its lint, named
 # by the rule, and a domain that keeps it stays green.
 #

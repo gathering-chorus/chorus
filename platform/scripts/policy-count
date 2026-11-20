@@ -575,7 +575,9 @@ def construct(query):
         raise Broken(f"store unreachable: {e}")
 
 
-NQ = re.compile(r"^(.*\S)\s+<([^>]+)>\s*\.\s*$")
+# a quad: subject, predicate, object, graph. The object is an IRI, a blank node or a literal
+# (with its datatype or language); a default-graph triple has no fourth term and is refused.
+NQ = re.compile(r'^(\S+ <[^>]+> (?:<[^>]+>|_:\S+|"(?:[^"\\]|\\.)*"(?:\^\^<[^>]+>|@[\w-]+)?)) <([^>]+)> \.$')
 DOMAINS_GRAPH = "urn:chorus:domains:domains"
 
 
@@ -590,8 +592,9 @@ def store_rows(domain):
         out = {}
         for line in p.stdout.splitlines():
             m = NQ.match(line)
-            if m:
-                out.setdefault(m.group(2), []).append(m.group(1) + " .")
+            if not m:
+                raise Broken(f"{trig}: a row outside a named graph: {line[:120]}")
+            out.setdefault(m.group(2), []).append(m.group(1) + " .")
         return out
     if domain is None:
         q = 'SELECT DISTINCT ?g WHERE { GRAPH ?g { } FILTER(STRSTARTS(STR(?g), "urn:chorus:domains:")) }'
@@ -735,6 +738,9 @@ def main(argv):
     try:
         for line in count():
             print(line)
+    except (OSError, subprocess.SubprocessError) as e:  # a tool missing or hung: never exit 1 (a count)
+        print(f"policy-count {argv[1]}: cannot measure: {e}", file=sys.stderr)
+        return 2
     except Broken as e:
         print(f"policy-count {argv[1]}: cannot measure: {e}", file=sys.stderr)
         return 2
