@@ -1,0 +1,42 @@
+#!/usr/bin/env python3
+"""#5021: the complete-domain rows #5021 changes and adds. DRY RUN unless --apply.
+# @domain: policies
+
+From designing/domains/policies/policy-checks-5021.json (it ships in this land, so
+the store and the repo cannot differ): domain-no-side-door's baseline shrinks 169 -> 126 (comments
+no longer count), and two rows are added: domain-properties-declared (baseline 215) and
+domain-folds-filled (baseline 627, measured 11-20 18:35 through the page's own reads). Written by a principal with Write on the
+policies graph (Silas, as #5020's were). The door, the runner, the compare, the 403 wait and the exit
+codes are land-4960-rows' own (one implementation): this script only names a different plan.
+Exit 0 = plan printed (or applied); 1 = a write was refused; 2 = the door or the plan could not be read.
+--ttl <file> writes the planned rows as Turtle (for the shape test) and exits.
+"""
+import importlib.machinery
+import importlib.util
+import json
+import os
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+_loader = importlib.machinery.SourceFileLoader("land4960", os.path.join(HERE, "land-4960-rows"))
+_spec = importlib.util.spec_from_loader("land4960", _loader)
+land = importlib.util.module_from_spec(_spec)
+_loader.exec_module(land)
+
+PLAN = os.path.join(land.ROOT, "designing/domains/policies/policy-checks-5021.json")
+FIELDS = ("label", "comment", "gate", "status", "baseline", "checkKind", "checkSpec", "violationFixture")
+
+
+def policy_rows():
+    return [("policies", r["name"], {k: r[k] for k in FIELDS}) for r in json.load(open(PLAN))]
+
+
+def plan(_live):
+    return policy_rows()
+
+
+land.policy_rows = policy_rows  # write_ttl reads the plan through this name
+land.plan = plan
+
+if __name__ == "__main__":
+    sys.exit(land.main(sys.argv[1:]))

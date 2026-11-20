@@ -23,6 +23,8 @@ export interface PolicyRow {
   checkKind?: string;
   checkSpec?: string;
   violationFixture?: string;
+  /** #5020: the domains a policy is scoped to; none means every domain */
+  appliesTo?: string | string[];
 }
 
 export interface Measured {
@@ -31,6 +33,8 @@ export interface Measured {
   count: number | null;
   baseline: number | null;
   reason?: string;
+  /** a domain lint lists the first violations under each red (#5021) */
+  violations?: string[];
 }
 
 export interface CountRow extends Measured {
@@ -45,7 +49,7 @@ export interface PolicyCountsDeps {
   loadPlans: () => PolicyRow[];
   /** false when the row's check names a script missing from this tree (default: all runnable) */
   runnable?: (row: PolicyRow) => boolean;
-  runValidate: (gate: string, rows: PolicyRow[]) => Promise<string>;
+  runValidate: (gate: string, rows: PolicyRow[], args?: string[]) => Promise<string>;
   now?: () => number;
 }
 
@@ -88,7 +92,14 @@ export function parseValidate(stdout: string): Measured[] {
       continue;
     }
     const b = BROKEN.exec(line);
-    if (b) out.push({ name: b[1], verdict: 'broken', count: null, baseline: null, reason: b[2] });
+    if (b) {
+      out.push({ name: b[1], verdict: 'broken', count: null, baseline: null, reason: b[2] });
+      continue;
+    }
+    // a domain lint lists a red's violations under it as "  - <violation>" (#5020)
+    const v = /^  - (.*)$/.exec(line);
+    const last = out[out.length - 1];
+    if (v && last && last.verdict === 'fail') (last.violations ??= []).push(v[1]);
   }
   return out;
 }
@@ -125,6 +136,48 @@ export async function fetchPolicyCounts(gate: string, deps: PolicyCountsDeps): P
   }));
   const body = { gate, measuredAt: new Date(now).toISOString(), policies: table };
   cache.set(gate, { at: now, body });
+  return { status: 200, body };
+}
+
+const DOMAIN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+
+/** The domain names a row is scoped to (chorus:x, its IRI, or x); none = every domain. */
+export function appliesTo(row: PolicyRow): string[] {
+  const a = row.appliesTo ?? [];
+  return (Array.isArray(a) ? a : [a]).filter(Boolean).map((x) => String(x).split(/[#:/]/).pop() as string);
+}
+
+/**
+ * #5021 — GET /api/chorus/policies/counts?domain=<name>: the domain's lint, for the Conformance
+ * fold on /athena/domain.html. The rows are the door's (with a pending land's plan, as above),
+ * every check that applies to the domain: global (no appliesTo) or scoped to it. The verdicts
+ * are this tree's `policy-validate --domain <name>` (a {domain} check holds at 0 for one
+ * domain), cached ten minutes, with the time it ran. A door that does not answer is a 503.
+ */
+export async function fetchDomainConformance(domain: string, deps: PolicyCountsDeps): Promise<{ status: number; body: unknown }> {
+  if (!DOMAIN.test(domain)) return { status: 400, body: { error: 'domain must be a domain name, e.g. principles' } };
+  const now = (deps.now ?? Date.now)();
+  const key = `domain:${domain}`;
+  const hit = cache.get(key);
+  if (hit && now - hit.at < TTL_MS) return { status: 200, body: hit.body };
+  let door: PolicyRow[];
+  try {
+    door = await deps.fetchPolicies();
+  } catch (e) {
+    return { status: 503, body: { error: `the policies door did not answer: ${(e as Error).message}` } };
+  }
+  const rows = overlay(door, deps.loadPlans(), deps.runnable)
+    .filter((r) => (r.checkKind ?? '') !== '' && r.checkKind !== 'runtime' && r.status !== 'retired')
+    .filter((r) => { const s = appliesTo(r); return s.length === 0 || s.includes(domain); });
+  const measured = new Map(parseValidate(await deps.runValidate(domain, rows, ['--domain', domain])).map((m) => [m.name, m]));
+  const table = worstFirst(rows.map((r) => {
+    const m = measured.get(r.name) ?? { name: r.name, verdict: 'broken' as const, count: null, baseline: null, reason: 'not measured' };
+    const comment = r.comment ?? '';
+    return { ...m, gate: r.gate ?? '', comment, narrowed: /\bNarrowed\b/.test(comment), pendingLand: r.pendingLand,
+      label: r.label ?? r.name, scope: appliesTo(r).length ? 'domain' : 'global' };
+  }));
+  const body = { domain, measuredAt: new Date(now).toISOString(), policies: table };
+  cache.set(key, { at: now, body });
   return { status: 200, body };
 }
 

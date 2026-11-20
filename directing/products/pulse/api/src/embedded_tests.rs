@@ -342,3 +342,38 @@ fn a_patch_to_a_bare_named_row_writes_that_row_not_a_new_one() {
     assert_eq!(code, 201, "{out}");
     assert!(subjects(&store).contains(&iri(c, "fresh")));
 }
+
+// #5021 — a row carries the fields its shape declares and no others. The door served
+// "status": "" on every row of a class whose shape has no status (all 14 principles).
+fn declares_status(c: &ClassDef) -> bool {
+    c.fields.iter().any(|f| f.name == "status")
+}
+
+#[test]
+fn a_row_serves_status_only_when_its_shape_declares_one() {
+    let c = any_class();
+    // a row with a stray status triple, as an old writer might have left
+    let e = Embedded::memory();
+    e.update(&format!(
+        "INSERT DATA {{ GRAPH <{g}> {{ <{r}> a <{NS}{cls}> ; <{NS}ownedBy> <{NS}principal-art> ; <{NS}status> \"open\" }} }}",
+        g = c.graph, r = iri(c, "row-art"), cls = c.name)).unwrap();
+    let s = Sparql::over(Box::new(e));
+    let row = s.get(c, "row-art").unwrap().expect("the row");
+    let keys: Vec<&String> = row.keys().collect();
+    for k in &keys {
+        assert!(matches!(k.as_str(), "name" | "label") || c.fields.iter().any(|f| f.name == k.as_str()),
+            "{} serves '{k}', which its shape does not declare", c.name);
+    }
+    assert_eq!(row.contains_key("status"), declares_status(c), "{}: status served iff declared", c.name);
+}
+
+#[test]
+fn a_write_of_status_to_a_class_without_one_is_refused_off_model() {
+    let Some(c) = CLASSES.iter().find(|c| !declares_status(c) && c.fields.iter().any(|f| f.name == "ownedBy")) else { return };
+    let store = Sparql::over(Box::new(seeded()));
+    let mut body: serde_json::Map<String, Value> = serde_json::from_str(&body_for(c, "s1")).unwrap();
+    body.insert("status".into(), json!("open"));
+    let (code, out) = write(&ctx(&store), &caller("wren"), "POST", c, None, &Value::Object(body).to_string());
+    assert_eq!(code, 422, "{out}");
+    assert!(out.to_string().contains("off-model"), "{out}");
+}

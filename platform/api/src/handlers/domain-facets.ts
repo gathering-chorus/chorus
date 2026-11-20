@@ -480,36 +480,41 @@ export async function fetchDomainInfra(
 // doesn't exist in Fuseki (which uses kebab). The alias fell through to the
 // right URI (`loom-domain`) by accident. Resolver fixes this properly.
 
+/**
+ * #5021 — the Decisions fold reads where decisions live now: the decisions domain's ADR and
+ * Approval rows in urn:chorus:domains:decisions, joined to a domain by chorus:hasDomain (the
+ * Domain row's IRI, or the old <name>-domain alias). It read urn:chorus:decisions for
+ * chorus:Decision rows, which are gone, so every domain showed 0; and it answered 0 on a failed
+ * query too. A query that fails is now a 502, never an empty fold.
+ */
 export async function fetchDomainDecisions(
   deps: DomainFacetDeps,
   domainName: string,
 ): Promise<FetchResult> {
   const now = deps.now ?? Date.now;
   const start = now();
+  const identity = resolveDomainIdentity(domainName);
+  const names = [identity.primary, ...identity.aliases];
+  const targets = names.flatMap((n) => [`<https://jeffbridwell.com/chorus#${n}>`, `<https://jeffbridwell.com/chorus#${n}-domain>`]).join(', ');
+  const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX dcterms: <http://purl.org/dc/terms/> SELECT ?s ?t ?title ?date ?status WHERE { GRAPH <urn:chorus:domains:decisions> { VALUES ?t { chorus:ADR chorus:Approval } ?s a ?t ; chorus:hasDomain ?dom . FILTER(?dom IN (${targets})) OPTIONAL { ?s rdfs:label ?title } OPTIONAL { ?s chorus:status ?status } OPTIONAL { ?s dcterms:created ?date } } } ORDER BY ?t ?s`;
+  let result;
   try {
-    const identity = resolveDomainIdentity(domainName);
-    const domainNames = [identity.primary, ...identity.aliases];
-    const domainFilter = domainNames.map((n) => `<https://jeffbridwell.com/chorus#${n}-domain>`).join(', ');
-    const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?id ?title ?date ?status ?level ?type WHERE { GRAPH <urn:chorus:decisions> { ?s a chorus:Decision ; rdfs:label ?id ; rdfs:comment ?title ; chorus:decisionDate ?date ; chorus:decisionStatus ?status ; chorus:enforcementLevel ?level ; chorus:decisionType ?type ; chorus:hasDomain ?dom . FILTER(?dom IN (${domainFilter})) } } ORDER BY ?type ?id`;
-    const result = await deps.sparql(query);
-    const decisions = result.results.bindings.map((b) => ({
-      id: b.id?.value || '',
-      title: b.title?.value || '',
-      date: b.date?.value || '',
-      status: b.status?.value || '',
-      enforcement: b.level?.value || '',
-      type: b.type?.value || '',
-    }));
-    const byEnforcement: Record<string, number> = {};
-    for (const d of decisions) byEnforcement[d.enforcement] = (byEnforcement[d.enforcement] || 0) + 1;
-    return {
-      status: 200,
-      body: deps.envelope('domain-decisions', { domain: domainName, decisions, byEnforcement }, now() - start, { count: decisions.length }),
-    };
-  } catch {
-    return {
-      status: 200,
-      body: deps.envelope('domain-decisions', { domain: domainName, decisions: [], byEnforcement: {} }, now() - start, { count: 0 }),
-    };
+    result = await deps.sparql(query);
+  } catch (e) {
+    return { status: 502, body: deps.envelope('domain-decisions', { domain: domainName, error: `the decisions query failed: ${(e as Error).message}` }, now() - start, { error: true }) };
   }
+  const tail = (v: string) => v.split('#').pop() || v;
+  const decisions = result.results.bindings.map((b) => ({
+    id: tail(b.s?.value || ''),
+    title: b.title?.value || '',
+    date: b.date?.value || '',
+    status: b.status?.value || '',
+    enforcement: '',
+    type: tail(b.t?.value || ''),
+  }));
+  const byEnforcement: Record<string, number> = {};
+  return {
+    status: 200,
+    body: deps.envelope('domain-decisions', { domain: domainName, decisions, byEnforcement }, now() - start, { count: decisions.length }),
+  };
 }

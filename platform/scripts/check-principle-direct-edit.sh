@@ -140,7 +140,7 @@ if [ "$violation" -eq 0 ]; then
 fi
 
 echo "" >&2
-echo "Principles live in urn:chorus:domains:principles and are written via principles-api:" >&2
+echo "Principles are written only through their door, principles-api:" >&2
 echo "  POST http://localhost:3393/principles/principles" >&2
 echo "" >&2
 echo "Override (migration commit / schema-only): export PRINCIPLE_DIRECT_EDIT_SKIP=1" >&2

@@ -206,22 +206,33 @@ describe('fetchDomainServices', () => {
 // --- fetchDomainDecisions ---
 
 describe('fetchDomainDecisions', () => {
-  test('shapes decisions and aggregates byEnforcement', async () => {
+  // #5021 — the fold reads the decisions domain's ADR and Approval rows, joined by hasDomain
+  test('shapes ADR and Approval rows from the decisions domain graph', async () => {
+    const C = 'https://jeffbridwell.com/chorus#';
     const result: SparqlResult = {
       results: {
         bindings: [
-          { id: { value: 'DEC-001' }, title: { value: 'A' }, date: { value: '2026-01-01' }, status: { value: 'active' }, level: { value: 'binding' }, type: { value: 'architecture' } },
-          { id: { value: 'DEC-002' }, title: { value: 'B' }, date: { value: '2026-02-01' }, status: { value: 'active' }, level: { value: 'binding' }, type: { value: 'process' } },
-          { id: { value: 'DEC-003' }, title: { value: 'C' }, date: { value: '2026-03-01' }, status: { value: 'active' }, level: { value: 'advisory' }, type: { value: 'architecture' } },
+          { s: { value: `${C}adr-051` }, t: { value: `${C}ADR` }, title: { value: 'ADR-051 domains graphs' }, status: { value: 'accepted' } },
+          { s: { value: `${C}approval-17` }, t: { value: `${C}Approval` }, title: { value: 'a yes' }, date: { value: '2026-11-18' } },
         ],
       },
     };
-    const d = deps({ sparql: async () => result });
-    const r = await fetchDomainDecisions(d, 'awareness');
-    const body = r.body as { data: { decisions: unknown[]; byEnforcement: Record<string, number> } };
-    expect(body.data.decisions.length).toBe(3);
-    expect(body.data.byEnforcement.binding).toBe(2);
-    expect(body.data.byEnforcement.advisory).toBe(1);
+    let seen = '';
+    const d = deps({ sparql: async (q) => { seen = q; return result; } });
+    const r = await fetchDomainDecisions(d, 'principles');
+    expect(r.status).toBe(200);
+    const body = r.body as { data: { decisions: Array<{ id: string; type: string; title: string }> } };
+    expect(body.data.decisions.map((x) => [x.id, x.type])).toEqual([['adr-051', 'ADR'], ['approval-17', 'Approval']]);
+    expect(seen).toContain('GRAPH <urn:chorus:domains:decisions>');
+    expect(seen).toContain('<https://jeffbridwell.com/chorus#principles>');
+  });
+
+  test('NEGATIVE: it never reads the retired urn:chorus:decisions graph or chorus:Decision', async () => {
+    let seen = '';
+    const d = deps({ sparql: async (q) => { seen = q; return emptyResult(); } });
+    await fetchDomainDecisions(d, 'principles');
+    expect(seen).not.toContain('<urn:chorus:decisions>');
+    expect(seen).not.toContain('chorus:Decision ');
   });
 
   test('alias mapping: tests → quality also queried', async () => {
@@ -232,12 +243,10 @@ describe('fetchDomainDecisions', () => {
     expect(seenQuery).toContain('quality-domain');
   });
 
-  test('SPARQL throws returns empty envelope', async () => {
+  test('NEGATIVE: a failed query is a 502, never an empty fold', async () => {
     const d = deps({ sparql: async () => { throw new Error('oops'); } });
     const r = await fetchDomainDecisions(d, 'awareness');
-    expect(r.status).toBe(200);
-    const body = r.body as { data: { decisions: unknown[] } };
-    expect(body.data.decisions).toEqual([]);
+    expect(r.status).toBe(502);
   });
 });
 

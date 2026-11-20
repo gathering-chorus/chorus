@@ -26,7 +26,8 @@ async function renderFacetTables(el, fid, opts) {
   // hasDomain is one name or a list of them (115 of 6,329 code files name several)
   const onDomain = r => [].concat(r.hasDomain || (r.links && r.links.hasDomain) || []).some(v => tail(v) === dname);
   const FACETS = [
-    { t: 'Cards', u: DOM + fid, k: 'cards', cols: ['id', 'title', 'owner', 'status', 'priority'] },
+    // #5021 — its own route: the board's domain:<name> cards as a list (the old read answered 25 v1 names only)
+    { t: 'Cards', u: DOM + dname + '/cards', k: 'cards', cols: ['id', 'title', 'owner', 'status', 'priority'] },
     { t: 'Dependencies', u: DOM + fid + '/dependencies', k: '_deps' },
     { t: 'API Contract', u: OWL + '/code/endpoints?limit=5000', k: 'items', graph: true, filter: onDomain, cols: ['httpMethod', 'routePath', 'filePath'], src: 'chorus:Endpoint · hasDomain = ' + dname },
     { t: 'UI Pages', u: OWL + '/code/pages?limit=5000', k: 'items', graph: true, filter: onDomain, cols: ['route', 'filePath', 'pageType'], src: 'chorus:Page · hasDomain = ' + dname },
@@ -92,6 +93,9 @@ async function renderFacetTables(el, fid, opts) {
       const askedGraph = b && b._meta && b._meta.graph ? ` &middot; graph asked: <code>${esc(b._meta.graph)}</code>` : '';
       inner = count ? table(rows, f.cols) : `<div class="empty">no ${f.t.toLowerCase()} for this domain${askedGraph}</div>`;
     }
+    // #5021 — an empty fold shows the Domain row's written reason for it (chorus:foldNote "<Fold>: <why>")
+    const note = !count && opts.notes && opts.notes[f.t];
+    if (note) inner = `<p class="note"><strong>Why empty:</strong> ${esc(note)}</p>` + inner;
     const heading = opts.heading ? opts.heading(f.t) : f.t;
     // #4285 — the Tests fold lists FILES; the store counts CASES. Say both.
     const total = b && b.data && typeof b.data.total === 'number' ? b.data.total : null;

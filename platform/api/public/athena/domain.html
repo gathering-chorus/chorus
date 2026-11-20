@@ -5,7 +5,7 @@
      The family's domain view; the richer 17-facet /domain.html (root) remains until
      its facets fold in (consolidation card). Hand-authored pending the generator upgrade. -->
 <script>window.OWL_PORT = 3360;</script>
-<link rel="stylesheet" href="athena-flow.css"><style>.tbl{overflow-x:auto;max-width:100%;-webkit-overflow-scrolling:touch}.tbl table{min-width:420px}</style><script src="athena-flow.js"></script><script>
+<link rel="stylesheet" href="athena-flow.css"><style>.tbl{overflow-x:auto;max-width:100%;-webkit-overflow-scrolling:touch}.tbl table{min-width:420px}.ok{color:#1a7f37;font-weight:600}.bad{color:#cf222e;font-weight:600}@media (prefers-color-scheme:dark){.ok{color:#3fb950}.bad{color:#f85149}}</style><script src="athena-flow.js"></script><script>
 // #4064/#4084 — one page-wide model base. It was never defined on this page (#3810), so any domain with a
 // vocabulary threw 'OWL is not defined'; defining it inside one function (first fix) left renderFacets without it.
 // Same-origin /owl proxy, resolved through athena-flow's basePath when present, so it works on prod, a werk variant, the LAN and the tunnel.
@@ -77,6 +77,7 @@ ${vocab.length ? `<table><tr><th>Class</th><th>Generated collection</th></tr>${v
 ${e.hasDesignDoc ? `<details class="fold" open><summary>Design doc <span class="src">chorus:hasDesignDoc</span></summary><div class="body"><p><a class="edge" href="/${esc(e.hasDesignDoc)}">${esc(e.hasDesignDoc)}</a></p></div></details>` : ''}
 <details class="fold" open><summary>Gaps <span class="src">chorus:gaps from the model &middot; gap rows from the graph</span></summary><div class="body">${e.gaps ? `<p>${esc(e.gaps)}</p>` : '<p class="empty">the model names no gap for this domain</p>'}<div id="gaps-facet"></div></div></details>
 <div id="mfold-slot"></div>
+<div id="conf-slot"></div>
 <div id="svc-slot"></div>
 <div id="files-slot"></div>
 <div id="model-facets"></div>
@@ -87,11 +88,36 @@ ${srcNote(`GET /domains/${esc(d)} + the materialized facet endpoints (/api/choru
     // holds the two surfaces identical. Jeff's bar: the fold is a link up the
     // altitude ladder, not a second dashboard — collapsed by default.
     renderModelFold(document.getElementById('mfold-slot'), d, { compact: true });
+    // #5021 — the Domain row's written reasons for empty folds, keyed by fold name
+    window.FOLD_NOTES = Object.fromEntries(asArray(e.foldNote).map(n => String(n)).filter(n => n.includes(':'))
+      .map(n => [n.slice(0, n.indexOf(':')).trim(), n.slice(n.indexOf(':') + 1).trim()]));
     renderFacets(d);
     renderServices(d);
     renderFiles(d);
+    renderConformance(d);
   } catch (e) { fetchFailed(main, e); }
 })();
+
+// #5021 — Conformance: every policy that applies to this domain (global, or appliesTo it)
+// with its last policy-validate --domain result, read live from the policies door and the
+// lint's own run (GET /api/chorus/policies/counts?domain=). Nothing here is hand-written.
+async function renderConformance(d) {
+  const el = document.getElementById('conf-slot');
+  const fold = (summary, body, open) => `<details class="fold"${open ? ' open' : ''}><summary>Conformance ${summary} <span class="src">chorus:Policy (global or appliesTo) &middot; policy-validate --domain ${esc(d)}</span></summary><div class="body">${body}</div></details>`;
+  el.innerHTML = fold('', '<p class="empty">running the domain lint&hellip;</p>', true);
+  try {
+    const r = await fetch(`/api/chorus/policies/counts?domain=${encodeURIComponent(d)}`);
+    const b = await r.json();
+    if (!r.ok) { el.innerHTML = fold('', `<p class="empty"><strong>Cannot measure</strong> &mdash; ${esc(b.error || ('HTTP ' + r.status))}</p>`, true); return; }
+    const ps = b.policies || [];
+    if (!ps.length) { el.innerHTML = fold('', '<p class="empty">No policy with a check applies to this domain.</p>', true); return; }
+    const red = ps.filter(p => p.verdict !== 'pass').length;
+    const verdict = p => p.verdict === 'pass' ? '<span class="ok">green</span>' : p.verdict === 'fail' ? '<span class="bad">red</span>' : '<span class="bad">could not run</span>';
+    const rows = ps.map(p => `<tr data-policy="${esc(p.name)}" data-verdict="${esc(p.verdict)}"><td>${verdict(p)}</td><td><strong>${esc(p.name)}</strong><br><span class="src">${esc(p.label || '')}</span>${(p.violations || []).length ? `<ul>${p.violations.map(v => `<li><code>${esc(v)}</code></li>`).join('')}</ul>` : ''}${p.reason ? `<br><span class="empty">${esc(p.reason)}</span>` : ''}</td><td>${p.count == null ? '&ndash;' : esc(String(p.count))} / ${p.baseline == null ? '&ndash;' : esc(String(p.baseline))}</td><td>${esc(p.scope || '')}</td></tr>`).join('');
+    el.innerHTML = fold(`(${red ? red + ' red' : 'green'} of ${ps.length})`,
+      `<p class="src">measured ${esc(b.measuredAt || '?')}</p><div class="tbl"><table><tr><th></th><th>Policy</th><th>count / baseline</th><th>applies</th></tr>${rows}</table></div>`, red > 0);
+  } catch (e) { el.innerHTML = fold('', `<p class="empty"><strong>Cannot reach</strong> the policies endpoint &mdash; fetch failure. ${esc(String(e && e.message || e))}</p>`, true); }
+}
 
 // #4472 — the services this domain hosts (chorus:hosts) and the launchd units the services
 // crawl found running them (runsService). Both come from the graph; nothing is listed here.
@@ -103,7 +129,8 @@ async function renderServices(d) {
     const r = await fetch(window.basePath('/sparql-read'), { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/sparql-results+json' }, body: JSON.stringify({ query: q }) });
     if (!r.ok) throw new Error(`sparql-read ${r.status}`);
     const svcs = (((await r.json()).results || {}).bindings || []).map(b => String(b.svc.value).split('#').pop());
-    if (!svcs.length) { el.innerHTML = fold(`<p class="empty">The model names no service this domain hosts &mdash; add <code>chorus:${esc(d)} chorus:hosts &lt;service&gt;</code>.</p>`); return; }
+    const why = (window.FOLD_NOTES || {}).Services;   // #5021 — the written reason, when there is one
+    if (!svcs.length) { el.innerHTML = fold((why ? `<p class="note"><strong>Why empty:</strong> ${esc(why)}</p>` : '') + `<p class="empty">The model names no service this domain hosts &mdash; add <code>chorus:${esc(d)} chorus:hosts &lt;service&gt;</code>.</p>`); return; }
     const [inst, jobs] = await Promise.all([fetchJSON('/serviceinstances?limit=500'), fetchJSON('/scheduledjobs?limit=500')]);
     const units = [...(inst.data || []).map(u => ({ ...u, kind: 'instance' })), ...(jobs.data || []).map(u => ({ ...u, kind: 'job' }))];
     el.innerHTML = fold(svcs.map(full => {
@@ -146,7 +173,7 @@ async function renderFacets(d) {
   await Promise.all([
     renderFacetTables(document.getElementById('gaps-facet'), fid, { only: withGaps, heading: () => 'from the graph' }),
     renderFacetTables(document.getElementById('model-facets'), fid, { only: withModel }),
-    renderFacetTables(document.getElementById('facets'), fid, { except: withModel.concat(withGaps) }),
+    renderFacetTables(document.getElementById('facets'), fid, { except: withModel.concat(withGaps), domain: d, notes: window.FOLD_NOTES || {} }),
   ]);
 }
 </script>

@@ -31,13 +31,26 @@ chorus:roles a chorus:Domain ;
   chorus:atStep chorus:value-stream-step-shaping ;
   chorus:repoTarget "roles" ; chorus:definesVocabulary chorus:Role, chorus:AgentRole, chorus:HumanRole .
 
+# #5021 — principles, the first domain to pass its own lint (policy-validate --domain principles):
+# one comment (rdfs:comment; the store's second, a v1 loom-principles leftover, leaves when this
+# subject is redeployed whole), repoTarget where its code lives since #5017, and the three fields
+# DomainShape requires (status, gaps, hasDesignDoc), each from what is true today.
 chorus:principles a chorus:Domain ;
   chorus:instancesGraph "urn:chorus:domains:principles" ;  # #4422 (wren): the crawl reads this, never a guessed name
-  rdfs:label "principles" ; chorus:comment "Values and constraints governing team decisions and priorities." ;
+  rdfs:label "principles" ; rdfs:comment "Values and constraints governing team decisions and priorities." ;
   chorus:purpose "Hold the values and constraints that govern how the team decides and prioritizes." ;
   chorus:ownedBy chorus:principal-wren ;
   chorus:atStep chorus:value-stream-step-shaping ;
-  chorus:repoTarget "loom/principles" ; chorus:definesVocabulary chorus:Principle .
+  # served by its own generated door, principles-api (#5017), and read every session at boot
+  chorus:status "operating" ;
+  chorus:gaps "Values and practices still link 14 XP principles that #4358 removed from the model (xp-humanity, xp-baby-steps, ...); those links dangle in the values and practices lints, not here. Principles reach readers only through chorus-api's /owl proxy to principles-api." ;
+  # Loom's design doc: principles is one of its seven content domains; no principles-only doc exists
+  chorus:hasDesignDoc chorus:document-loom-subproduct-design ;
+  # #5021 — the folds that are empty today, each with why (domain-folds-filled passes them on this)
+  chorus:foldNote "Services: principles-api serves this domain (com.chorus.principles-api, #5017), but no Service row names it yet, so chorus:hosts has nothing to point at." ,
+    "Infrastructure: 0 because no environment row carries hasDomain principles; principles-api runs under launchd on Library." ,
+    "Decisions: 0 because no decision carries hasDomain yet; #4464 (decisions cleanup) owns that." ;
+  chorus:repoTarget "shaping/domains/principles" ; chorus:definesVocabulary chorus:Principle .
 # #4995 — the settings the principles domain's own generated API reads (rows in
 # roles/kade/ontology/principles-settings-4995.ttl, Wren's yes 2026-11-19 18:21).
 chorus:principles chorus:hasProperty

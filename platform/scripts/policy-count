@@ -549,10 +549,27 @@ def scripts_and_source():
 def domain_side_door(domain):
     """ADR-048/DEC-093 for one domain, narrowed: code outside the domain's own unit
     (*/domains/<name>/) that names the domain's store graph reads or writes its rows past
-    its door. Tests, fixtures, the model (.ttl) and prose do not count."""
+    its door. Tests, fixtures, the model (.ttl), prose and comments do not count (#5021)."""
     own = f"/domains/{domain}/"
     rx = re.compile(re.escape(domain_graph(domain)) + r"(?![a-z0-9-])")
-    return hits([f for f in scripts_and_source() if own not in f"/{f}"], rx)
+    out = []
+    for f in scripts_and_source():
+        if own in f"/{f}":
+            continue
+        for i, line in enumerate(code_of(f).splitlines(), 1):
+            if rx.search(uncommented(line)):
+                out.append(f"{f}:{i}")
+    return out
+
+
+# #5021: a comment naming a graph is prose, not a read. Whole-line comments (#, //, /*, *,
+# <!--) and trailing ones (` # ...`, ` // ...`, never the // of a URL) are dropped first.
+COMMENT_LINE = re.compile(r"^\s*(#|//|/\*|\*|<!--)")
+TRAILING = re.compile(r"(?:(?<=\s)#|(?<![:/])//).*$")
+
+
+def uncommented(line):
+    return "" if COMMENT_LINE.match(line) else TRAILING.sub("", line)
 
 
 def domain_has_tests(domain):
@@ -689,10 +706,82 @@ def domain_shacl(domain):
         return json.load(f).get(domain, [])
 
 
+# #5021 — AC4: every fold on /athena/domain.html?d=<name> is filled, or carries a written reason.
+# The counter reads what the page reads (CHORUS_API, the same origin the page is served from);
+# an empty fold passes only when the Domain row carries chorus:foldNote "<Fold>: <why>". A fold
+# name the page does not have is refused by DomainShape's sh:pattern, so a note cannot paper
+# over a fold that does not exist.
+CHORUS_API = os.environ.get("CHORUS_API", "http://localhost:3340")
+
+
+def api_json(path):
+    cache = os.environ.get("POLICY_RUN_DIR")
+    key = os.path.join(cache, "api-" + re.sub(r"[^A-Za-z0-9]+", "_", path)) if cache else None
+    if key and os.path.exists(key):
+        with open(key) as f:
+            return json.load(f)
+    try:
+        with urllib.request.urlopen(CHORUS_API + path, timeout=60) as r:
+            body = json.load(r)
+    except (OSError, ValueError) as e:
+        raise Broken(f"{path}: {e}")
+    if key:
+        with open(key, "w") as f:
+            json.dump(body, f)
+    return body
+
+
+def _rows(body, key):
+    d = body.get("data", body) if isinstance(body, dict) else body
+    if isinstance(d, list):
+        return d
+    v = d.get(key) if isinstance(d, dict) else None
+    return v if isinstance(v, list) else []
+
+
+def _on(domain):
+    def hit(r):
+        v = r.get("hasDomain") or (r.get("links") or {}).get("hasDomain") or []
+        return any(str(x).split("#")[-1].replace("chorus:", "") == domain for x in (v if isinstance(v, list) else [v]))
+    return hit
+
+
+def domain_folds_filled(domain):
+    row = api_json(f"/owl/v1/domains/domains/{domain}")
+    data, links = row.get("data") or {}, row.get("links") or {}
+    notes = data.get("foldNote") or []
+    noted = {str(n).split(":", 1)[0].strip() for n in (notes if isinstance(notes, list) else [notes])}
+    d = f"/api/chorus/domain/{domain}"
+    deps = (api_json(d + "/dependencies").get("data") or {})
+    direct = deps.get("direct") or {}
+    folds = {
+        "Description": bool(data.get("comment")),
+        "Vocabulary": bool(links.get("definesVocabulary")),
+        "Design doc": bool(links.get("hasDesignDoc")),
+        "Gaps": bool(data.get("gaps")),
+        "Services": bool(links.get("hosts")),
+        "Cards": bool(_rows(api_json(d + "/cards"), "cards")),
+        "Dependencies": bool((direct.get("consumes") or []) + (direct.get("consumedBy") or [])),
+        "API Contract": any(map(_on(domain), _rows(api_json("/owl/code/endpoints?limit=5000"), "items"))),
+        "UI Pages": any(map(_on(domain), _rows(api_json("/owl/code/pages?limit=5000"), "items"))),
+        "Code": any(map(_on(domain), _rows(api_json("/owl/code/files?limit=20000"), "items"))),
+        "Tests": bool(_rows(api_json(d + "/tests"), "tests")),
+        "Pipeline": bool(_rows(api_json(d + "/pipeline"), "stages")),
+        "Releases": bool(_rows(api_json(d + "/releases"), "releases")),
+        "Infrastructure": bool(_rows(api_json(d + "/infra"), "environments")),
+        "Decisions": bool(_rows(api_json(d + "/decisions"), "decisions")),
+        "Logs": any(map(_on(domain), _rows(api_json("/owl/logs/sources?limit=500"), "items"))),
+        "Alerts": bool(_rows(api_json(d + "/alerts"), "alerts")),
+    }
+    return [f"{domain}: {fold} is empty and the Domain row gives no foldNote for it"
+            for fold, filled in folds.items() if not filled and fold not in noted]
+
+
 DOMAIN_COUNTERS = {
     "domain-no-side-door": domain_side_door,
     "domain-has-tests": domain_has_tests,
     "domain-shacl-conforms": domain_shacl,
+    "domain-folds-filled": domain_folds_filled,
 }
 
 

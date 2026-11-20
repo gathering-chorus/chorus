@@ -44,7 +44,6 @@ impl RowStore for Mem {
         let mut row = Row::new();
         row.insert("name".into(), json!(name));
         row.insert("label".into(), json!(f.get("label").and_then(|v| v.first()).cloned().unwrap_or_default()));
-        row.insert("status".into(), json!(""));
         for fd in class.fields {
             let mut v: Vec<String> = f.get(fd.name).cloned().unwrap_or_default().iter().map(|x| local(x)).collect();
             v.sort();

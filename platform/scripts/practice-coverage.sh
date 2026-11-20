@@ -16,11 +16,14 @@
 # another door.
 #
 # Usage: practice-coverage.sh [--json]
+#
+# #5021: the principles come from their door (principles-api, through chorus-api's /owl
+# proxy), never from the principles store directly: the principles domain has one door.
 set -uo pipefail
 
 FUSEKI_QUERY="${FUSEKI_QUERY:-http://localhost:3030/pods/query}"
 PRACTICES_GRAPH="${PRACTICES_GRAPH:-urn:chorus:domains:practices}"
-PRINCIPLES_GRAPH="${PRINCIPLES_GRAPH:-urn:chorus:domains:principles}"
+PRINCIPLES_URL="${PRINCIPLES_URL:-http://localhost:3340/owl/v1/principles/principles}"
 JSON=0
 [ "${1:-}" = "--json" ] && JSON=1
 
@@ -30,9 +33,20 @@ ask() {
 
 P='PREFIX chorus: <https://jeffbridwell.com/chorus#>'
 
+# the principles, from the door: "chorus:<name> chorus:<name> ..." for a VALUES block
+PRINCIPLES=$(curl -sf --max-time 15 "$PRINCIPLES_URL" 2>/dev/null | python3 -c '
+import json, re, sys
+names = [r.get("name", "") for r in json.load(sys.stdin).get("data") or []]
+names = [n for n in names if re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", n)]
+print(" ".join("chorus:" + n for n in names))' 2>/dev/null)
+if [ -z "$PRINCIPLES" ]; then
+  echo "practice-coverage: the principles door did not answer ($PRINCIPLES_URL) — refusing to report a blind zero" >&2
+  exit 2
+fi
+
 # 1 — principles with no practice expressing them
 UNEXPRESSED=$(ask "$P SELECT ?p WHERE {
-  GRAPH <$PRINCIPLES_GRAPH> { ?p a chorus:Principle }
+  VALUES ?p { $PRINCIPLES }
   FILTER NOT EXISTS { GRAPH <$PRACTICES_GRAPH> { ?x chorus:expresses ?p } } } ORDER BY ?p")
 
 # 2 — practices nothing enacts
@@ -43,7 +57,7 @@ UNENFORCED=$(ask "$P SELECT ?x WHERE {
 # 3 — dangling expresses (a FAILURE, not a gap)
 DANGLING=$(ask "$P SELECT ?x ?t WHERE {
   GRAPH <$PRACTICES_GRAPH> { ?x chorus:expresses ?t }
-  FILTER NOT EXISTS { GRAPH <$PRINCIPLES_GRAPH> { ?t a chorus:Principle } } } ORDER BY ?x")
+  FILTER NOT EXISTS { VALUES ?t { $PRINCIPLES } } } ORDER BY ?x")
 
 rows() { printf '%s' "$1" | tail -n +2 | sed '/^$/d' | sed 's|https://jeffbridwell.com/chorus#||g'; }
 count() { rows "$1" | grep -c . | tr -d ' '; }

@@ -1,0 +1,12 @@
+# @domain: policies
+# #5021 — one violation of domain-properties-declared for domain x: x's Thing row carries
+# chorus:status, which ThingShape does not declare. Its label is declared, its Dublin Core stamp is
+# CoreShape's rule, and y's row carries only declared properties.
+@prefix c: <https://jeffbridwell.com/chorus#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+<urn:chorus:ontology> { c:ThingShape a sh:NodeShape ; sh:targetClass c:Thing ; sh:node c:CoreShape ; sh:property [ sh:path c:size ] .
+                        c:CoreShape sh:property [ sh:path rdfs:label ] . }
+<urn:chorus:domains:x> { c:x-one a c:Thing ; rdfs:label "one" ; c:size "2" ; c:status "" ; dcterms:created "2026-11-20" . }
+<urn:chorus:domains:y> { c:y-one a c:Thing ; rdfs:label "one" ; c:size "3" . }
