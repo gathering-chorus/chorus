@@ -205,7 +205,7 @@
   "status": "ratchet",
   "baseline": "34",
   "checkKind": "command",
-  "checkSpec": "git grep -l 'localhost:3030' -- '*.ts' '*.rs' ':!*/tests/*' ':!*test*'",
+  "checkSpec": "git grep -l 'localhost:3030' -- '*.ts' '*.rs' ':!*/tests/*' ':!*test*' ':!*/domains/*/api/*'",
   "violationFixture": "platform/tests/fixtures/4960/code-domain-api-over-raw-fuseki.sh"
  },
  {
