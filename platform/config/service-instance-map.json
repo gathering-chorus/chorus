@@ -68,6 +68,7 @@
   "_comment_4472": "#4472 — a <label>.werk.<role> slot is service-werk by rule (chorus-crawl services_for), so slots have no entries here. \"none\" names a unit of ours that has no design behind it. owl-api, graph-hydrate and nudge-health were retired; athena-make replaced owl-api.",
   "com.chorus.athena-make": "service-athena",
   "com.chorus.athena-make.staging": "service-athena",
+  "com.chorus.principles-api": "service-athena",
   "com.chorus.crawl-nightly": "service-knowledge-store",
   "com.gathering.codebase-graph-watcher": "service-knowledge-store",
   "com.chorus.dagu": "service-werk",
