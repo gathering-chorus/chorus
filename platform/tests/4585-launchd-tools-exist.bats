@@ -12,12 +12,15 @@
 # source of tools) whether the runner would offer that tool and accept that
 # caller, by the runner's own rules (chorus-runner/src/skills.rs):
 #   - no Skill row → not offered
+#   - executor not deterministic | http, or no inputShape → not a tool at all
+#   - an inputShape with no schema in chorus-runner/src/tool_inputs.json → not offered
 #   - no implementedBy, or runsAs not caller | owner | owner-any-caller → not offered
 #   - runsAs owner → only the owner and jeff may call it
 # The door not answering is UNMEASURED and fails, never green.
 
 REPO="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
 DOOR="${CHORUS_OWL_API:-http://localhost:3360}"
+INPUTS="$REPO/platform/services/chorus-runner/src/tool_inputs.json"
 
 # Prints "<plist>|<role>|<tool>" for each chorus-mcp-call.sh call in the plists under $1.
 calls() {
@@ -53,18 +56,25 @@ check() {
     esac
     printf '%s' "${answer#*$'\n'}" | python3 -c '
 import json, sys
-plist, role, tool = sys.argv[1:]
+plist, role, tool, inputs = sys.argv[1:]
 row = json.load(sys.stdin)
 d, links = row.get("data", {}), row.get("links", {})
 bare = lambda v: (v or "").rsplit("#", 1)[-1].rsplit("/", 1)[-1].rsplit(":", 1)[-1].removeprefix("principal-")
-runs, owner = bare(d.get("runsAs")), bare(links.get("ownedBy"))
-if not d.get("implementedBy"):
+runs, owner, shape = bare(d.get("runsAs")), bare(links.get("ownedBy")), bare(d.get("inputShape") or links.get("inputShape"))
+ex = d.get("executor")
+if ex not in ("deterministic", "http"):
+    print(f"{plist}: tool {tool} has executor {ex!r}, so the runner does not offer it")
+elif not shape:
+    print(f"{plist}: tool {tool} names no inputShape, so the runner does not offer it")
+elif not isinstance(json.load(open(inputs)).get(shape), dict):
+    print(f"{plist}: tool {tool} input shape {shape} has no generated schema, so the runner does not offer it")
+elif not d.get("implementedBy"):
     print(f"{plist}: tool {tool} names no binary (implementedBy), so the runner does not offer it")
 elif runs not in ("caller", "owner", "owner-any-caller"):
     print(f"{plist}: tool {tool} has runsAs {runs!r}, so the runner does not offer it")
 elif runs == "owner" and role not in (owner, "jeff"):
     print(f"{plist}: {role} calls {tool}, which runs only as its owner {owner}")
-' "$plist" "$role" "$tool"
+' "$plist" "$role" "$tool" "$INPUTS"
   done < <(calls "$1")
 }
 
@@ -79,9 +89,11 @@ plist_calling() {
 PLIST
 }
 
-# A fixture door answer: 200 and a Skill row with the given runsAs, implementedBy and owner.
+# A fixture door answer: 200 and a Skill row with the given runsAs, implementedBy, owner,
+# and optionally executor (default deterministic) and inputShape (default HeraldRunInput).
 fixture_row() {
-  printf '200\n{"data":{"runsAs":"%s","implementedBy":"%s"},"links":{"ownedBy":"chorus:principal-%s"}}' "$1" "$2" "$3"
+  printf '200\n{"data":{"runsAs":"%s","implementedBy":"%s","executor":"%s","inputShape":"%s"},"links":{"ownedBy":"chorus:principal-%s"}}' \
+    "$1" "$2" "${4-deterministic}" "${5-HeraldRunInput}" "$3"
 }
 
 @test "every LaunchAgent that calls a tool names one the runner offers, as a caller it accepts" {
@@ -130,6 +142,26 @@ fixture_row() {
   run check "$BATS_TEST_TMPDIR/none"
   echo "$output"
   test "$(printf '%s\n' "$output" | grep -c 'names no binary')" -eq 1
+}
+
+@test "NEGATIVE: a prompt Skill, a tool with no inputShape, or one whose shape has no schema is caught" {
+  plist_calling shape silas some-tool
+  skill_row() { fixture_row caller chorus-crawl silas agent; }
+  run check "$BATS_TEST_TMPDIR/shape"
+  echo "$output"
+  test "$(printf '%s\n' "$output" | grep -c "has executor 'agent'")" -eq 1
+  skill_row() { fixture_row caller chorus-crawl silas deterministic ""; }
+  run check "$BATS_TEST_TMPDIR/shape"
+  echo "$output"
+  test "$(printf '%s\n' "$output" | grep -c 'names no inputShape')" -eq 1
+  skill_row() { fixture_row caller chorus-crawl silas http NoSuchInput4585; }
+  run check "$BATS_TEST_TMPDIR/shape"
+  echo "$output"
+  test "$(printf '%s\n' "$output" | grep -c 'NoSuchInput4585 has no generated schema')" -eq 1
+  # the fixture's default shape is a real one, so the clean fixture passes
+  skill_row() { fixture_row caller chorus-crawl silas; }
+  run check "$BATS_TEST_TMPDIR/shape"
+  test -z "$output" || { echo "a clean fixture was refused: $output"; return 1; }
 }
 
 @test "NEGATIVE: the door not answering is UNMEASURED, never clean" {
