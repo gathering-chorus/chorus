@@ -75,13 +75,12 @@ pub fn built_binary(checkout: &str, account: &str, bin: &str) -> String {
 /// (the build goes on cold; a failed seed never fails it).
 pub fn seed_account_target(dst: &str, canonical: &str, account: &str, label: &str) -> String {
     let src = account_target_dir(canonical, account);
-    let crate_rel = label;
     let (have, can) = (std::path::Path::new(dst).exists(), std::path::Path::new(&src).is_dir());
     if !should_seed_target(have, can) {
-        return format!("{} {}", if have { "kept" } else { "cold" }, crate_rel);
+        return format!("{} {}", if have { "kept" } else { "cold" }, label);
     }
     if let Some(parent) = std::path::Path::new(dst).parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    clone_target(&src, dst, crate_rel)
+    clone_target(&src, dst, label)
 }

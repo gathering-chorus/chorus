@@ -2169,7 +2169,12 @@ fn workspace_bins(werk: &str) -> Vec<String> {
     BINS.get_or_init(|| {
         let out = Command::new("cargo").args(["metadata", "--no-deps", "--format-version", "1", "--offline"])
             .current_dir(werk).output();
-        let text = out.ok().filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).to_string()).unwrap_or_default();
+        let text = match out {
+            Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).to_string(),
+            // never silent: with no bin list every workspace bin reads as one this repo does not build
+            Ok(o) => { eprintln!("werk-test: cargo metadata failed in {}: {}", werk, String::from_utf8_lossy(&o.stderr).trim()); String::new() }
+            Err(e) => { eprintln!("werk-test: cargo metadata did not run in {}: {}", werk, e); String::new() }
+        };
         // targets of kind "bin": "kind":["bin"],..."name":"<bin>"
         let mut bins = Vec::new();
         for (i, _) in text.match_indices("\"kind\":[\"bin\"]") {
@@ -2636,7 +2641,11 @@ fn run_cargo_sel(werk: &str, name: &str, quarantined: &[&str], exclude_bins: &[&
     // #4555 — one workspace: the checkout's folder for this account, shared by every crate
     let target_dir = werk_test::account_target_dir(werk, &account);
     if Path::new(werk) != Path::new(&canonical) {
-        println!("build-cache: {}", werk_test::seed_account_target(&target_dir, &canonical, &account, "workspace"));
+        // #4555 — every lane shares this one folder, so seed it once per run: parallel
+        // lanes cloning into the one <dst>.seeding side folder would race
+        static SEEDED: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+        let seeded = SEEDED.get_or_init(|| werk_test::seed_account_target(&target_dir, &canonical, &account, "workspace"));
+        println!("build-cache: {}", seeded);
     }
     if let Err(reason) = nextest_gate(werk) {
         // #4537 — the toolchain, not the card: UNMEASURED, never a red with no failing case
