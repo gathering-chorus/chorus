@@ -8,7 +8,7 @@
 # refuses to report success unless the row count actually reached zero.
 
 REPO="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
-SCRIPT="$REPO/platform/services/athena-deploy/target/release/athena-deploy"
+SCRIPT="$REPO/target/$(id -un)/release/athena-deploy"
 
 # $1 inbound-edge count · $2 rows before · $3 rows after · $4 how many domains CLAIM the class
 stub_start() {

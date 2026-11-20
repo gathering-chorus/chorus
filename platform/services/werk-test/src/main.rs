@@ -2172,9 +2172,19 @@ fn build_one(werk: &str, t: &werk_test::BuildTarget) -> Result<(), String> {
                 return Err(format!("no crate at {}", rel));
             }
             println!("   build: cargo build --release in {} (a selected suite runs it)", rel);
-            let ok = Command::new("cargo").args(["build", "--release", "--quiet"]).current_dir(&dir)
+            let target = werk_test::account_target_dir(werk, &werk_test::current_account());
+            let ok = Command::new("cargo").args(["build", "--release", "--quiet"]).env("CARGO_TARGET_DIR", &target).current_dir(&dir)
                 .status().map(|s| s.success()).unwrap_or(false);
             if ok { Ok(()) } else { Err(format!("cargo build --release failed in {}", rel)) }
+        }
+        werk_test::BuildTarget::Bin(b) => {
+            // #4555 — the workspace builds the binary into this account's folder
+            let target = werk_test::account_target_dir(werk, &werk_test::current_account());
+            println!("   build: cargo build --release --bin {} (a selected suite runs it)", b);
+            let ok = Command::new("cargo").args(["build", "--release", "--quiet", "--bin", b])
+                .env("CARGO_TARGET_DIR", &target).current_dir(werk)
+                .status().map(|s| s.success()).unwrap_or(false);
+            if ok { Ok(()) } else { Err(format!("cargo build --release --bin {} failed", b)) }
         }
         werk_test::BuildTarget::Package(p) => {
             let dir = format!("{}/{}", werk, p);
@@ -2593,10 +2603,10 @@ fn run_cargo_sel(werk: &str, name: &str, quarantined: &[&str], exclude_bins: &[&
     // #4772 — this account's own build folder: the role's local cargo writes the
     // crate's target/, and a file another account owns cannot be rewritten (EPERM)
     let account = werk_test::current_account();
-    let target_dir = werk_test::account_target_dir(&dir, &account);
+    // #4555 — one workspace: the checkout's folder for this account, shared by every crate
+    let target_dir = werk_test::account_target_dir(werk, &account);
     if Path::new(werk) != Path::new(&canonical) {
-        let canon_crate = format!("{}/{}", canonical, crate_dir(werk, name));
-        println!("build-cache: {}", werk_test::seed_account_target(&target_dir, &canon_crate, &account, &crate_dir(werk, name)));
+        println!("build-cache: {}", werk_test::seed_account_target(&target_dir, &canonical, &account, "workspace"));
     }
     if let Err(reason) = nextest_gate(werk) {
         // #4537 — the toolchain, not the card: UNMEASURED, never a red with no failing case

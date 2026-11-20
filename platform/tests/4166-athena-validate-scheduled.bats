@@ -20,7 +20,7 @@ BIN_PATH="$HOME/.chorus/bin/athena-validate"
 # The built verb in this werk — what the tests below actually exercise. The
 # installed path above is what the SCHEDULE must point at; they are different
 # concerns and conflating them is how a card proves a binary nobody runs.
-BIN="$REPO_ROOT/platform/services/athena-validate/target/release/athena-validate"
+BIN="$REPO_ROOT/target/$(id -un)/release/athena-validate"
 PLIST="$REPO_ROOT/platform/launchd/com.chorus.athena-validate.plist"
 
 # #4336 — the fake store: a `curl` on PATH answering the binary's real queries

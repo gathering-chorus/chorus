@@ -54,7 +54,7 @@ RUN_ID="$(printf '%s' "${QUARTET_RUN_ID:-}" | tr 'A-Z' 'a-z')"
 RESIDUE_QUERY="${FUSEKI_QUERY:-http://localhost:3030/pods/query}"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-GEN="${CHORUS_ATHENA_MAKE:-$ROOT/platform/services/athena-make/target/release/athena-make}"
+GEN="${CHORUS_ATHENA_MAKE:-$ROOT/target/$(id -un)/release/athena-make}"
 [ -x "$GEN" ] || GEN="$(command -v athena-make || true)"
 if [ -z "$GEN" ] || [ ! -x "$GEN" ]; then
   echo "UNMEASURED: no athena-make binary to generate manifests from." >&2

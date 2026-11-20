@@ -17,8 +17,8 @@ describe('#2474 resolveShimPath', () => {
   });
 
   test('falls back to CHORUS_ROOT-derived path', () => {
-    expect(resolveShimPath({ CHORUS_ROOT: '/opt/chorus' })).toBe(
-      '/opt/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim',
+    expect(resolveShimPath({ CHORUS_ROOT: '/opt/chorus', USER: 'chorus-test' })).toBe(
+      '/opt/chorus/target/chorus-test/release/chorus-hook-shim',
     );
   });
 
@@ -27,8 +27,9 @@ describe('#2474 resolveShimPath', () => {
   });
 
   test('uses __dirname-relative absolute path when neither env is set', () => {
-    const result = resolveShimPath({});
+    const result = resolveShimPath({ USER: 'chorus-test' });
     expect(path.isAbsolute(result)).toBe(true);
-    expect(result).toMatch(/platform\/services\/chorus-hooks\/target\/release\/chorus-hook-shim$/);
+    // #4555: the checkout root's workspace folder for the account, never a crate's
+    expect(result).toBe(path.resolve(__dirname, '..', '..', '..', 'target/chorus-test/release/chorus-hook-shim'));
   });
 });

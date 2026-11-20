@@ -11,7 +11,7 @@
 
 
 setup() {
-  BIN="${WERK_TEST_BIN:-$BATS_TEST_DIRNAME/../services/werk-test/target/release/werk-test}"
+  BIN="${WERK_TEST_BIN:-$BATS_TEST_DIRNAME/../../target/$(id -un)/release/werk-test}"
   [ -x "$BIN" ] || skip "werk-test not built at $BIN"
   export WERK_TEST_LOG_PATH="$BATS_TEST_TMPDIR/nightly.log"
   export WERK_TEST_LOCKDIR="$BATS_TEST_TMPDIR/lock.d"

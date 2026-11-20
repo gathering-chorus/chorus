@@ -35,13 +35,13 @@ CARGO_TREE="/Users/jeffbridwell/CascadeProjects/chorus"
 
 case "$TARGET" in
   chorus-hook-shim)
-    SRC="${CARGO_TREE}/platform/services/chorus-hooks/target/release/chorus-hook-shim"
+    SRC="${CARGO_TREE}/target/$(id -un)/release/chorus-hook-shim"
     ;;
   chorus-hooks)
-    SRC="${CARGO_TREE}/platform/services/chorus-hooks/target/release/chorus-hooks"
+    SRC="${CARGO_TREE}/target/$(id -un)/release/chorus-hooks"
     ;;
   chorus-inject)
-    SRC="${CARGO_TREE}/platform/services/chorus-inject/target/release/chorus-inject"
+    SRC="${CARGO_TREE}/target/$(id -un)/release/chorus-inject"
     ;;
   *)
     echo "test-deploy-invariance: unknown target '$TARGET'" >&2

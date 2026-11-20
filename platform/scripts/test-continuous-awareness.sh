@@ -147,7 +147,7 @@ for pf in "$HOME/.chorus/run/chorus-hooks.pid" /tmp/chorus-hooks.pid; do
   fi
 done
 if [ -z "$pid" ]; then
-  pid=$(pgrep -f 'chorus-hooks/target/release/chorus-hooks$|/.chorus/bin/chorus-hooks$' 2>/dev/null | head -1)
+  pid=$(pgrep -f 'target/[^/]*/?release/chorus-hooks$|/.chorus/bin/chorus-hooks$' 2>/dev/null | head -1)
 fi
 if [ -n "$pid" ]; then
   echo "  PASS: hook server PID $pid"

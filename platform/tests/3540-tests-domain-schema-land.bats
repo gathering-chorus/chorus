@@ -39,7 +39,7 @@ ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 # #3991 repoint, missed here: #3561 renamed chorus-model-deploy.sh →
 # the model deploy. The old path still resolved to nothing, so all eight
 # tests below failed on exit 127 (command not found) rather than on the schema.
-SCRIPT="$ROOT/platform/services/athena-deploy/target/release/athena-deploy"
+SCRIPT="$ROOT/target/$(id -un)/release/athena-deploy"
 TTL="$ROOT/roles/kade/ontology/werk-domains.ttl"
 load test_helper   # test_graph_name (run-scoped throwaway graph)
 # per-RUN graph name: two pipelines (e.g. wren-4080 + silas-4084, 2026-09-03

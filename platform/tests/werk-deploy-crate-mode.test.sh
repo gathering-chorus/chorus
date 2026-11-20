@@ -17,14 +17,14 @@ set -u
 REPO_UT="$(cd "$(dirname "$0")/../.." && pwd)"
 if [ -n "${WERK_DEPLOY_BIN_UNDER_TEST:-}" ]; then
   BIN="$WERK_DEPLOY_BIN_UNDER_TEST"; BIN_WHY="WERK_DEPLOY_BIN_UNDER_TEST"
-elif [ -x "$REPO_UT/platform/services/werk-deploy/target/release/werk-deploy" ]; then
-  BIN="$REPO_UT/platform/services/werk-deploy/target/release/werk-deploy"; BIN_WHY="this tree's release build"
+elif [ -x "$REPO_UT/target/$(id -un)/release/werk-deploy" ]; then
+  BIN="$REPO_UT/target/$(id -un)/release/werk-deploy"; BIN_WHY="this tree's release build"
 else
   BIN="$(command -v werk-deploy)"; BIN_WHY="PATH (installed)"
 fi
 if [ -z "${BIN:-}" ] || [ ! -x "$BIN" ]; then
   echo "werk-deploy-crate-mode: UNMEASURED — no werk-deploy binary to grade."
-  echo "  Looked in $REPO_UT/platform/services/werk-deploy/target/release/ and on PATH."
+  echo "  Looked in $REPO_UT/target/$(id -un)/release/ and on PATH."
   echo "  Run werk-build first, or set WERK_DEPLOY_BIN_UNDER_TEST."
   echo "Results: 0 passed, 0 failed (UNMEASURED — no binary)"
   exit 0

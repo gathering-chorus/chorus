@@ -38,7 +38,7 @@ bats_require_minimum_version 1.5.0
 # artifact; target/release is a build artifact that may be stale or absent).
 SHIM="$(command -v chorus-hook-shim || true)"
 [ -x "$SHIM" ] || SHIM="$HOME/.chorus/bin/chorus-hook-shim"
-[ -x "$SHIM" ] || SHIM="${CHORUS_ROOT}/platform/services/chorus-hooks/target/release/chorus-hook-shim"
+[ -x "$SHIM" ] || SHIM="${CHORUS_ROOT}/target/$(id -un)/release/chorus-hook-shim"
 FIXTURES="${CHORUS_ROOT}/platform/tests/fixtures/4336/session-start"
 LIVE_CACHE="/tmp/session-context-silas.md"
 LIVE_INIT_DIR="/tmp/claude-session-init"

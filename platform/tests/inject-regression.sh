@@ -5,7 +5,7 @@
 # AC: targeted delivery (not broadcast to focused window), all 3 roles, intra-team + alert
 set -euo pipefail
 
-INJECT="${CHORUS_ROOT}/platform/services/chorus-hooks/target/release/chorus-inject"
+INJECT="${CHORUS_ROOT}/target/$(id -un)/release/chorus-inject"
 PASS=0
 FAIL=0
 

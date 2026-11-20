@@ -123,17 +123,17 @@ if [ ! -d "$crate_dir" ]; then
   exit 1
 fi
 
-# #4915 (Silas) — each account builds into its own target dir, the #4772 rule build-signed
-# never got: canonical's shared target/ held a chorus-borg-queen 0644 libsqlite3-sys
-# out/bindgen.rs (10-30) that no other account could overwrite, so every build here
-# exited 101 for the nightly. The installed binary is ~/.chorus/bin's (bin-install below).
-# A werk is one account's tree, and werk-deploy reads its <crate>/target/release; only
-# the shared checkout builds per account. Decided here, not by the caller: a land runs
-# the INSTALLED werk-build with this card's build-signed (cicd run 3, 11-06 07:35).
-case "$(cd "$crate_dir" && pwd -P)" in
-  */chorus-werk/*) export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$crate_dir/target}" ;;
-  *)               export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$crate_dir/target/$(id -un)}" ;;
-esac
+# #4915 (Silas) — each account builds into its own target dir (the #4772 rule): a
+# folder another account owns cannot be rewritten (libsqlite3-sys out/bindgen.rs, 10-30).
+# #4555 — the repo root is one Cargo workspace, so the folder is the checkout's, not the
+# crate's: <checkout>/target/<account>, in a werk and in canonical alike, and every crate
+# shares its third-party builds. werk-deploy reads the same path (built_binary). A caller's
+# CARGO_TARGET_DIR still wins (the land, CHORUS_USE_SLOT=0).
+checkout="$(git -C "$crate_dir" rev-parse --show-toplevel 2>/dev/null)" || {
+  echo "build-signed: $crate_dir is not inside a git checkout" >&2
+  exit 1
+}
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$checkout/target/$(id -un)}"
 echo "build-signed: cargo build --release in $crate_dir (target $CARGO_TARGET_DIR)"
 (cd "$crate_dir" && cargo build --release)
 
@@ -256,7 +256,7 @@ else
   # the land, which is exactly the state that silently re-breaks on the next
   # deploy. A LaunchAgent whose ProgramArguments point at a file no deploy path
   # writes is a service that works only until someone cleans ~/.chorus/bin.
-  _launcher="$(dirname "$binary")/../../${binary_name}-launch.sh"
+  _launcher="$crate_dir/${binary_name}-launch.sh"  # #4555: the binary is no longer under the crate
   _launcher_src="$ROOT/platform/services/${binary_name}/${binary_name}-launch.sh"
   if [ -f "$_launcher_src" ]; then
     install -m 0755 "$_launcher_src" "$HOME/.chorus/bin/${binary_name}-launch.sh"

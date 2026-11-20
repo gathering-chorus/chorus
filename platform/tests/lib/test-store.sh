@@ -94,7 +94,7 @@ private_door() {
   fi
   local auth=()
   [ -n "${FUSEKI_ADMIN_PASSWORD:-}" ] && auth=(-u "${FUSEKI_ADMIN_USER:-admin}:${FUSEKI_ADMIN_PASSWORD}")
-  local bin="${ATHENA_MAKE_BIN:-$root/platform/services/athena-make/target/release/athena-make}"
+  local bin="${ATHENA_MAKE_BIN:-$root/target/$(id -un)/release/athena-make}"
   [ -x "$bin" ] || bin="$(command -v athena-make 2>/dev/null)"
   if [ -z "$bin" ] || [ ! -x "$bin" ]; then TEST_STORE_WHY="athena-make not built"; return 2; fi
   private_door_sweep "$base" "${auth[@]+"${auth[@]}"}"

@@ -8,8 +8,8 @@
 
 setup() {
   ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
-  GEN="${ATHENA_GEN_BIN:-$ROOT/designing/services/athena-gen/target/release/athena-gen}"
-  [ -x "$GEN" ] || GEN="${CHORUS_HOME:-$HOME/CascadeProjects/chorus}/designing/services/athena-gen/target/release/athena-gen"
+  GEN="${ATHENA_GEN_BIN:-$ROOT/target/$(id -un)/release/athena-gen}"   # #4555 workspace build
+  [ -x "$GEN" ] || GEN="${CHORUS_HOME:-$HOME/CascadeProjects/chorus}/target/$(id -un)/release/athena-gen"
   [ -x "$GEN" ] || GEN="$(command -v athena-gen || true)"
   [ -n "$GEN" ] || skip "athena-gen not built — UNMEASURED"
 }

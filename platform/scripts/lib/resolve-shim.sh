@@ -12,7 +12,8 @@
 #      else the canonical default root. Host-relative by nature — the test
 #      pins "non-empty absolute", not the string, for this leg.
 # Source this file; do not execute. Prints the path; never fails the caller.
-SHIM_REL="platform/services/chorus-hooks/target/release/chorus-hook-shim"
+# #4555: one workspace — a checkout builds into target/<account>/release ($USER)
+shim_rel() { printf 'target/%srelease/chorus-hook-shim' "${USER:+$USER/}"; }  # no USER: target/release, as path.join
 
 resolve_shim_path() {
   if [ -n "${CHORUS_SHIM_BIN:-}" ]; then
@@ -30,8 +31,8 @@ resolve_shim_path() {
     return 0
   fi
   if [ -n "${CHORUS_ROOT:-}" ]; then
-    printf '%s/%s\n' "${CHORUS_ROOT%/}" "${SHIM_REL}"
+    printf '%s/%s\n' "${CHORUS_ROOT%/}" "$(shim_rel)"
     return 0
   fi
-  printf '%s/%s\n' "/Users/jeffbridwell/CascadeProjects/chorus" "${SHIM_REL}"
+  printf '%s/%s\n' "/Users/jeffbridwell/CascadeProjects/chorus" "$(shim_rel)"
 }

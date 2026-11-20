@@ -24,7 +24,7 @@ WERK="${CHORUS_ROOT_FOR_TEST:-${CHORUS_ROOT}}/platform/scripts/werk"
 @test "werk check is read-only (no files modified)" {
   # Snapshot mtime of canonical binary. #4336: when it is absent there is
   # nothing to watch, and a case that asserts nothing must not read as a pass.
-  local shim="${CHORUS_ROOT_FOR_TEST:-${CHORUS_ROOT}}/platform/services/chorus-hooks/target/release/chorus-hook-shim"
+  local shim="${CHORUS_ROOT_FOR_TEST:-${CHORUS_ROOT}}/target/$(id -un)/release/chorus-hook-shim"
   [ -f "$shim" ] || skip "UNMEASURED — chorus-hook-shim not built in this tree, nothing to watch (#4336)"
   local before_mtime
   before_mtime=$(stat -f '%m' "$shim" 2>/dev/null || stat -c '%Y' "$shim" 2>/dev/null)

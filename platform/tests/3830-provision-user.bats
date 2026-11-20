@@ -11,7 +11,7 @@
 # seed-css.sh's AGENTS list decided which pods actually got made. Two lists,
 # nothing reconciling them.
 
-BIN="${BATS_TEST_DIRNAME}/../services/chorus-principal/target/release/chorus-principal"
+BIN="${BATS_TEST_DIRNAME}/../../target/$(id -un)/release/chorus-principal"
 
 STUB="${BATS_TEST_DIRNAME}/3830-stub.py"
 

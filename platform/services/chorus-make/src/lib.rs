@@ -349,10 +349,11 @@ impl Slots {
     }
 
     /// A straight DAG's env: the card's own werk-test build first on PATH, then
-    /// the role's slot (#4540); or, installed, neither.
+    /// the role's slot (#4540); or, installed, neither. #4555: the werk's workspace
+    /// build folder for the account the pipeline runs as (dagu's $USER, as werk-build).
     pub fn straight_env(self) -> &'static str {
         match self {
-            Slots::Card => "  - CHORUS_USE_SLOT: \"1\"\n  - PATH: ${CHORUS_WERK_BASE}/${ROLE}-${CARD}/platform/services/werk-test/target/release:${CHORUS_WERK_BASE}/${ROLE}-bin:${PATH}\n",
+            Slots::Card => "  - CHORUS_USE_SLOT: \"1\"\n  - PATH: ${CHORUS_WERK_BASE}/${ROLE}-${CARD}/target/${USER}/release:${CHORUS_WERK_BASE}/${ROLE}-bin:${PATH}\n",
             Slots::Installed => "  - CHORUS_USE_SLOT: \"0\"\n",
         }
     }

@@ -5,7 +5,7 @@
 use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
-use werk_build::{seed_target, should_seed_target};
+use werk_build::{account_target_dir, seed_account_target, should_seed_target};
 
 fn tmp(tag: &str) -> PathBuf {
     let n = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
@@ -21,35 +21,46 @@ fn only_an_empty_werk_is_seeded_and_only_from_a_cache_that_exists() {
     assert!(!should_seed_target(false, false));
 }
 
+// #4555 — one workspace: the cache is the checkout's folder for the account.
+fn seed(werk: &PathBuf, canon: &PathBuf) -> String {
+    let dst = account_target_dir(werk.to_str().unwrap(), "acct");
+    seed_account_target(&dst, canon.to_str().unwrap(), "acct", "workspace")
+}
+
 #[test]
 fn a_new_werk_gets_canonicals_build_cache() {
     let (canon, werk) = (tmp("canon"), tmp("werk"));
-    let rel = "platform/services/demo";
-    fs::create_dir_all(canon.join(rel).join("target/release/deps")).unwrap();
-    fs::write(canon.join(rel).join("target/release/deps/librocks.rlib"), "built").unwrap();
-    fs::create_dir_all(werk.join(rel)).unwrap();
-    let line = seed_target(werk.to_str().unwrap(), canon.to_str().unwrap(), rel);
-    assert!(line.starts_with("seeded platform/services/demo in "), "{line}");
-    assert_eq!(fs::read_to_string(werk.join(rel).join("target/release/deps/librocks.rlib")).unwrap(), "built");
-    assert!(!werk.join(rel).join("target.seeding").exists(), "the side name is gone after the rename");
+    fs::create_dir_all(canon.join("target/acct/release/deps")).unwrap();
+    fs::write(canon.join("target/acct/release/deps/librocks.rlib"), "built").unwrap();
+    let line = seed(&werk, &canon);
+    assert!(line.starts_with("seeded workspace in "), "{line}");
+    assert_eq!(fs::read_to_string(werk.join("target/acct/release/deps/librocks.rlib")).unwrap(), "built");
+    assert!(!werk.join("target/acct.seeding").exists(), "the side name is gone after the rename");
 }
 
 #[test]
 fn negative_proof_a_werk_that_already_built_keeps_its_own_cache() {
     let (canon, werk) = (tmp("canon2"), tmp("werk2"));
-    let rel = "platform/services/demo";
-    fs::create_dir_all(canon.join(rel).join("target")).unwrap();
-    fs::write(canon.join(rel).join("target/marker"), "prod").unwrap();
-    fs::create_dir_all(werk.join(rel).join("target")).unwrap();
-    fs::write(werk.join(rel).join("target/marker"), "this card").unwrap();
-    let line = seed_target(werk.to_str().unwrap(), canon.to_str().unwrap(), rel);
-    assert_eq!(line, "kept platform/services/demo");
-    assert_eq!(fs::read_to_string(werk.join(rel).join("target/marker")).unwrap(), "this card");
+    fs::create_dir_all(canon.join("target/acct")).unwrap();
+    fs::write(canon.join("target/acct/marker"), "prod").unwrap();
+    fs::create_dir_all(werk.join("target/acct")).unwrap();
+    fs::write(werk.join("target/acct/marker"), "this card").unwrap();
+    assert_eq!(seed(&werk, &canon), "kept workspace");
+    assert_eq!(fs::read_to_string(werk.join("target/acct/marker")).unwrap(), "this card");
 }
 
 #[test]
 fn no_cache_in_prod_means_a_cold_build_named_as_one() {
     let (canon, werk) = (tmp("canon3"), tmp("werk3"));
-    let line = seed_target(werk.to_str().unwrap(), canon.to_str().unwrap(), "platform/services/new");
-    assert_eq!(line, "cold platform/services/new");
+    assert_eq!(seed(&werk, &canon), "cold workspace");
+}
+
+#[test]
+fn negative_proof_another_accounts_folder_is_never_cloned_into_this_one() {
+    // #4555: canonical's bare target/ holds every account's folder; seeding from it
+    // would nest them all inside this account's folder
+    let (canon, werk) = (tmp("canon4"), tmp("werk4"));
+    fs::create_dir_all(canon.join("target/other-acct/release")).unwrap();
+    assert_eq!(seed(&werk, &canon), "cold workspace");
+    assert!(!werk.join("target/acct/other-acct").exists());
 }

@@ -13,7 +13,7 @@ BUDGET_S="${SESSION_START_BUDGET_S:-10}"
 ROLE="${SESSION_START_ROLE:-silas}"
 SHIM="$(command -v chorus-hook-shim || true)"
 [ -x "$SHIM" ] || SHIM="$HOME/.chorus/bin/chorus-hook-shim"
-[ -x "$SHIM" ] || SHIM="${CHORUS_ROOT}/platform/services/chorus-hooks/target/release/chorus-hook-shim"
+[ -x "$SHIM" ] || SHIM="${CHORUS_ROOT}/target/$(id -un)/release/chorus-hook-shim"
 [ -x "$SHIM" ] || { echo "SKIP: no chorus-hook-shim installed"; exit 0; }
 
 start=$(python3 -c 'import time; print(int(time.time()*1000))')

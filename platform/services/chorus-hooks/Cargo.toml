@@ -61,7 +61,4 @@ path = "src/shim.rs"
 [dev-dependencies]
 tempfile = "3"
 
-[profile.release]
-opt-level = 3
-lto = true
-strip = true
+# #4555: the release profile lives in the root Cargo.toml (workspace-wide).

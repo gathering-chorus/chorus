@@ -14,7 +14,7 @@
 # against a job that never logs (/bin/sleep) and requires it to go red.
 
 TREE="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
-BIN="$TREE/platform/services/chorus-hooks/target/release/chorus-hooks"
+BIN="$TREE/target/$(id -un)/release/chorus-hooks"
 # #4966 — the fixture jobs carry THIS tree's binaries on their PATH. Since #4915 (2026-11-06) the
 # logging wrapper (chorus-log -> shim-wrapper.sh) finds chorus-hook-shim on PATH or in ~/.chorus/bin
 # only; these jobs run with their own HOME and launchd's bare PATH, so every service that logs
@@ -134,7 +134,7 @@ restarted_with_start() {
 }
 
 # --- athena-make serve: a std daemon, no async runtime (shared/service_stop.rs) ---
-AM="$TREE/platform/services/athena-make/target/release/athena-make"
+AM="$TREE/target/$(id -un)/release/athena-make"
 am_job() {
   [[ -x "$AM" ]] || skip "release binary not built: $AM"
   # a high port of its own; it reads the vocabulary from the live store (read only)
@@ -305,7 +305,7 @@ SH
 }
 
 # --- Rust scheduled jobs: service_lifecycle::run_as_job() (the shim here) ---
-SHIM="$TREE/platform/services/chorus-hooks/target/release/chorus-hook-shim"
+SHIM="$TREE/target/$(id -un)/release/chorus-hook-shim"
 shim_once() {  # shim_once <verb>
   [[ -x "$SHIM" ]] || skip "release binary not built: $SHIM"
   write_job "<string>$SHIM</string><string>$1</string>"
@@ -425,7 +425,7 @@ plist_args() {  # plist_args <file> <program...> — a minimal plist with these 
 
 @test "NEGATIVE PROOF: the wiring guard is red for a service that runs a target/release build artifact" {
   mkdir -p "$FIXHOME/agents"
-  plist_args "$FIXHOME/agents/com.chorus.athena-make.plist" "$TREE/platform/services/athena-make/target/release/athena-make"
+  plist_args "$FIXHOME/agents/com.chorus.athena-make.plist" "$TREE/target/$(id -un)/release/athena-make"
   run env SERVICE_WIRING_AGENTS="$FIXHOME/agents" bash "$TREE/platform/tests/4446-every-service-logs-its-lifecycle.test.sh"
   echo "$output"
   [ "$status" -ne 0 ]
@@ -434,7 +434,7 @@ plist_args() {  # plist_args <file> <program...> — a minimal plist with these 
 
 @test "a card's demo variant running its werk's build is not a build-artifact failure" {
   mkdir -p "$FIXHOME/agents"
-  plist_args "$FIXHOME/agents/com.chorus.athena-make.werk.kade.plist" "$TREE/platform/services/athena-make/target/release/athena-make"
+  plist_args "$FIXHOME/agents/com.chorus.athena-make.werk.kade.plist" "$TREE/target/$(id -un)/release/athena-make"
   run env SERVICE_WIRING_AGENTS="$FIXHOME/agents" bash "$TREE/platform/tests/4446-every-service-logs-its-lifecycle.test.sh"
   echo "$output"
   [[ "$output" != *"runs a build artifact"* ]] || return 1

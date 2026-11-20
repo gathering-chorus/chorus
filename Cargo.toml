@@ -1,0 +1,50 @@
+# #4555: one workspace, one Cargo.lock, one target/ — shared libraries compile once.
+# chorus-inject stays out: it keeps its own lto+strip build and its cdhash (TCC).
+[workspace]
+resolver = "2"
+members = [
+  "platform/services/athena-deploy",
+  "platform/services/athena-make",
+  "platform/services/athena-model",
+  "platform/services/athena-serve",
+  "platform/services/athena-validate",
+  "platform/services/borg-prove",
+  "platform/services/chorus-agent",
+  "platform/services/chorus-crawl",
+  "platform/services/chorus-go",
+  "platform/services/chorus-hooks",
+  "platform/services/chorus-jeff-signer",
+  "platform/services/chorus-make",
+  "platform/services/chorus-oidc",
+  "platform/services/chorus-principal",
+  "platform/services/chorus-runner",
+  "platform/services/convergence-land",
+  "platform/services/demo-fitness",
+  "platform/services/identity-login",
+  "platform/services/loom-gemba",
+  "platform/services/pair-heartbeat",
+  "platform/services/properties-resolver",
+  "platform/services/pulse-gather",
+  "platform/services/werk-accept",
+  "platform/services/werk-build",
+  "platform/services/werk-commit",
+  "platform/services/werk-demo",
+  "platform/services/werk-deploy",
+  "platform/services/werk-merge",
+  "platform/services/werk-pull",
+  "platform/services/werk-push",
+  "platform/services/werk-sync",
+  "platform/services/werk-teardown",
+  "platform/services/werk-test",
+  "platform/services/werk-unpull",
+  "designing/services/athena-gen",
+  "directing/products/*/api",
+  "shaping/domains/*/api",
+]
+exclude = ["platform/services/chorus-inject"]
+
+# One release profile for every member, so all share target/release. No lto: lto
+# puts LLVM bitcode in every .rlib (chorus-hooks' target reached 15 GB) and would
+# need a second profile that compiles every library again. strip keeps binaries small.
+[profile.release]
+strip = true

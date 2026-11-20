@@ -12,11 +12,11 @@ SCRIPT="$BATS_TEST_DIRNAME/../scripts/demo-4629-deliver-from-buzz.sh"
 
 werk() {
   local w="$BATS_TEST_TMPDIR/werk"
-  mkdir -p "$w/directing/clearing-v2" "$w/platform/services/chorus-hooks/target/release" "$w/.chorus-demo"
+  mkdir -p "$w/directing/clearing-v2" "$w/target/$(id -un)/release" "$w/.chorus-demo"
   printf '%s\n' "$1" > "$w/directing/clearing-v2/clearing-v2.config.json"
   if [ "${2:-shim}" = shim ]; then
-    printf '#!/bin/sh\necho "nudge sent: wren → silas (trace=00000000-0000-0000-0000-000000000000) · Buzz: queued"\n' > "$w/platform/services/chorus-hooks/target/release/chorus-hook-shim"
-    chmod +x "$w/platform/services/chorus-hooks/target/release/chorus-hook-shim"
+    printf '#!/bin/sh\necho "nudge sent: wren → silas (trace=00000000-0000-0000-0000-000000000000) · Buzz: queued"\n' > "$w/target/$(id -un)/release/chorus-hook-shim"
+    chmod +x "$w/target/$(id -un)/release/chorus-hook-shim"
   fi
   echo "$w"
 }

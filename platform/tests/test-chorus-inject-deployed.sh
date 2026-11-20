@@ -47,7 +47,7 @@ assert "chorus-inject is executable" test -f "$BIN"
 # a card that breaks the banner is green until after. The two asserts above
 # stay on the installed path: they are the deploy guard (#2769).
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-TREE_BIN="$ROOT/platform/services/chorus-inject/target/release/chorus-inject"
+TREE_BIN="$ROOT/target/$(id -un)/release/chorus-inject"
 if [ -x "$TREE_BIN" ]; then
   UNDER_TEST="$TREE_BIN"
 else

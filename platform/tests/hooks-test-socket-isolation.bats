@@ -14,7 +14,7 @@
 # daemon under test gets its own HOME and CHORUS_STATE_DIR=<that stand-in>.
 
 TREE="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
-BIN="${CHORUS_HOOKS_BIN:-$TREE/platform/services/chorus-hooks/target/release/chorus-hooks}"
+BIN="${CHORUS_HOOKS_BIN:-$TREE/target/$(id -un)/release/chorus-hooks}"
 
 setup() {
   export HOME="$(mktemp -d /tmp/h4849.XXXXXX)"
@@ -50,7 +50,8 @@ while True: time.sleep(1)' "$AGENT_SOCK" &
 leaky_daemon_tests() {
   local f
   for f in "$1"/*.bats; do
-    grep -q 'chorus-hooks/target/release/chorus-hooks' "$f" || continue
+    # #4555: the workspace build, target/<account>/release/chorus-hooks (or the old per-crate path)
+    grep -qE 'target/([^/]+/)?release/chorus-hooks([^-]|$)' "$f" || continue
     grep -qE 'export HOME=|<key>HOME</key>' "$f" || basename "$f"
   done
 }
@@ -126,6 +127,6 @@ start_daemon() {
 
 @test "AC2 NEGATIVE PROOF: the guard names a daemon test that has no world of its own" {
   fx="$BATS_TEST_TMPDIR/tests"; mkdir -p "$fx"
-  printf 'BIN=x/chorus-hooks/target/release/chorus-hooks\n"$BIN" &\n' > "$fx/leaky.bats"
+  printf 'BIN=x/target/$(id -un)/release/chorus-hooks\n"$BIN" &\n' > "$fx/leaky.bats"
   [[ "$(leaky_daemon_tests "$fx")" == "leaky.bats" ]] || return 1
 }

@@ -8,7 +8,7 @@
 
 REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 # #4167 — the bash retired; this suite drives the Rust verb.
-SCRIPT="$REPO_ROOT/platform/services/athena-validate/target/release/athena-validate"
+SCRIPT="$REPO_ROOT/target/$(id -un)/release/athena-validate"
 
 stub_start() {  # $1 = v1 rows for class File · $2 = ownedBy objects that are not a Principal
   TMP="$(mktemp -d)"

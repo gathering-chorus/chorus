@@ -76,7 +76,7 @@ calls() { [ -f "$R/$1.calls" ] && wc -l < "$R/$1.calls" | tr -d ' ' || echo 0; }
 # nudge #2804) with a recording osascript first on PATH: each must be refused
 # loudly (non-zero, names the MCP tool) and osascript must never be spawned.
 @test "lock: chorus-hook-shim delivery verbs never spawn osascript — delivery routes via chorus-inject" {
-  shim="$CHORUS_ROOT/platform/services/chorus-hooks/target/release/chorus-hook-shim"
+  shim="$CHORUS_ROOT/target/$(id -un)/release/chorus-hook-shim"
   [ -x "$shim" ] || skip "UNMEASURED — chorus-hook-shim not built in this checkout (#4336)"
   recorder_path
   for verb in inject nudge; do
@@ -101,7 +101,7 @@ calls() { [ -f "$R/$1.calls" ] && wc -l < "$R/$1.calls" | tr -d ' ' || echo 0; }
 #    byte-identical with them set, so no skip-gate reads them.
 # (The non-dry path is not driven here: it is a live delivery primitive.)
 @test "lock: chorus-inject honours the CHORUS_INJECT_DRY_RUN seam and has no skip-polarity gate" {
-  inj="$CHORUS_ROOT/platform/services/chorus-inject/target/release/chorus-inject"
+  inj="$CHORUS_ROOT/target/$(id -un)/release/chorus-inject"
   [ -x "$inj" ] || skip "UNMEASURED — chorus-inject not built in this checkout (#4336)"
   recorder_path
   dry() {

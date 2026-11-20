@@ -296,7 +296,8 @@ pub fn own_build_to_run(
     if already_own || !changed.iter().any(|f| f.starts_with("platform/services/werk-test/")) {
         return Ok(None);
     }
-    let own = std::path::Path::new(werk).join("platform/services/werk-test/target/release/werk-test");
+    // #4555 — the workspace build of werk-test, in the checkout's folder for this account
+    let own = std::path::PathBuf::from(built_binary(werk, &current_account(), "werk-test"));
     if current == own {
         return Ok(None);
     }
@@ -1207,6 +1208,9 @@ pub fn suite_runner(path: &str) -> &'static str {
 pub enum BuildTarget {
     /// `platform/services/<crate>` — `cargo build --release` in the werk
     Crate(String),
+    /// #4555 — a binary of the workspace: `cargo build --release --bin <name>` at the
+    /// werk's root (the workspace knows which crate builds it)
+    Bin(String),
     /// a package dir with a `build` script — `npm run build` in the werk
     Package(String),
 }
@@ -1216,12 +1220,21 @@ pub enum BuildTarget {
 /// a package counts when the suite names its `dist/`.
 pub fn suite_build_targets(text: &str, packages: &[String]) -> Vec<BuildTarget> {
     let mut out = std::collections::BTreeSet::new();
-    let marker = "platform/services/";
+    // #4555 — one workspace: a suite runs `target/<account>/release/<bin>` (or a bare
+    // `target/release/<bin>`); the binary's name is what to build
+    let marker = "/release/";
     for (i, _) in text.match_indices(marker) {
+        // `.../target/release/` or `.../target/<one segment>/release/`
+        let before = &text[..i];
+        let in_target = before.ends_with("/target")
+            || before.rsplit_once("/target/").is_some_and(|(_, seg)| !seg.is_empty() && !seg.contains('/'));
+        if !in_target {
+            continue;
+        }
         let rest = &text[i + marker.len()..];
         let name: String = rest.chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_').collect();
-        if !name.is_empty() && rest[name.len()..].starts_with("/target/release") {
-            out.insert(BuildTarget::Crate(name));
+        if !name.is_empty() && name != "deps" && name != "build" && name != "incremental" {
+            out.insert(BuildTarget::Bin(name));
         }
     }
     for p in packages {
@@ -1562,16 +1575,18 @@ mod file_suites_4292 {
     #[test]
     fn a_suite_names_what_the_werk_must_build() {
         let pk = vec!["directing/clearing".to_string(), "platform/pulse".to_string()];
-        let t = r#"SCRIPT="$ROOT/platform/services/chorus-principal/target/release/chorus-principal"
+        let t = r#"SCRIPT="$ROOT/target/$(id -un)/release/chorus-principal"
+SHIM="${CHORUS_ROOT}/target/chorus-kade/release/chorus-hook-shim"
 [ -f "$ROOT/directing/clearing/dist/server.js" ] || skip"#;
         assert_eq!(suite_build_targets(t, &pk), vec![
-            BuildTarget::Crate("chorus-principal".into()),
+            BuildTarget::Bin("chorus-hook-shim".into()),
+            BuildTarget::Bin("chorus-principal".into()),
             BuildTarget::Package("directing/clearing".into()),
         ]);
-        // NEGATIVE PROOF: a crate named without target/release, or a package
-        // named without dist/, is source the suite reads, not something it runs
-        let n = "platform/services/chorus-principal/src/lib.rs platform/pulse/src/store.ts";
-        assert!(suite_build_targets(n, &pk).is_empty());
+        // NEGATIVE PROOF: a crate named without a build folder, a package named
+        // without dist/, or a release/ path outside target/ is source, not a run
+        let n = "platform/services/chorus-principal/src/lib.rs platform/pulse/src/store.ts docs/release/notes.md target/release/deps/x";
+        assert!(suite_build_targets(n, &pk).is_empty(), "{:?}", suite_build_targets(n, &pk));
     }
 
     #[test]
@@ -6863,7 +6878,7 @@ mod own_build_4442 {
     use std::path::Path;
 
     const WERK: &str = "/w/kade-1";
-    fn own() -> std::path::PathBuf { Path::new(WERK).join("platform/services/werk-test/target/release/werk-test") }
+    fn own() -> std::path::PathBuf { std::path::PathBuf::from(crate::built_binary(WERK, &crate::current_account(), "werk-test")) }
     fn ch(v: &[&str]) -> Vec<String> { v.iter().map(|s| s.to_string()).collect() }
     const INSTALLED: &str = "/home/chorus-werk/kade-bin/werk-test";
 

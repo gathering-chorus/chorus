@@ -31,6 +31,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 include!("../../shared/failure_class.rs");
 include!("../../shared/trace_carrier.rs"); // #4771
 include!("../../shared/crate_dirs.rs");
+include!("../../shared/target_seed.rs"); // #4555 built_binary, current_account
 
 // #3092 — per-role demo env lifecycle (env_start / env_deploy / env_stop).
 // Encapsulated in demo_env.rs so the per-service plist/marker logic has ONE
@@ -1723,17 +1724,17 @@ fn deploy_crate_canonical(home: &Path, role: &str, card: u64, trace: &str, name:
         let class = target_class_in(name, Path::new(&root))?;
         match &class {
             TargetClass::RustService { svc, bin } => {
-                let built = file_cdhash(&format!("{}/{}/target/release/{}", root, crate_rel_dir(Path::new(&root), name), bin))
+                let built = file_cdhash(&built_binary(&root, &current_account(), bin))
                     .unwrap_or_default();
                 deploy_rust_service(home, &root, role, card, "canonical", trace, name, &built, svc, bin)?;
                 artifact_class = "rust-daemon";
             }
             TargetClass::CliVerb { bin } => {
                 let rel = crate_rel_dir(Path::new(&root), name);
-                let built = file_cdhash(&format!("{}/{}/target/release/{}", root, rel, bin))
+                let built = file_cdhash(&built_binary(&root, &current_account(), bin))
                     .ok_or_else(|| format!(
-                        "binary missing for {} — run werk-build --target canonical first ({}/{}/target/release/{})",
-                        name, root, rel, bin
+                        "binary missing for {} — run werk-build --target canonical first ({})",
+                        name, built_binary(&root, &current_account(), bin)
                     ))?;
                 deploy_cli_verb(home, &root, role, card, "canonical", trace, name, &built, bin)?;
                 // #3896 — deploy the crate's OTHER binaries too. The #3895 land
@@ -1746,7 +1747,7 @@ fn deploy_crate_canonical(home: &Path, role: &str, card: u64, trace: &str, name:
                     if sibling == *bin {
                         continue;
                     }
-                    let sib_path = format!("{}/{}/target/release/{}", root, rel, sibling);
+                    let sib_path = built_binary(&root, &current_account(), &sibling);
                     let sib_built = file_cdhash(&sib_path).ok_or_else(|| format!(
                         "binary missing for {} sibling {} — run werk-build --target canonical first ({})",
                         name, sibling, sib_path
@@ -2242,7 +2243,8 @@ fn promote_crates(home: &Path, werk_s: &str, role: &str, card: u64, trace: &str,
         let werk_trees: Vec<(String, String)> = inputs.iter().map(|p| (p.clone(), tree("HEAD", p))).collect();
         let main_trees: Vec<(String, String)> = inputs.iter().map(|p| (p.clone(), tree("origin/main", p))).collect();
         let bins = crate_binaries_in(&Path::new(werk_s).join(&rel));
-        let built: Vec<String> = bins.iter().map(|b| format!("{}/{}/target/release/{}", werk_s, rel, b)).collect();
+        let account = current_account();
+        let built: Vec<String> = bins.iter().map(|b| built_binary(werk_s, &account, b)).collect();
         let ready = !bins.is_empty() && built.iter().all(|b| Path::new(b).is_file());
         if !(ready && may_promote(&werk_trees, &main_trees)) {
             let why = if !ready { "no-demo-binary" } else { "main-moved-under-the-crate" };
@@ -2251,7 +2253,7 @@ fn promote_crates(home: &Path, werk_s: &str, role: &str, card: u64, trace: &str,
             rebuild.push(c.clone());
             continue;
         }
-        let dst_dir = canon.join(&rel).join("target/release");
+        let dst_dir = Path::new(&account_target_dir(&canon.to_string_lossy(), &account)).join("release");
         let _ = fs::create_dir_all(&dst_dir);
         let mut ok = true;
         for (b, src) in bins.iter().zip(&built) {
@@ -2903,7 +2905,8 @@ fn deploy_rust_service(
     let rel = crate_rel_dir(Path::new(werk_s), crate_name);
     let crate_dir = Path::new(werk_s).join(&rel);
     let bins = crate_binaries_with_service_in(&crate_dir, crate_name);
-    let built_path = |b: &str| format!("{}/{}/target/release/{}", werk_s, rel, b);
+    let account = current_account();
+    let built_path = |b: &str| built_binary(werk_s, &account, b);
 
     // AC2 stale-build guard + #3132 hash-gate (canonical only). Skip install+kickstart
     // only when EVERY binary is already installed == built AND source unchanged.
@@ -3336,7 +3339,7 @@ fn deploy_cli_verb(
     home: &Path, werk_s: &str, role: &str, card: u64, target: &str, trace: &str,
     crate_name: &str, built_cdhash: &str, bin: &str,
 ) -> R<()> {
-    let built_path = format!("{}/{}/target/release/{}", werk_s, crate_rel_dir(Path::new(werk_s), crate_name), bin);
+    let built_path = built_binary(werk_s, &current_account(), bin);
 
     // target=werk: install raw binary at WERK_<ROLE>_BIN/<name> (existing path).
     // target=canonical: install at CHORUS_BIN/<name>-bin via chorus-bin-install,

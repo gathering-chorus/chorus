@@ -13,7 +13,7 @@
 set -u
 WERK="${1:?werk root}"; PULSE="${2:?demo pulse url}"; DOOR="${3:?door url}"; API="${4:?api url}"
 STORE="$WERK/.chorus-demo"
-SHIM="$WERK/platform/services/chorus-hooks/target/release/chorus-hook-shim"
+SHIM="$WERK/target/$(id -un)/release/chorus-hook-shim"
 CFG="$WERK/directing/clearing-v2/clearing-v2.config.json"
 fail() { echo "AC2 FAIL: $*"; exit 1; }
 [ -x "$SHIM" ] || fail "no werk-built chorus-hook-shim at $SHIM (cargo build --release in chorus-hooks)"

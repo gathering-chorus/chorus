@@ -25,7 +25,7 @@ files=$(printf '%s\n' "$files" | grep -E '\.(rs|ts|tsx|js|cjs|mjs|sh|bats|py|fea
   | grep -vE '(^|/)(node_modules|target|dist|fixtures|\.tmp-[^/]*)/' || true)
 [ -n "$files" ] || exit 0
 answer=""
-for bin in "${DOMAIN_TAG_CRAWL:-}" "$REPO/platform/services/chorus-crawl/target/release/chorus-crawl" chorus-crawl; do
+for bin in "${DOMAIN_TAG_CRAWL:-}" "$REPO/target/$(id -un)/release/chorus-crawl" chorus-crawl; do
   [ -n "$bin" ] || continue
   # shellcheck disable=SC2086
   answer=$("$bin" --domains-of $files 2>/dev/null) && [ -n "$answer" ] && break

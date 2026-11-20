@@ -9,7 +9,7 @@
 
 setup() {
   ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
-  BIN="${ATHENA_SERVE_BIN:-$ROOT/platform/services/athena-serve/target/release/athena-serve}"
+  BIN="${ATHENA_SERVE_BIN:-$ROOT/target/$(id -un)/release/athena-serve}"
   [ -x "$BIN" ] || skip "athena-serve not built at $BIN"
   T="$BATS_TEST_TMPDIR"; mkdir -p "$T/bin"
   # stub launchctl: records the call; fails if a marker says so

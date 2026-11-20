@@ -52,7 +52,7 @@ for verb in athena-model athena-make athena-deploy; do
     grade "$verb (probe)" "$ATHENA_BIN_DIR/$verb" yes
     continue
   fi
-  built="$ROOT/platform/services/$verb/target/release/$verb"
+  built="$ROOT/target/$(id -un)/release/$verb"   # #4555 workspace build
   deployed="$HOME/.chorus/bin/$verb"
   found=no
   [ -x "$built" ] && { grade "$verb (built)" "$built" yes; found=yes; }
