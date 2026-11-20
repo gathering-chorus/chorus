@@ -1,4 +1,4 @@
 { "id": "chorus:infra-disk", "data": { "label": "infra-disk", "sensorSource": "grafana", "sensorDatasource": "prometheus",
-  "sensorReads": "node-exporter on Library (localhost:9102) and Bedroom (192.168.86.242:9100): percent used, every mounted data volume, exact",
+  "sensorReads": "node-exporter on Library (localhost:9102) and Bedroom :9100: percent used, every mounted data volume, exact",
   "sensorQuery": "100 * (1 - node_filesystem_avail_bytes{fstype=~\"apfs|hfs\",mountpoint=~\"/System/Volumes/Data|/Volumes/.+\"} / node_filesystem_size_bytes{fstype=~\"apfs|hfs\",mountpoint=~\"/System/Volumes/Data|/Volumes/.+\"})", "sensorWindowMinutes": "5" },
   "links": { "ownedBy": "chorus:principal-silas", "type": "chorus:Sensor" } }

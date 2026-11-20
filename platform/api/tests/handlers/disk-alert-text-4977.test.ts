@@ -27,14 +27,14 @@ function fill(template: string, labels: Record<string, string>): string {
 // the labels of one of the three alerts Grafana sent at 20:32
 const firing = {
   alertname: 'A Bedroom (or Library) disk is more than 99% full', role: 'silas', grafana_folder: 'Chorus',
-  instance: '192.168.86.242:9100', mountpoint: '/Volumes/VideosKem-Lat', fstype: 'apfs', device: '/dev/disk30s1',
+  instance: '192.0.2.10:9100', mountpoint: '/Volumes/VideosKem-Lat', fstype: 'apfs', device: '/dev/disk30s1',
 };
 
 describe('#4977 AC1 the disk alert names its volume', () => {
   test('the text a person receives names the volume and the machine', () => {
     const row = built();
     const text = alertText({ status: 'firing', labels: firing, annotations: { summary: fill(row.comment, firing) } });
-    expect(text).toContain('/Volumes/VideosKem-Lat on 192.168.86.242:9100 is more than 99% full');
+    expect(text).toContain('/Volumes/VideosKem-Lat on 192.0.2.10:9100 is more than 99% full');
     expect(text).not.toContain('{{');
     expect(text).not.toContain('<no value>');
   });
