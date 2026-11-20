@@ -738,10 +738,7 @@ def main(argv):
     try:
         for line in count():
             print(line)
-    except (OSError, subprocess.SubprocessError) as e:  # a tool missing or hung: never exit 1 (a count)
-        print(f"policy-count {argv[1]}: cannot measure: {e}", file=sys.stderr)
-        return 2
-    except Broken as e:
+    except Exception as e:  # Broken, a tool missing or hung, a bad cache: exit 1 is a count, so never that
         print(f"policy-count {argv[1]}: cannot measure: {e}", file=sys.stderr)
         return 2
     return 0

@@ -75,12 +75,21 @@ PY
   printf '<https://jeffbridwell.com/chorus#x-two> <https://jeffbridwell.com/chorus#p> <urn:chorus:domains:y> .\n' >> "$T/data.trig"
   run "$PV" --domain y
   [ "$status" -eq 2 ] || { echo "$output"; return 1; }
+  echo "$output" | grep -q 'a row outside a named graph' || { echo "$output"; return 1; }
 }
 
 @test "AC5 NEGATIVE: with riot and shacl missing the check is exit 2, never a pass" {
   mkdir "$T/bin" && ln -s "$(command -v python3)" "$T/bin/python3"
   PATH="$T/bin:/bin" run "$COUNT" domain-shacl-conforms x
   [ "$status" -eq 2 ] || { echo "$output"; return 1; }
+  echo "$output" | grep -q 'cannot measure' || { echo "$output"; return 1; }
+}
+
+@test "AC5 NEGATIVE: a corrupt single-pass answer is exit 2 (cannot measure), never exit 1 or a count" {
+  mkdir "$T/run" && echo '{not json' > "$T/run/domain-shacl.json"
+  POLICY_RUN_DIR="$T/run" POLICY_RUN_ALL_DOMAINS=1 run "$COUNT" domain-shacl-conforms x
+  [ "$status" -eq 2 ] || { echo "$output"; return 1; }
+  echo "$output" | grep -q 'cannot measure' || { echo "$output"; return 1; }
 }
 
 @test "AC5 NEGATIVE: data SHACL cannot read is exit 2, never green" {
