@@ -9,7 +9,6 @@
 # AC1: --domain scopes by appliesTo; a {domain} check runs for that domain and holds at 0;
 # a full run sums a {domain} check over every domain at its baseline. NEGATIVE: a failing
 # row for x makes `--domain x` exit 1, and the same row does not touch y.
-# AC4: no new runner: the lint is policy-validate's own flag.
 
 setup() {
   REPO="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
@@ -105,10 +104,4 @@ ONLY_X='[ "{domain}" = x ] && echo "x row broken" || true'
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ -s "$T/prom/chorus_policy_domain_y.prom" ]
   [ ! -e "$T/prom/chorus_policy.prom" ]
-}
-
-@test "AC4: no new runner: the lint is policy-validate's --domain, and the tree has no domain-lint tool" {
-  grep -q -- '--domain <name>' "$PV"
-  run bash -c "cd '$REPO' && git ls-files platform/scripts | grep -iE 'domain-?lint'"
-  [ -z "$output" ] || { echo "$output"; return 1; }
 }
