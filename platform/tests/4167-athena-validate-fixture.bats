@@ -15,7 +15,7 @@
 # require the verb to report them. Then build a clean one and require it to say
 # clean. Then take the store away and require UNMEASURED rather than either.
 
-BIN="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)/platform/services/athena-validate/target/release/athena-validate"
+BIN="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)/target/$(id -un)/release/athena-validate"
 NS="https://jeffbridwell.com/chorus#"
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 

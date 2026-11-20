@@ -7,7 +7,7 @@
 
 REPO="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
 GATE="$REPO/platform/scripts/gate-domain-tag.sh"
-CRAWL="$REPO/platform/services/chorus-crawl/target/release/chorus-crawl"
+CRAWL="$REPO/target/$(id -un)/release/chorus-crawl"
 
 setup() {
   [ -x "$CRAWL" ] || skip "chorus-crawl not built at $CRAWL"

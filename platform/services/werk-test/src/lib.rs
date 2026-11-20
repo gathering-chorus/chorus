@@ -296,8 +296,12 @@ pub fn own_build_to_run(
     if already_own || !changed.iter().any(|f| f.starts_with("platform/services/werk-test/")) {
         return Ok(None);
     }
-    let own = std::path::Path::new(werk).join("platform/services/werk-test/target/release/werk-test");
-    if current == own {
+    // #4555 — the workspace build of werk-test, in the checkout's folder for this account
+    let own = std::path::PathBuf::from(built_binary(werk, &current_account(), "werk-test"));
+    // a binary that runs from inside this werk was built from this werk: it is the
+    // card's own build, wherever in the werk the build put it (#4555: the first run
+    // of this card is built by the installed werk-build, into the old crate folder)
+    if current == own || current.starts_with(werk) {
         return Ok(None);
     }
     if !exists(&own) {
@@ -1207,8 +1211,35 @@ pub fn suite_runner(path: &str) -> &'static str {
 pub enum BuildTarget {
     /// `platform/services/<crate>` — `cargo build --release` in the werk
     Crate(String),
+    /// #4555 — a binary of the workspace: `cargo build --release --bin <name>` at the
+    /// werk's root (the workspace knows which crate builds it)
+    Bin(String),
     /// a package dir with a `build` script — `npm run build` in the werk
     Package(String),
+}
+
+/// #4555 — how to build a binary a suite runs. `workspace_bins` are the bins the
+/// repo-root workspace builds; `outside_crate` is `platform/services/<name>` when that
+/// crate has a Cargo.toml but sits outside the workspace (chorus-inject: own lock, lto).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BinBuild {
+    /// `cargo build --release --bin <name>` at the werk's root
+    Workspace,
+    /// `cargo build --release` in that crate's dir, into the same account folder
+    OwnCrate(String),
+    /// no crate here builds it (a test's stub name, e.g. `fake-bin`): nothing to build;
+    /// a suite that truly needs it fails on its own, measured
+    Nothing,
+}
+
+pub fn bin_build_plan(name: &str, workspace_bins: &[String], outside_crate: Option<String>) -> BinBuild {
+    if workspace_bins.iter().any(|b| b == name) {
+        BinBuild::Workspace
+    } else if let Some(dir) = outside_crate {
+        BinBuild::OwnCrate(dir)
+    } else {
+        BinBuild::Nothing
+    }
 }
 
 /// #4392 — the build targets a suite's text names. `packages` are the werk's
@@ -1216,12 +1247,21 @@ pub enum BuildTarget {
 /// a package counts when the suite names its `dist/`.
 pub fn suite_build_targets(text: &str, packages: &[String]) -> Vec<BuildTarget> {
     let mut out = std::collections::BTreeSet::new();
-    let marker = "platform/services/";
+    // #4555 — one workspace: a suite runs `target/<account>/release/<bin>` (or a bare
+    // `target/release/<bin>`); the binary's name is what to build
+    let marker = "/release/";
     for (i, _) in text.match_indices(marker) {
+        // `.../target/release/` or `.../target/<one segment>/release/`
+        let before = &text[..i];
+        let in_target = before.ends_with("/target")
+            || before.rsplit_once("/target/").is_some_and(|(_, seg)| !seg.is_empty() && !seg.contains('/'));
+        if !in_target {
+            continue;
+        }
         let rest = &text[i + marker.len()..];
         let name: String = rest.chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_').collect();
-        if !name.is_empty() && rest[name.len()..].starts_with("/target/release") {
-            out.insert(BuildTarget::Crate(name));
+        if !name.is_empty() && name != "deps" && name != "build" && name != "incremental" {
+            out.insert(BuildTarget::Bin(name));
         }
     }
     for p in packages {
@@ -1562,16 +1602,42 @@ mod file_suites_4292 {
     #[test]
     fn a_suite_names_what_the_werk_must_build() {
         let pk = vec!["directing/clearing".to_string(), "platform/pulse".to_string()];
-        let t = r#"SCRIPT="$ROOT/platform/services/chorus-principal/target/release/chorus-principal"
+        let t = r#"SCRIPT="$ROOT/target/$(id -un)/release/chorus-principal"
+SHIM="${CHORUS_ROOT}/target/chorus-kade/release/chorus-hook-shim"
 [ -f "$ROOT/directing/clearing/dist/server.js" ] || skip"#;
         assert_eq!(suite_build_targets(t, &pk), vec![
-            BuildTarget::Crate("chorus-principal".into()),
+            BuildTarget::Bin("chorus-hook-shim".into()),
+            BuildTarget::Bin("chorus-principal".into()),
             BuildTarget::Package("directing/clearing".into()),
         ]);
-        // NEGATIVE PROOF: a crate named without target/release, or a package
-        // named without dist/, is source the suite reads, not something it runs
-        let n = "platform/services/chorus-principal/src/lib.rs platform/pulse/src/store.ts";
-        assert!(suite_build_targets(n, &pk).is_empty());
+        // NEGATIVE PROOF: a crate named without a build folder, a package named
+        // without dist/, or a release/ path outside target/ is source, not a run
+        let n = "platform/services/chorus-principal/src/lib.rs platform/pulse/src/store.ts docs/release/notes.md target/release/deps/x";
+        assert!(suite_build_targets(n, &pk).is_empty(), "{:?}", suite_build_targets(n, &pk));
+    }
+
+    #[test]
+    fn a_repo_root_file_is_exercised_by_a_test_that_names_it() {
+        let rows = vec![
+            TestRow { file_path: "platform/tests/ws.bats".into(), covers: String::new(), pyramid_layer: String::new(), hermeticity: String::new(), test_concern: String::new(), needs: String::new() },
+            TestRow { file_path: "platform/tests/other.bats".into(), covers: String::new(), pyramid_layer: String::new(), hermeticity: String::new(), test_concern: String::new(), needs: String::new() },
+        ];
+        let text = |p: &str| Some(if p.ends_with("ws.bats") { "grep -q x \"$r/Cargo.lock\"".to_string() } else { "Cargo.lockfile Cargo".to_string() });
+        assert_eq!(exercisers_of("Cargo.lock", &rows, &text, &|_| None, None), vec!["platform/tests/ws.bats".to_string()]);
+        // NEGATIVE PROOF: a longer name or the bare stem is not the file
+        assert!(exercisers_of("Cargo.toml", &rows, &text, &|_| None, None).is_empty());
+    }
+
+    #[test]
+    fn a_binary_builds_in_the_workspace_its_own_crate_or_not_at_all() {
+        let ws = vec!["werk-test".to_string(), "chorus-hook-shim".to_string()];
+        assert_eq!(bin_build_plan("chorus-hook-shim", &ws, None), BinBuild::Workspace);
+        assert_eq!(bin_build_plan("chorus-inject", &ws, Some("/w/platform/services/chorus-inject".into())),
+            BinBuild::OwnCrate("/w/platform/services/chorus-inject".into()));
+        // NEGATIVE PROOF: a stub name no crate builds is not a failed build (run 5: fake-bin
+        // made a suite UNMEASURED), and a workspace bin never builds as its own crate
+        assert_eq!(bin_build_plan("fake-bin", &ws, None), BinBuild::Nothing);
+        assert_eq!(bin_build_plan("werk-test", &ws, Some("/w/x".into())), BinBuild::Workspace);
     }
 
     #[test]
@@ -6372,7 +6438,13 @@ pub fn exercisers_of(
     crate_of: &dyn Fn(&str) -> Option<String>,
     changed_routes: Option<&[String]>,
 ) -> Vec<String> {
+    // #4555 — a repo-root file (Cargo.toml, Cargo.lock: the workspace) has no folder
+    // to key on, so a test exercises it by naming the file itself, e.g. `$ROOT/Cargo.lock`
+    let at_root = !f.contains('/');
     let mut out: Vec<String> = match (mention_key(f), crate_of(f)) {
+        _ if at_root => rows.iter().map(|r| &r.file_path)
+            .filter(|p| text_of(p).is_some_and(|t| mentions(&t, f)))
+            .cloned().collect(),
         (None, Some(c)) => rows.iter().map(|r| &r.file_path)
             .filter(|p| p.starts_with(&format!("{c}/"))).cloned().collect(),
         // inside a TS package `src/server` names a different file in every
@@ -6863,7 +6935,7 @@ mod own_build_4442 {
     use std::path::Path;
 
     const WERK: &str = "/w/kade-1";
-    fn own() -> std::path::PathBuf { Path::new(WERK).join("platform/services/werk-test/target/release/werk-test") }
+    fn own() -> std::path::PathBuf { std::path::PathBuf::from(crate::built_binary(WERK, &crate::current_account(), "werk-test")) }
     fn ch(v: &[&str]) -> Vec<String> { v.iter().map(|s| s.to_string()).collect() }
     const INSTALLED: &str = "/home/chorus-werk/kade-bin/werk-test";
 
@@ -6881,6 +6953,9 @@ mod own_build_4442 {
         let wt = ch(&["platform/services/werk-test/src/lib.rs"]);
         assert_eq!(own_build_to_run(WERK, &wt, Path::new(INSTALLED), true, &|_| true), Ok(None));
         assert_eq!(own_build_to_run(WERK, &wt, &own(), false, &|_| true), Ok(None));
+        // #4555 — a build of this werk anywhere inside it is the card's own build
+        let in_werk = Path::new(WERK).join("an/old/build/folder/werk-test");
+        assert_eq!(own_build_to_run(WERK, &wt, &in_werk, false, &|_| false), Ok(None));
     }
 
     /// A card that changes werk-test with no build of its own blocks; it is

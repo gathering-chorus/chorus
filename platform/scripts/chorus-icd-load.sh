@@ -29,7 +29,7 @@ INSTANCES_DIR="$CHORUS_ROOT/building/products/convergence/domains/integrations/i
 # #4091 (2026-10-21): chorus-model is retired (#3718, a stub that only prints
 # that), and the DAL takes a verified identity only (#3687). Seed with
 # athena-model, as the caller's role, with a minted token.
-CHORUS_MODEL="${CHORUS_MODEL:-$(command -v athena-model || echo "$CHORUS_ROOT/platform/services/athena-model/target/release/athena-model")}"
+CHORUS_MODEL="${CHORUS_MODEL:-$(command -v athena-model || echo "$CHORUS_ROOT/target/$(id -un)/release/athena-model")}"
 # athena-model verifies the token against CSS_ISSUER and fetches keys from CHORUS_JWKS_URL
 # (#3690). A land runs with no role shell, so neither was set and the verifier fell back to
 # http://localhost:3001/, whose /.oidc/jwks CSS refuses ("outside the configured identifier

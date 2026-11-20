@@ -1,8 +1,8 @@
 // @domain: domains
 //! #4490 — the two crates' manifests and the generated crate as committed.
 //! Names each by path so a change to any of them selects this test:
-//! designing/services/athena-gen/Cargo.toml, designing/services/athena-gen/Cargo.lock,
-//! directing/products/pulse/api/Cargo.toml, directing/products/pulse/api/Cargo.lock,
+//! designing/services/athena-gen/Cargo.toml, directing/products/pulse/api/Cargo.toml,
+//! the workspace's one Cargo.lock at the repo root (#4555),
 //! and the templates under designing/services/athena-gen/templates/.
 use std::path::PathBuf;
 
@@ -19,7 +19,7 @@ fn read(rel: &str) -> String {
 fn the_generator_pins_its_model_engine() {
     let toml = read("designing/services/athena-gen/Cargo.toml");
     assert!(toml.contains("oxigraph = { version = \"=0.5.11\", default-features = false }"), "{toml}");
-    assert!(read("designing/services/athena-gen/Cargo.lock").contains("name = \"oxigraph\""));
+    assert!(read("Cargo.lock") /* #4555: the workspace lock */.contains("name = \"oxigraph\""));
 }
 
 #[test]
@@ -40,7 +40,7 @@ fn the_committed_pulse_api_is_what_the_generator_writes_today() {
         let committed = read(&format!("directing/products/pulse/api/{path}"));
         assert_eq!(committed, text, "directing/products/pulse/api/{path} differs from a fresh generate: run athena-gen generate --product pulse");
     }
-    assert!(read("directing/products/pulse/api/Cargo.lock").contains("name = \"pulse-api\""));
+    assert!(read("Cargo.lock") /* #4555: the workspace lock */.contains("name = \"pulse-api\""));
 }
 
 // #4493 — the embedded store pulls oxigraph into pulse-api, and the hash crates it brings
@@ -48,7 +48,7 @@ fn the_committed_pulse_api_is_what_the_generator_writes_today() {
 #[test]
 fn pulse_api_carries_the_embedded_store_on_one_digest() {
     assert!(read("directing/products/pulse/api/Cargo.toml").contains("oxigraph = \"=0.5.11\""));
-    let lock = read("directing/products/pulse/api/Cargo.lock");
+    let lock = read("Cargo.lock") /* #4555: the workspace lock */;
     let version_of = |name: &str| -> Vec<String> {
         let mut out = Vec::new();
         let mut lines = lock.lines();

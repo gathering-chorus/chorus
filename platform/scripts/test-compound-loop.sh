@@ -59,7 +59,7 @@ if [ -f /tmp/chorus-hooks.pid ]; then
   fi
 fi
 if [ -z "$pid" ]; then
-  pid=$(pgrep -f 'chorus-hooks/target/release/chorus-hooks$|/.chorus/bin/chorus-hooks$' 2>/dev/null | head -1)
+  pid=$(pgrep -f 'target/[^/]*/?release/chorus-hooks$|/.chorus/bin/chorus-hooks$' 2>/dev/null | head -1)
 fi
 if [ -n "$pid" ]; then
   echo "  PASS: hook server running (PID $pid)"
@@ -85,7 +85,7 @@ echo "Test 3: Hook shim binary exists"
 # /tmp socket fixed in #3721. Resolve the way the operational scripts do:
 # `command -v` first, build path only as the pre-deploy fallback.
 SHIM="$(command -v chorus-hook-shim 2>/dev/null || true)"
-[ -n "$SHIM" ] || SHIM="${CHORUS_ROOT}/platform/services/chorus-hooks/target/release/chorus-hook-shim"
+[ -n "$SHIM" ] || SHIM="${CHORUS_ROOT}/target/$(id -un)/release/chorus-hook-shim"
 if [ -x "$SHIM" ]; then
   echo "  PASS: shim binary exists and is executable ($SHIM)"
   PASS=$((PASS+1))

@@ -66,7 +66,7 @@ fn canon_running_proof_fixture() -> (PathBuf, PathBuf) {
     write_exec(&bin.join("werk-build"), &format!("#!/bin/sh\necho \"$@\" >> {bs:?}\necho 'chorus-inject=DEADBEEF'\n"));
     write_exec(&bin.join("chorus-bin-install"), &format!("#!/bin/sh\necho \"$@\" >> {inst:?}\ntouch \"$CS_MARKER\"\nexit 0\n"));
     write_exec(&bin.join("launchctl"), &format!("#!/bin/sh\necho \"$@\" >> {lc:?}\nif [ \"$1\" = print ]; then echo 'state = running'; echo 'pid = 123'; fi\nexit 0\n"));
-    write_exec(&bin.join("codesign"), &format!("#!/bin/sh\ncase \"$*\" in\n  *target/release*) echo \"CDHash=${{CS_BUILT:-DEADBEEF}}\" ;;\n  *) if [ -f \"$CS_MARKER\" ]; then echo \"CDHash=${{CS_CDHASH:-DEADBEEF}}\"; else echo \"CDHash=${{CS_PRE:-OLD000}}\"; fi ;;\nesac\n"));
+    write_exec(&bin.join("codesign"), &format!("#!/bin/sh\ncase \"$*\" in\n  */target/*/release/*) echo \"CDHash=${{CS_BUILT:-DEADBEEF}}\" ;;\n  *) if [ -f \"$CS_MARKER\" ]; then echo \"CDHash=${{CS_CDHASH:-DEADBEEF}}\"; else echo \"CDHash=${{CS_PRE:-OLD000}}\"; fi ;;\nesac\n"));
     // ps shim: real `date` parses its lstart (the LC_ALL=C parse stays exercised). OLD→-1y→Stale,
     // EMPTY→none→Unknown, default→+1y→restarted→Ok.
     write_exec(&bin.join("ps"), "#!/bin/sh\ncase \"$*\" in\n  *lstart*)\n    case \"${CHORUS_TEST_LSTART:-FUTURE}\" in\n      OLD) date -v-1y '+%a %b %d %H:%M:%S %Y' ;;\n      EMPTY) : ;;\n      *) date -v+1y '+%a %b %d %H:%M:%S %Y' ;;\n    esac ;;\n  *) exit 0 ;;\nesac\n");
@@ -170,7 +170,7 @@ fn e2e_deploy_both_slots_and_guards() {
     // ($CS_CDHASH) vs pre-install/old ($CS_PRE). werk-deploy now verifies built==installed
     // per-file (not against the build summary's single per-crate hash), so the shim must
     // distinguish the two paths.
-    write_exec(&bin.join("codesign"), &format!("#!/bin/sh\necho \"$@\" >> {csl:?}\ncase \"$*\" in\n  *target/release*) echo \"CDHash=${{CS_BUILT:-DEADBEEF}}\" ;;\n  *) if [ -f \"$CS_MARKER\" ]; then echo \"CDHash=${{CS_CDHASH:-DEADBEEF}}\"; else echo \"CDHash=${{CS_PRE:-OLD000}}\"; fi ;;\nesac\n"));
+    write_exec(&bin.join("codesign"), &format!("#!/bin/sh\necho \"$@\" >> {csl:?}\ncase \"$*\" in\n  */target/*/release/*) echo \"CDHash=${{CS_BUILT:-DEADBEEF}}\" ;;\n  *) if [ -f \"$CS_MARKER\" ]; then echo \"CDHash=${{CS_CDHASH:-DEADBEEF}}\"; else echo \"CDHash=${{CS_PRE:-OLD000}}\"; fi ;;\nesac\n"));
     write_exec(&bin.join("gh"), "#!/bin/sh\nexit 0\n");
     std::env::set_var("PATH", format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default()));
     std::env::remove_var("CHORUS_TRACE_ID");

@@ -23,7 +23,7 @@ DEPLOYED="$HOME/.chorus/bin/werk-sync"
 if [ -x "$DEPLOYED" ]; then
   exec "$DEPLOYED" "$@"
 fi
-FALLBACK="${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/services/werk-sync/target/release/werk-sync"
+FALLBACK="${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}/target/$(id -un)/release/werk-sync"
 if [ -x "$FALLBACK" ]; then
   exec "$FALLBACK" "$@"
 fi

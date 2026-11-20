@@ -32,7 +32,7 @@ setup_file() {
   local crate="$root/platform/services/athena-model"
   # The binary of THIS tree: the tree's release build when it is newer than every
   # source file, otherwise a fresh build into this run's temp dir (never into the tree).
-  local bin="$crate/target/release/athena-model"
+  local bin="$root/target/$(id -un)/release/athena-model"   # #4555 workspace build
   if [ ! -x "$bin" ] || [ -n "$(find "$crate/src" "$crate/Cargo.toml" "$root/platform/services/chorus-oidc/src" -newer "$bin" -type f 2>/dev/null | head -1)" ]; then
     bin=""
     if command -v cargo >/dev/null 2>&1; then

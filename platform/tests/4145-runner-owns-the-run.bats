@@ -14,7 +14,7 @@
 
 setup() {
   ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
-  BIN="${WERK_TEST_BIN:-$ROOT/platform/services/werk-test/target/release/werk-test}"
+  BIN="${WERK_TEST_BIN:-$ROOT/target/$(id -un)/release/werk-test}"
   [ -x "$BIN" ] || skip "werk-test not built at $BIN"
   T="$BATS_TEST_TMPDIR"
   # #3528 — bring your own process table: a real nightly on the box must not refuse these runs

@@ -332,6 +332,12 @@ pub fn units(
     for f in cargo_tomls {
         let path = dir(f);
         let toml = read(f).unwrap_or_default();
+        // #4555 — the repo-root Cargo.toml is a virtual [workspace] with no [package]:
+        // it builds nothing, so it is not a unit
+        let has = |h: &str| toml.lines().any(|l| l.trim() == h);
+        if has("[workspace]") && !has("[package]") {
+            continue;
+        }
         let mut deps = crate_deps(&path, &toml);
         let sources = crate_sources(&path);
         let mut includes = shared_closure(shared_includes(&sources), read);
@@ -503,8 +509,9 @@ pub fn run_paths(
 ) -> Vec<String> {
     let bin_dir = format!("{home}/.chorus/bin/");
     let resolve = |abs: &str| -> Option<String> {
-        // a cargo build output (a werk's target/release) is its crate's binary too
-        let built = abs.rsplit_once("/target/release/").map(|(_, n)| n);
+        // a cargo build output (a checkout's target/<account>/release, #4555) is its
+        // crate's binary too
+        let built = abs.rsplit_once("/release/").filter(|(d, _)| d.contains("/target")).map(|(_, n)| n);
         if let Some(name) = abs.strip_prefix(&bin_dir).or(built) {
             let name = name.strip_suffix("-bin").unwrap_or(name);
             return bins.iter().find(|(b, _)| b == name).map(|(_, c)| c.clone());

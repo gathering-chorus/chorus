@@ -8,17 +8,18 @@
 
 setup() {
   ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
-  GEN="${ATHENA_GEN_BIN:-$ROOT/designing/services/athena-gen/target/release/athena-gen}"
-  [ -x "$GEN" ] || GEN="${CHORUS_HOME:-$HOME/CascadeProjects/chorus}/designing/services/athena-gen/target/release/athena-gen"
+  GEN="${ATHENA_GEN_BIN:-$ROOT/target/$(id -un)/release/athena-gen}"   # #4555 workspace build
+  [ -x "$GEN" ] || GEN="${CHORUS_HOME:-$HOME/CascadeProjects/chorus}/target/$(id -un)/release/athena-gen"
   [ -x "$GEN" ] || GEN="$(command -v athena-gen || true)"
   [ -n "$GEN" ] || skip "athena-gen not built — UNMEASURED"
 }
 
 partof_on_product() {
   "$GEN" model --root "$1" --product athena 2>/dev/null \
-    | python3 -c 'import sys,re; t=sys.stdin.read(); m=re.search(r"name: \"Product\",(.*?)\n                \},\n", t, re.S); print("yes" if m and re.search(r"name: \"partOf\",\s*kind: Link \{\s*class: Some\(\s*\"Product\"", m.group(1)) else "no")'
+    | python3 -c 'import sys,re; t=sys.stdin.read(); m=re.search(r"name: \"Product\",(.*?)\n                \},\n", t, re.S); print("yes" if m and re.search(r"name: \"partOf\",\s*(iris: \[[^\]]*\],\s*)?kind: Link \{\s*class: Some\(\s*\"Product\"", m.group(1)) else "no")'
 }
 
+# #4555: the model print now lists a field's iris before its kind; the match allows them
 @test "ProductShape declares partOf as a link to a Product" {
   run partof_on_product "$ROOT"
   [ "$output" = "yes" ]

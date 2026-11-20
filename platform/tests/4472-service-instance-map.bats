@@ -9,7 +9,7 @@
 # service-werk by rule and goes stale whenever no card is up.
 
 setup() {
-  BIN="${CHORUS_CRAWL_BIN:-$BATS_TEST_DIRNAME/../services/chorus-crawl/target/release/chorus-crawl}"
+  BIN="${CHORUS_CRAWL_BIN:-$BATS_TEST_DIRNAME/../../target/$(id -un)/release/chorus-crawl}"
   [ -x "$BIN" ] || BIN="$BATS_TEST_DIRNAME/../services/chorus-crawl/target/debug/chorus-crawl"
   [ -x "$BIN" ] || skip "chorus-crawl not built at $BIN"
   ROOT="$BATS_TEST_DIRNAME/../.."

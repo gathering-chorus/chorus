@@ -24,7 +24,7 @@
 # OLD daemon (landed ≠ running: the first run of this file "failed" green-ly
 # against a binary that had no witness at all).
 TREE="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
-BIN="$TREE/platform/services/chorus-hooks/target/release/chorus-hooks"
+BIN="$TREE/target/$(id -un)/release/chorus-hooks"
 
 setup() {
   [[ -x "$BIN" ]] || skip "release binary not built: $BIN"

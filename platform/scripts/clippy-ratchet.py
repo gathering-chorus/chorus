@@ -20,6 +20,7 @@ Phase 1 disconnect (#2526) will retire. Build-then-retire matches the AC at
 """
 
 import json
+import getpass
 import os
 import subprocess
 import shutil
@@ -46,6 +47,9 @@ def collect_counts(crate: str) -> dict[str, int]:
         proc = subprocess.run(
             [cargo, "clippy", "--all-targets", "--message-format=json"],
             cwd=crate_dir,
+            # #4555: one workspace — this account's folder in the checkout, never the
+            # bare <repo>/target another account may own (#4772)
+            env={**os.environ, "CARGO_TARGET_DIR": os.environ.get("CARGO_TARGET_DIR") or str(REPO_ROOT / "target" / getpass.getuser())},
             capture_output=True,
             text=True,
             timeout=600,

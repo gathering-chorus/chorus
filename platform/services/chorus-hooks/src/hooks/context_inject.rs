@@ -1186,8 +1186,10 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     // snapshot is stale past PULSE_STALE_THRESHOLD. Pre-#2231 this spawned
     // unconditionally on every prompt, ~200ms of redundant work per turn.
     if pulse_snapshot_stale() {
-        let shim = format!("{}/platform/services/chorus-hooks/target/release/chorus-hook-shim",
-            crate::shared::state_paths::repo_root());
+        // #4555 — the shim built beside this daemon (~/.chorus/bin in prod, the werk's
+        // build folder in a demo), not a crate build folder that no longer exists
+        let shim = std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join("chorus-hook-shim")))
+            .unwrap_or_else(|| std::path::PathBuf::from("chorus-hook-shim"));
         // #4951 — reaped, not dropped: a dropped Child stays a zombie in the daemon
         let _ = crate::shared::reap::spawn_reaped(std::process::Command::new(&shim).arg("pulse")
             .stdout(std::process::Stdio::null())

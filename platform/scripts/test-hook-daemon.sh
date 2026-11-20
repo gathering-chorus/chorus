@@ -55,7 +55,7 @@ CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 
 # Deploy artifact first (CSC #2734), build artifact as fallback for pre-deploy.
 SHIM="$(command -v chorus-hook-shim 2>/dev/null || true)"
-[ -n "$SHIM" ] || SHIM="${CHORUS_ROOT}/platform/services/chorus-hooks/target/release/chorus-hook-shim"
+[ -n "$SHIM" ] || SHIM="${CHORUS_ROOT}/target/$(id -un)/release/chorus-hook-shim"
 SOCKET="${CHORUS_HOOK_SOCKET:-$HOME/.chorus/run/chorus-hooks.sock}"
 PASS=0
 FAIL=0

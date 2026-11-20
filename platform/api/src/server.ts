@@ -2447,7 +2447,8 @@ const _healthCache = createHealthCache({
     },
   }),
   fs: { existsSync: (p) => fs.existsSync(p), statSync: (p) => fs.statSync(p) },
-  hookBinaryPath: path.resolve(__dirname, '../../services/chorus-hooks/target/release/chorus-hooks'),
+  // #4555: the installed binary (~/.chorus/bin, #2734), not a build folder that moved
+  hookBinaryPath: path.join(os.homedir(), '.chorus', 'bin', 'chorus-hooks'),
 });
 const refreshHealthCache = () => _healthCache.refresh();
 // Legacy export for existing handler deps — returns the live snapshot object.

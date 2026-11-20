@@ -25,7 +25,7 @@ setup() {
   # path alone went red in every pipeline and green by hand from canonical.
   # Read this tree's build when it has one (a card that changes athena-deploy
   # is tested on its own build), else the INSTALLED recovery binary.
-  DEPLOY="$ROOT/platform/services/athena-deploy/target/release/athena-deploy"
+  DEPLOY="$ROOT/target/$(id -un)/release/athena-deploy"
   [ -f "$DEPLOY" ] || DEPLOY="${ATHENA_DEPLOY_BIN:-$HOME/.chorus/bin/athena-deploy-bin}"
 }
 

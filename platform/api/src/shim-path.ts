@@ -18,7 +18,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-const SHIM_REL = 'platform/services/chorus-hooks/target/release/chorus-hook-shim';
+// #4555: one workspace — a checkout builds into target/<account>/release (env USER,
+// the same value bash's resolve-shim.sh reads)
+const shimRel = (env: NodeJS.ProcessEnv): string => path.join('target', env.USER ?? '', 'release', 'chorus-hook-shim');
 
 export function resolveShimPath(env: NodeJS.ProcessEnv = process.env): string {
   if (env.CHORUS_SHIM_BIN) return env.CHORUS_SHIM_BIN;
@@ -29,7 +31,7 @@ export function resolveShimPath(env: NodeJS.ProcessEnv = process.env): string {
     // eslint-disable-next-line security/detect-non-literal-fs-filename -- path is env HOME + constant segments; env is caller-controlled config, not request input (#3766)
     if (fs.existsSync(deployed)) return deployed;
   }
-  if (env.CHORUS_ROOT) return path.join(env.CHORUS_ROOT, SHIM_REL);
-  // platform/api/src/shim-path.ts → ../../services/chorus-hooks/...
-  return path.resolve(__dirname, '..', '..', 'services', 'chorus-hooks', 'target', 'release', 'chorus-hook-shim');
+  if (env.CHORUS_ROOT) return path.join(env.CHORUS_ROOT, shimRel(env));
+  // platform/api/src/shim-path.ts → the checkout root, three up
+  return path.resolve(__dirname, '..', '..', '..', shimRel(env));
 }

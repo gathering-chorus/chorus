@@ -1,4 +1,5 @@
-// #4494 — a new werk's crate starts from prod's build cache, not from nothing.
+// #4494 — a new werk starts from prod's build cache, not from nothing. #4555: one
+// workspace, so the cache is the checkout's <checkout>/target/<account>, cloned whole.
 //
 // Every card gets a fresh git worktree, so every crate it builds or tests began
 // with an empty target/: a card that touched no Rust compiled rocksdb from scratch
@@ -14,22 +15,6 @@
 /// card's builds.
 pub fn should_seed_target(werk_target_exists: bool, canonical_target_exists: bool) -> bool {
     !werk_target_exists && canonical_target_exists
-}
-
-/// Seed `<werk>/<crate_rel>/target` from `<canonical>/<crate_rel>/target` with an
-/// APFS clone. Returns what happened, for the run log: `seeded <rel> in 2.8s`,
-/// `kept <rel>` (already there), `cold <rel>` (canonical has none), or
-/// `seed-failed <rel>: …` (the build goes on cold; a failed seed never fails it).
-pub fn seed_target(werk: &str, canonical: &str, crate_rel: &str) -> String {
-    let dst = format!("{}/{}/target", werk, crate_rel);
-    let user = current_account();
-    let own = format!("{}/{}/target/{}", canonical, crate_rel, user);
-    let src = if std::path::Path::new(&own).is_dir() { own } else { format!("{}/{}/target", canonical, crate_rel) };
-    let (have, can) = (std::path::Path::new(&dst).exists(), std::path::Path::new(&src).is_dir());
-    if !should_seed_target(have, can) {
-        return format!("{} {}", if have { "kept" } else { "cold" }, crate_rel);
-    }
-    clone_target(&src, &dst, crate_rel)
 }
 
 /// APFS-clone `src` to `dst` via a side name, then rename: a half-cloned
@@ -71,23 +56,31 @@ pub fn current_account() -> String {
         .unwrap_or_else(|| "unknown".to_string())
 }
 
-/// `<crate_dir>/target/<account>`: the CARGO_TARGET_DIR for `account`'s builds.
-pub fn account_target_dir(crate_dir: &str, account: &str) -> String {
-    format!("{}/target/{}", crate_dir, account)
+/// `<dir>/target/<account>`: the CARGO_TARGET_DIR for `account`'s builds. #4555:
+/// the repo root is one Cargo workspace, so `dir` is the checkout (werk or
+/// canonical), not a crate: every member shares one build folder per account.
+pub fn account_target_dir(dir: &str, account: &str) -> String {
+    format!("{}/target/{}", dir, account)
 }
 
-/// Seed `dst` (an account's build folder in a werk) from canonical's cache for
-/// the same crate: the same account's folder there when it has one, else
-/// canonical's target/. Same outcomes as `seed_target`.
-pub fn seed_account_target(dst: &str, canonical_crate: &str, account: &str, crate_rel: &str) -> String {
-    let own = account_target_dir(canonical_crate, account);
-    let src = if std::path::Path::new(&own).is_dir() { own } else { format!("{}/target", canonical_crate) };
+/// #4555 — where `account`'s release build of binary `bin` lands in `checkout`.
+pub fn built_binary(checkout: &str, account: &str, bin: &str) -> String {
+    format!("{}/release/{}", account_target_dir(checkout, account), bin)
+}
+
+/// Seed `dst` (an account's build folder in a werk) from the same account's folder
+/// in canonical. #4555: only that folder — canonical's bare target/ holds every
+/// account's folder, and cloning it would nest them all inside this one. Returns
+/// `seeded <label> in 2.8s`, `kept <label>`, `cold <label>` or `seed-failed <label>: …`
+/// (the build goes on cold; a failed seed never fails it).
+pub fn seed_account_target(dst: &str, canonical: &str, account: &str, label: &str) -> String {
+    let src = account_target_dir(canonical, account);
     let (have, can) = (std::path::Path::new(dst).exists(), std::path::Path::new(&src).is_dir());
     if !should_seed_target(have, can) {
-        return format!("{} {}", if have { "kept" } else { "cold" }, crate_rel);
+        return format!("{} {}", if have { "kept" } else { "cold" }, label);
     }
     if let Some(parent) = std::path::Path::new(dst).parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    clone_target(&src, dst, crate_rel)
+    clone_target(&src, dst, label)
 }

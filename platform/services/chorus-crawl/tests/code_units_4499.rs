@@ -83,6 +83,21 @@ fn negative_proof_a_file_in_no_unit_has_no_unit_and_an_edge_to_nowhere_is_never_
     assert!(lone.iter().find(|u| u.path == "platform/services/a").unwrap().deps.is_empty());
 }
 
+// #4555 — the repo-root Cargo.toml is a virtual workspace: it builds nothing, so it
+// is not a unit. A crate whose manifest also says [workspace] still is one.
+#[test]
+fn the_virtual_workspace_manifest_is_not_a_unit() {
+    let tree = |f: &str| Some(match f {
+        "Cargo.toml" => "[workspace]\nmembers = [\"platform/services/a\"]\n".to_string(),
+        _ => "[package]\nname = \"a\"\n[workspace]\n".to_string(),
+    });
+    let us = units(&["Cargo.toml".into(), "platform/services/a/Cargo.toml".into()], &[], &[], &tree, &|_| vec![]);
+    let paths: Vec<&str> = us.iter().map(|u| u.path.as_str()).collect();
+    assert!(paths.contains(&"platform/services/a"), "{paths:?}");
+    // NEGATIVE PROOF: the root manifest would be a unit named "" at the repo root
+    assert_eq!(us.iter().filter(|u| u.kind == "crate").count(), 1, "{paths:?}");
+}
+
 // #4499 reopen (Jeff 2026-10-11 18:32: "does it work" — no): 3 of 13 services
 // linked, because an instance's sourcePath is usually its launch wrapper, a
 // script in no unit. What launchd runs is evidence; a name is not.
@@ -125,7 +140,7 @@ mod run_paths_4499 {
         assert_eq!(paths("", "/h/.chorus/bin/chorus-hooks"), vec!["platform/services/chorus-hooks"]);
         assert_eq!(paths("", "/h/.chorus/bin/chorus-hook-shim"), vec!["platform/services/chorus-hooks"]);
         assert_eq!(paths("", "/h/.chorus/bin/athena-make-bin"), vec!["platform/services/athena-make"], "the deploy's -bin beside its shim");
-        assert_eq!(paths("", "/w/kade-4499/platform/services/chorus-hooks/target/release/chorus-hooks"), vec!["platform/services/chorus-hooks"], "a werk's build output");
+        assert_eq!(paths("", "/w/kade-4499/target/chorus-kade/release/chorus-hooks"), vec!["platform/services/chorus-hooks"], "a werk's build output");
     }
 
     #[test]

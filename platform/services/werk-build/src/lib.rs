@@ -483,13 +483,14 @@ fn npm_path(werk_s: &str) -> String {
     }
 }
 
-/// #4494 — seed a werk crate's target/ from canonical's (target_seed.rs). Never
-/// in canonical itself: a prod build keeps its own cache.
-fn seed_from_canonical(werk_s: &str, crate_rel: &str) {
+/// #4494 — seed the werk's build folder from canonical's (target_seed.rs). Never
+/// in canonical itself: a prod build keeps its own cache. #4555: one folder per
+/// checkout and account (the workspace), so one clone covers every crate.
+fn seed_from_canonical(werk_s: &str, target: &str, account: &str) {
     let canonical = env::var("CHORUS_HOME")
         .unwrap_or_else(|_| format!("{}/CascadeProjects/chorus", env::var("HOME").unwrap_or_default()));
     if Path::new(werk_s) != Path::new(&canonical) {
-        println!("build-cache: {}", seed_target(werk_s, &canonical, crate_rel));
+        println!("build-cache: {}", seed_account_target(target, &canonical, account, "workspace"));
     }
 }
 
@@ -501,13 +502,13 @@ fn build_crate(werk_s: &str, crate_name: &str) -> R<String> {
     // fails to start ("No such file or directory") — same daemon-PATH/bare-name class as
     // the #3151 werk-pull fix. Surfaced once the cascade gate above stopped masking the
     // crate-build stage.
+    // #4555 — one workspace: every crate builds into the checkout's folder for this
+    // account; werk-deploy reads built_binary() from the same place.
+    let account = current_account();
+    let target = account_target_dir(werk_s, &account);
     // #4494 — start from prod's build cache when this werk has none
-    seed_from_canonical(werk_s, &crate_rel_dir(Path::new(werk_s), crate_name));
+    seed_from_canonical(werk_s, &target, &account);
     let build_signed = format!("{}/platform/scripts/build-signed.sh", werk_s);
-    // #4915 — a werk is one account's, and werk-deploy reads <crate>/target/release
-    // (lib.rs:1701, 2204, 2595, 3028). build-signed now defaults to a per-account
-    // target dir for canonical's shared tree; in a werk the crate's own target stays.
-    let target = format!("{}/target", crate_dir);
     let out = run_in_env(
         werk_s,
         &[("BUILD_SKIP_INSTALL", "1"), ("CARGO_TARGET_DIR", target.as_str())],

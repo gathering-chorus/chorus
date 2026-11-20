@@ -9,7 +9,7 @@ use athena_deploy::parse_domain_sets;
 const FILE: &str = "roles/kade/ontology/principles-settings-4995.ttl";
 
 fn sets() -> Vec<athena_deploy::DomainSet> {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let root = std::path::PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("cargo sets CARGO_MANIFEST_DIR")).join("../../..");
     parse_domain_sets(&std::fs::read_to_string(root.join("platform/config/domain-set-manifest.txt")).unwrap()).unwrap()
 }
 

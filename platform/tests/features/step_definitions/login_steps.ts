@@ -13,7 +13,7 @@ import * as path from 'path';
 const ROOT = path.resolve(__dirname, '../../../..');
 const HARNESS = path.join(ROOT, 'platform/tests/lib/login-harness.bash');
 const BIN = process.env.CHORUS_PRINCIPAL_TEST_BIN
-  || path.join(ROOT, 'platform/services/chorus-principal/target/release/chorus-principal');
+  || path.join(ROOT, 'target', os.userInfo().username, 'release', 'chorus-principal'); // #4555 workspace build
 const STEP = { timeout: 15_000 };   // #4409: one budget; every step drives a stubbed world in seconds
 
 let T = '';
@@ -379,7 +379,7 @@ Then("the turn is refused, wren's run ends as revoked and wren's session is clos
 has "$(cat "$T"/bodies/*PATCH-identity_sessionruns_* | tail -1)" '"endReason":"revoked"'
 has "$(cat "$T"/bodies/*PATCH-identity_sessions_* | tail -1)" '"sessionState":"closed"'`);
 });
-const SHIM = process.env.CHORUS_HOOK_SHIM_TEST_BIN || path.join(ROOT, 'platform/services/chorus-hooks/target/release/chorus-hook-shim');
+const SHIM = process.env.CHORUS_HOOK_SHIM_TEST_BIN || path.join(ROOT, 'target', os.userInfo().username, 'release', 'chorus-hook-shim');
 When(/^wren's pane writes a spine event for (wren|kade)$/, STEP, function (who: string) {
   if (!fs.existsSync(SHIM)) throw new Error(`chorus-hook-shim is not built at ${SHIM}`);
   execFileSync(SHIM, ['chorus-log', `test.login.event.${who}`, who], {

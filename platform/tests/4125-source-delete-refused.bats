@@ -28,7 +28,7 @@
 #   test -z "$(printf '%s' "$output" | grep -F "X" || true)"
 # which is a simple command and fails wherever it sits.
 
-SCRIPT="$(cd "$BATS_TEST_DIRNAME/../services/athena-deploy/target/release" && pwd)/athena-deploy"
+SCRIPT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)/target/$(id -un)/release/athena-deploy"  # #4555 workspace build
 # #4332 — writes go to the test dataset, never /pods (lib/test-store.sh)
 . "$BATS_TEST_DIRNAME/lib/test-store.sh"
 test_store || TEST_STORE_DOWN="$TEST_STORE_WHY"

@@ -364,7 +364,10 @@ fn leg_coverage(ctx: &Ctx) -> Vec<SuiteRow> {
         } else {
             let tmp = format!("{}/.llvm-cov-summary.{}.tmp", dir, std::process::id());
             let mut c = Command::new("cargo");
-            c.args(["llvm-cov", "--summary-only", "--json"]).current_dir(&dir);
+            // #4555 — coverage builds with other flags: its own folder, so it never
+            // throws away the workspace's release and test builds
+            let cov = format!("{}-cov", werk_test::account_target_dir(&ctx.root, &werk_test::current_account()));
+            c.args(["llvm-cov", "--summary-only", "--json"]).env("CARGO_TARGET_DIR", &cov).current_dir(&dir);
             let (rc, out) = run_capped(c, cap);
             let sj = format!("{}/llvm-cov-summary.json", dir);
             if rc == 0 {

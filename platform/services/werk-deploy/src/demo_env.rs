@@ -78,7 +78,7 @@ pub enum SmokeKind {
 pub enum ProgramArgsTemplate {
     /// Run `node <werk>/<source_dir_rel>/dist/<entry>` from the werk.
     Node { entry: String },
-    /// Run `<werk>/<source_dir_rel>/target/release/<binary>` from the werk.
+    /// Run the workspace build of `<binary>` (`<werk>/target/<account>/release/<binary>`, #4555).
     Rust { binary: String },
     /// #4022 — a deploy-werk artifact (`<CHORUS_WERK_BASE>/<role>-bin/<binary>`)
     /// run with fixed args plus `--port <role port>`. athena-make takes its port
@@ -545,11 +545,8 @@ pub fn hooks_binary_too_old(svc: &EnvService, werk_root: &str) -> Option<String>
     if svc.name != "chorus-hooks" {
         return None;
     }
-    let bin = format!(
-        "{}/{}/target/release/chorus-hooks",
-        werk_root.trim_end_matches('/'),
-        svc.source_dir_rel
-    );
+    // #4555 — the workspace builds into the checkout's folder for this account
+    let bin = crate::built_binary(werk_root.trim_end_matches('/'), &crate::current_account(), "chorus-hooks");
     if !Path::new(&bin).is_file() {
         return None; // build_service_dist already refuses, with its own message
     }
@@ -828,7 +825,7 @@ pub fn generate_plist(
             vec![node_bin.to_string(), format!("{}/{}", working_dir, entry)]
         }
         ProgramArgsTemplate::Rust { binary } => {
-            vec![format!("{}/target/release/{}", working_dir, binary)]
+            vec![crate::built_binary(werk_root, &crate::current_account(), binary)]
         }
         ProgramArgsTemplate::WerkBinBare { binary } => {
             vec![format!("{}/{}", werk_bin_dir(role), binary)]

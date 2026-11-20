@@ -12,11 +12,11 @@ import { Transcript, ChatMessage } from './transcript';
 
 const MODEL = process.env.CLEARING_MODEL || 'claude-haiku-4-5-20251001';
 const MAX_TOKENS = parseInt(process.env.CLEARING_MAX_TOKENS || '300');
-const CHORUS_ROOT = process.env.CHORUS_ROOT || '/Users/jeffbridwell/CascadeProjects';
 // env-overridable so test worlds can point at a mock (#3528: a test brings its
 // own world — the integration suite's spawned Clearing was nudging REAL roles)
+// #4555: the installed shim (~/.chorus/bin, #2734), not a build folder that moved
 const NUDGE_BINARY = process.env.NUDGE_BINARY
-  || `${CHORUS_ROOT}/platform/services/chorus-hooks/target/release/chorus-hook-shim`;
+  || `${process.env.HOME}/.chorus/bin/chorus-hook-shim`;
 
 function executeNudge(from: string, target: string, message: string): { success: boolean; detail: string } {
   const { execSync } = require('child_process');

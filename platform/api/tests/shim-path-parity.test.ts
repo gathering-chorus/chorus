@@ -65,8 +65,8 @@ describe('#2478/#3750 bash ↔ TS shim-path parity', () => {
   test('scenario 3 — NEGATIVE PROOF: no deployed binary → CHORUS_ROOT fallback, identical', () => {
     // The state the old order could not distinguish: nothing deployed. Both
     // sides must fall back to the build path — and ONLY then.
-    const env = { HOME: '/nonexistent-home-3750', CHORUS_ROOT: '/opt/chorus' };
-    const expected = path.join('/opt/chorus', 'platform/services/chorus-hooks/target/release/chorus-hook-shim');
+    const env = { HOME: '/nonexistent-home-3750', CHORUS_ROOT: '/opt/chorus', USER: 'chorus-test' };
+    const expected = path.join('/opt/chorus', 'target/chorus-test/release/chorus-hook-shim');
     expect(bashResolve(env)).toBe(expected);
     expect(resolveShimPath(env)).toBe(expected);
   });

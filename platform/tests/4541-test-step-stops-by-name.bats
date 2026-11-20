@@ -9,11 +9,11 @@
 setup() {
   ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
   S="$BATS_TEST_TMPDIR"
-  mkdir -p "$S/dags" "$S/werks/kade-9999/platform/services/werk-test/target/release" "$S/werks/kade-bin"
+  mkdir -p "$S/dags" "$S/werks/kade-9999/target/$(id -un)/release" "$S/werks/kade-bin"
   cp "$ROOT/platform/pipelines/cicd-test.yaml" "$S/dags/"
   printf '#!/bin/sh\n[ -f "%s/break-$1" ] && { echo "werk-test: $1 broke (planted)"; exit 1; }\necho "werk-test $1 ok"\n' "$S" \
-    > "$S/werks/kade-9999/platform/services/werk-test/target/release/werk-test"
-  chmod +x "$S/werks/kade-9999/platform/services/werk-test/target/release/werk-test"
+    > "$S/werks/kade-9999/target/$(id -un)/release/werk-test"
+  chmod +x "$S/werks/kade-9999/target/$(id -un)/release/werk-test"
   printf 'dags_dir: %s/dags\ndata_dir: %s/data\nlog_dir: %s/logs\n' "$S" "$S" "$S" > "$S/config.yaml"
   DAGU="${DAGU:-/opt/homebrew/bin/dagu}"
 }

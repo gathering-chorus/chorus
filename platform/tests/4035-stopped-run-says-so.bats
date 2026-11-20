@@ -8,7 +8,7 @@
 # reads RUN|stopped as "this run never finished", never as silence.
 
 setup() {
-  BIN="${WERK_TEST_BIN:-$BATS_TEST_DIRNAME/../services/werk-test/target/release/werk-test}"
+  BIN="${WERK_TEST_BIN:-$BATS_TEST_DIRNAME/../../target/$(id -un)/release/werk-test}"
   [ -x "$BIN" ] || skip "werk-test not built at $BIN"
   T="$BATS_TEST_TMPDIR"
   # #3528 — bring your own process table: a real nightly on the box must not refuse these runs

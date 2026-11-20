@@ -28,11 +28,11 @@ CHORUS_ROOT="${CHORUS_ROOT:-$(cd "${BATS_TEST_DIRNAME}/../.." && pwd)}"
 export BUILD_SKIP_INSTALL=1
 INJECT_DIR="$CHORUS_ROOT/platform/services/chorus-inject"
 HOOKS_DIR="$CHORUS_ROOT/platform/services/chorus-hooks"
-# #4915 — where build-signed.sh puts a crate's build: CARGO_TARGET_DIR when set; a crate
-# inside a werk keeps <crate>/target; the shared checkout builds per account (review 11-06)
+# #4915/#4555 — where build-signed.sh puts a crate's build: CARGO_TARGET_DIR when set,
+# else the checkout's folder for this account, <checkout>/target/<account> (one workspace)
 target_of() {
   if [ -n "${CARGO_TARGET_DIR:-}" ]; then echo "$CARGO_TARGET_DIR"; return; fi
-  case "$(cd "$1" && pwd -P)" in */chorus-werk/*) echo "$1/target" ;; *) echo "$1/target/$(id -un)" ;; esac
+  echo "$(git -C "$1" rev-parse --show-toplevel)/target/$(id -un)"
 }
 BUILD_SIGNED="$CHORUS_ROOT/platform/scripts/build-signed.sh"
 

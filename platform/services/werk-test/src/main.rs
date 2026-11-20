@@ -2163,6 +2163,31 @@ fn build_for_suites(werk: &str, units: &[werk_test::TestUnit]) -> std::collectio
     failed
 }
 
+/// #4555 — the bins the repo-root workspace builds, from `cargo metadata` (once per run).
+fn workspace_bins(werk: &str) -> Vec<String> {
+    static BINS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    BINS.get_or_init(|| {
+        let out = Command::new("cargo").args(["metadata", "--no-deps", "--format-version", "1", "--offline"])
+            .current_dir(werk).output();
+        let text = match out {
+            Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).to_string(),
+            // never silent: with no bin list every workspace bin reads as one this repo does not build
+            Ok(o) => { eprintln!("werk-test: cargo metadata failed in {}: {}", werk, String::from_utf8_lossy(&o.stderr).trim()); String::new() }
+            Err(e) => { eprintln!("werk-test: cargo metadata did not run in {}: {}", werk, e); String::new() }
+        };
+        // targets of kind "bin": "kind":["bin"],..."name":"<bin>"
+        let mut bins = Vec::new();
+        for (i, _) in text.match_indices("\"kind\":[\"bin\"]") {
+            let rest = &text[i..];
+            if let Some(n) = rest.find("\"name\":\"") {
+                let after = &rest[n + 8..];
+                if let Some(end) = after.find('"') { bins.push(after[..end].to_string()); }
+            }
+        }
+        bins
+    }).clone()
+}
+
 fn build_one(werk: &str, t: &werk_test::BuildTarget) -> Result<(), String> {
     match t {
         werk_test::BuildTarget::Crate(c) => {
@@ -2172,9 +2197,29 @@ fn build_one(werk: &str, t: &werk_test::BuildTarget) -> Result<(), String> {
                 return Err(format!("no crate at {}", rel));
             }
             println!("   build: cargo build --release in {} (a selected suite runs it)", rel);
-            let ok = Command::new("cargo").args(["build", "--release", "--quiet"]).current_dir(&dir)
+            let target = werk_test::account_target_dir(werk, &werk_test::current_account());
+            let ok = Command::new("cargo").args(["build", "--release", "--quiet"]).env("CARGO_TARGET_DIR", &target).current_dir(&dir)
                 .status().map(|s| s.success()).unwrap_or(false);
             if ok { Ok(()) } else { Err(format!("cargo build --release failed in {}", rel)) }
+        }
+        werk_test::BuildTarget::Bin(b) => {
+            // #4555 — the workspace builds the binary into this account's folder
+            let target = werk_test::account_target_dir(werk, &werk_test::current_account());
+            let outside = format!("{}/platform/services/{}", werk, b);
+            let outside = Path::new(&format!("{}/Cargo.toml", outside)).is_file().then_some(outside);
+            let (dir, args): (String, Vec<&str>) = match werk_test::bin_build_plan(b, &workspace_bins(werk), outside) {
+                werk_test::BinBuild::Workspace => (werk.to_string(), vec!["build", "--release", "--quiet", "--bin", b]),
+                werk_test::BinBuild::OwnCrate(d) => (d, vec!["build", "--release", "--quiet"]),
+                werk_test::BinBuild::Nothing => {
+                    println!("   build: {} is no binary this repo builds (a test's stub name): nothing to build", b);
+                    return Ok(());
+                }
+            };
+            println!("   build: cargo {} in {} (a selected suite runs it)", args.join(" "), dir);
+            let ok = Command::new("cargo").args(&args)
+                .env("CARGO_TARGET_DIR", &target).current_dir(&dir)
+                .status().map(|s| s.success()).unwrap_or(false);
+            if ok { Ok(()) } else { Err(format!("cargo {} failed in {}", args.join(" "), dir)) }
         }
         werk_test::BuildTarget::Package(p) => {
             let dir = format!("{}/{}", werk, p);
@@ -2593,10 +2638,14 @@ fn run_cargo_sel(werk: &str, name: &str, quarantined: &[&str], exclude_bins: &[&
     // #4772 — this account's own build folder: the role's local cargo writes the
     // crate's target/, and a file another account owns cannot be rewritten (EPERM)
     let account = werk_test::current_account();
-    let target_dir = werk_test::account_target_dir(&dir, &account);
+    // #4555 — one workspace: the checkout's folder for this account, shared by every crate
+    let target_dir = werk_test::account_target_dir(werk, &account);
     if Path::new(werk) != Path::new(&canonical) {
-        let canon_crate = format!("{}/{}", canonical, crate_dir(werk, name));
-        println!("build-cache: {}", werk_test::seed_account_target(&target_dir, &canon_crate, &account, &crate_dir(werk, name)));
+        // #4555 — every lane shares this one folder, so seed it once per run: parallel
+        // lanes cloning into the one <dst>.seeding side folder would race
+        static SEEDED: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+        let seeded = SEEDED.get_or_init(|| werk_test::seed_account_target(&target_dir, &canonical, &account, "workspace"));
+        println!("build-cache: {}", seeded);
     }
     if let Err(reason) = nextest_gate(werk) {
         // #4537 — the toolchain, not the card: UNMEASURED, never a red with no failing case

@@ -11,9 +11,10 @@
 setup() {
   # #4416 — the nightly builds release, not debug; the suite skipped every
   # night on "not built" while a release binary sat beside it
-  local svc; svc="$(cd "$BATS_TEST_DIRNAME/../services/demo-fitness" && pwd)"
-  BIN="${DEMO_FITNESS_BIN:-$svc/target/debug/demo-fitness}"
-  [ -x "$BIN" ] || BIN="$svc/target/release/demo-fitness"
+  # #4555 — one workspace: builds land in <checkout>/target/<account>
+  local tgt; tgt="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)/target/$(id -un)"
+  BIN="${DEMO_FITNESS_BIN:-$tgt/debug/demo-fitness}"
+  [ -x "$BIN" ] || BIN="$tgt/release/demo-fitness"
   [ -x "$BIN" ] || skip "demo-fitness not built at $BIN"
   SERIES="$BATS_TEST_TMPDIR/series.jsonl"
   printf '%s\n' '#!/bin/bash' 'cat <<LIST' \

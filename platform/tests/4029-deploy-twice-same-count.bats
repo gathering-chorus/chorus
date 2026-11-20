@@ -10,7 +10,7 @@
 # Isolation: every write targets urn:chorus:ontology-test-bats-4029 (wipe-guard scan).
 
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
-SCRIPT="$ROOT/platform/services/athena-deploy/target/release/athena-deploy"
+SCRIPT="$ROOT/target/$(id -un)/release/athena-deploy"
 load test_helper   # test_graph_name (run-scoped throwaway graph)
 # #4084 gave this a per-PROCESS suffix; bats forks per @test, so teardown dropped
 # a name that was never created and the real graphs leaked into the live store.

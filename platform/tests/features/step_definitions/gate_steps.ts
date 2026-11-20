@@ -7,7 +7,7 @@ import * as os from 'os';
 import assert from 'assert';
 
 const CHORUS_ROOT = process.env.CHORUS_ROOT || process.env.CHORUS_HOME || path.resolve(__dirname, '../../../..');
-const HOOK_SHIM = `${CHORUS_ROOT}/platform/services/chorus-hooks/target/release/chorus-hook-shim`;
+const HOOK_SHIM = `${CHORUS_ROOT}/target/${os.userInfo().username}/release/chorus-hook-shim`; // #4555 workspace build
 const STATE_DIR = '/tmp/claude-team-scan';
 const BRIEFS_DIR = `${CHORUS_ROOT}/roles/wren/briefs`;
 const HOME = process.env.HOME || path.resolve(CHORUS_ROOT, '../../..');

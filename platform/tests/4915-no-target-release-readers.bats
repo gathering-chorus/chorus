@@ -9,7 +9,8 @@
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 FILES="platform/scripts/agent-state.sh platform/scripts/shim-wrapper.sh platform/scripts/spine-tick-poller platform/scripts/pair-enforce"
 
-readers() { local f; for f in "$@"; do grep -v '^[[:space:]]*#' "$f" | grep -l 'target/release' >/dev/null && echo "$f"; done; true; }
+# #4555: a build folder is target/release or, in the workspace, target/<account>/release
+readers() { local f; for f in "$@"; do grep -v '^[[:space:]]*#' "$f" | grep -lE 'target/([^/]+/)?release' >/dev/null && echo "$f"; done; true; }
 
 @test "the four retired readers no longer run a target/release binary" {
   local f hits=""
@@ -19,7 +20,7 @@ readers() { local f; for f in "$@"; do grep -v '^[[:space:]]*#' "$f" | grep -l '
 }
 
 @test "negative proof: a reader with a target/release fallback is caught" {
-  printf 'X="${CHORUS_ROOT}/platform/services/chorus-inject/target/release/chorus-inject"\n' > "$BATS_TEST_TMPDIR/bad"
+  printf 'X="${CHORUS_ROOT}/target/$(id -un)/release/chorus-inject"\n' > "$BATS_TEST_TMPDIR/bad"
   printf '# a comment naming target/release is prose\nX=ok\n' > "$BATS_TEST_TMPDIR/good"
   [ "$(readers "$BATS_TEST_TMPDIR/bad" "$BATS_TEST_TMPDIR/good")" = "$BATS_TEST_TMPDIR/bad" ] || return 1
 }

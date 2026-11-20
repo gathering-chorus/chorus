@@ -58,7 +58,9 @@ fn athena_make(endpoint: &str) -> (Killer, String) {
 /// The generated principles API, built by werk-build in its crate home.
 fn principles_api(endpoint: &str) -> (Killer, String) {
     let dir = repo().join("shaping/domains/principles/api");
-    let bin = dir.join("target/release/principles-api");
+    // #4555: one workspace, one target folder (CARGO_TARGET_DIR, else <repo>/target)
+    let target = std::env::var("CARGO_TARGET_DIR").map(std::path::PathBuf::from).unwrap_or_else(|_| repo().join("target"));
+    let bin = target.join("release/principles-api");
     // Borg Queen 18:29: until werk-build knows domains/<d>/api (this card), nothing else builds it
     if !bin.is_file() {
         let st = Command::new("cargo").args(["build", "--release", "--locked"]).current_dir(&dir).status().unwrap();

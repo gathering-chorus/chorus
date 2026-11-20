@@ -19,7 +19,7 @@
 setup() {
   ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
   CFG="$ROOT/platform/api/jest.config.js"
-  RUNNER_BIN="$ROOT/platform/services/werk-test/target/release/werk-test"
+  RUNNER_BIN="$ROOT/target/$(id -un)/release/werk-test"
   JEST="$ROOT/platform/api/node_modules/.bin/jest"
 }
 

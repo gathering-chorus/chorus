@@ -24,7 +24,7 @@ ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 . "$ROOT/platform/scripts/fuseki-auth.sh" 2>/dev/null || true
 # #3991: repointed — #3561 renamed chorus-model-deploy.sh, and #4229 merged it into athena-deploy
 # and this suite kept exit-127ing on the dead path (guard-target-deleted class).
-SCRIPT="$ROOT/platform/services/athena-deploy/target/release/athena-deploy"
+SCRIPT="$ROOT/target/$(id -un)/release/athena-deploy"
 TTL="$ROOT/roles/kade/ontology/werk-domains.ttl"
 TEST_GRAPH="urn:chorus:ontology-test-bats-3550"
 # #4332 — writes go to the test dataset, never /pods (lib/test-store.sh)

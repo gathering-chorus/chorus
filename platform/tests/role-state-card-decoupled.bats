@@ -25,7 +25,7 @@
 # per the per-role-worktree convention), not a hardcoded /chorus path.
 CHORUS_ROOT="${CHORUS_ROOT:-$(cd "${BATS_TEST_DIRNAME}/../.." && pwd)}"
 SKILLS_DIR="$CHORUS_ROOT/skills"
-SHIM_BIN="$CHORUS_ROOT/platform/services/chorus-hooks/target/release/chorus-hook-shim"
+SHIM_BIN="$CHORUS_ROOT/target/$(id -un)/release/chorus-hook-shim"
 RUN_INSTRUCTED="$CHORUS_ROOT/platform/tests/fixtures/4336/run-instructed-role-state.py"
 
 # run_instructed <file|dir>... — execute every instructed role-state command
@@ -64,7 +64,7 @@ run_instructed() {
 # --- #2629 wave 3: affordance-layer assertions ---
 
 @test "role-state CLI refuses card= arg with non-zero exit" {
-  shim="$CHORUS_ROOT/platform/services/chorus-hooks/target/release/chorus-hook-shim"
+  shim="$CHORUS_ROOT/target/$(id -un)/release/chorus-hook-shim"
   [ -x "$shim" ] || skip "shim binary not built"
   run "$shim" role-state silas building card=99
   [ "$status" -ne 0 ]
@@ -72,14 +72,14 @@ run_instructed() {
 }
 
 @test "role-state CLI refuses type= arg with non-zero exit" {
-  shim="$CHORUS_ROOT/platform/services/chorus-hooks/target/release/chorus-hook-shim"
+  shim="$CHORUS_ROOT/target/$(id -un)/release/chorus-hook-shim"
   [ -x "$shim" ] || skip "shim binary not built"
   run "$shim" role-state silas building type=fix
   [ "$status" -ne 0 ]
 }
 
 @test "role-state CLI accepts state-only call without error" {
-  shim="$CHORUS_ROOT/platform/services/chorus-hooks/target/release/chorus-hook-shim"
+  shim="$CHORUS_ROOT/target/$(id -un)/release/chorus-hook-shim"
   [ -x "$shim" ] || skip "shim binary not built"
   # Use a synthetic role to avoid mutating live silas/wren/kade state
   # (axis-4: no live-role identifiers in tests).

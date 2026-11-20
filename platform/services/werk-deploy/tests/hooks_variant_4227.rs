@@ -92,7 +92,8 @@ fn negative_proof_the_collision_gate_still_catches_a_real_one() {
 use std::fs;
 
 fn with_built_hooks(werk: &std::path::Path, body: &[u8]) {
-    let dir = werk.join("platform/services/chorus-hooks/target/release");
+    // #4555: the workspace build folder for this account
+    let dir = std::path::PathBuf::from(werk_deploy::built_binary(werk.to_str().unwrap(), &werk_deploy::current_account(), "chorus-hooks")).parent().unwrap().to_path_buf();
     fs::create_dir_all(&dir).unwrap();
     fs::write(dir.join("chorus-hooks"), body).unwrap();
 }
@@ -130,7 +131,7 @@ fn the_variant_runs_the_werks_own_build_not_the_role_bin_slot() {
     // pointing at the shared slot gave a card that does not touch chorus-hooks
     // whatever was last left there. The plist must name the werk's own target.
     let plist = generate_plist(&hooks(), "kade", WERK, 0, &[]);
-    assert!(plist.contains(&format!("{WERK}/platform/services/chorus-hooks/target/release/chorus-hooks")),
+    assert!(plist.contains(&werk_deploy::built_binary(WERK, &werk_deploy::current_account(), "chorus-hooks")),
         "plist must run the werk's build:\n{plist}");
     assert!(!plist.contains("kade-bin/chorus-hooks"), "must not use the shared slot:\n{plist}");
 }
