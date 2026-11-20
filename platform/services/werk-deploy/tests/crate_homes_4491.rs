@@ -28,3 +28,19 @@ fn a_changed_crate_anywhere_in_the_tree_is_deployed_by_name() {
     assert_eq!(changed_crates_in(&root, "designing/services/notes/x.md\n"), Vec::<String>::new());
     let _ = fs::remove_dir_all(&root);
 }
+
+/// #4995 — a domain's own API crate (`<step>/domains/<domain>/api`, ADR-041) deploys by
+/// its package name too: principles-api, no plist, is a CLI verb (installed, never
+/// started). Athena run 2 of #4995 refused it at deploy-demo ("in the build summary but
+/// no matching crate"). NEGATIVE PROOF: a domain folder with no api/ crate deploys nothing.
+#[test]
+fn a_domains_own_api_crate_is_deployed_by_name() {
+    let root = std::env::temp_dir().join(format!("wd-4995-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    krate(&root, "shaping/domains/principles/api", "principles-api");
+    let diff = "shaping/domains/principles/api/src/main.rs\n";
+    assert_eq!(changed_crates_in(&root, diff), vec!["principles-api"]);
+    assert!(matches!(target_class_in("principles-api", &root), Ok(TargetClass::CliVerb { .. })));
+    assert_eq!(changed_crates_in(&root, "shaping/domains/values/model.ttl\n"), Vec::<String>::new());
+    let _ = fs::remove_dir_all(&root);
+}
