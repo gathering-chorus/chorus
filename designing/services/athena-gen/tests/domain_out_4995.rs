@@ -14,7 +14,6 @@ use fixture_4995::{fixture, FIXTURE};
 const TEMPLATE: &str = r#"
 @prefix c: <https://jeffbridwell.com/chorus#> .
 c:principles c:atStep c:value-stream-step-shaping .
-c:service-athena c:hasProperty c:property-athena-gen-domain-out .
 c:property-athena-gen-domain-out c:propertyKey "athena-gen.domain_out" ; c:propertyValue "{step}/domains/{domain}/api" .
 "#;
 

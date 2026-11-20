@@ -87,7 +87,7 @@ chorus:property-principles-reads-public a chorus:Property ; chorus:ownedBy choru
 # #4995 (Jeff 18:40, Wren 18:41) — where athena-gen writes a domain's API: ONE row for every
 # domain, `{step}` from the domain's atStep (ADR-041 <step>/domains/<domain>). Change this
 # row to move them all. repoTarget is athena-make's live route mount and is left alone.
-chorus:service-athena chorus:hasProperty chorus:property-athena-gen-domain-out .
+# athena-gen finds it by its key; it hangs off no service row (an untyped subject is refused).
 chorus:property-athena-gen-domain-out a chorus:Property ; chorus:ownedBy chorus:principal-kade ;
     rdfs:label "athena-gen: where a domain's generated API lands" ;
     chorus:propertyKey "athena-gen.domain_out" ; chorus:propertyValue "{step}/domains/{domain}/api" ;

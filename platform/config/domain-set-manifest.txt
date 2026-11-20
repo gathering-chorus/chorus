@@ -27,3 +27,7 @@ security|urn:chorus:domains:security|roles/silas/ontology/permissions-4183.ttl
 # #4572 — AgentRuntime rows: athena-gen generates agent_runtimes.json from the
 # file, so these rows stay file-sourced (like principals) and load into their home.
 identity|urn:chorus:domains:identity|roles/silas/ontology/agent-runtime-rows-4572.ttl
+# #4995 — the principles domain's settings and the athena-gen output template: athena-gen
+# reads them from the file (like AgentRuntime above), so they stay file-sourced and load
+# into their home, never the schema graph (v1-row).
+properties|urn:chorus:domains:properties|roles/kade/ontology/principles-settings-4995.ttl
