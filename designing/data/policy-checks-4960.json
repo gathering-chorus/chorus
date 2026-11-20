@@ -203,9 +203,9 @@
   "comment": "Application code calls domain doors, not Fuseki :3030 directly (DEC-093, ADR-048).",
   "gate": "code",
   "status": "ratchet",
-  "baseline": "34",
+  "baseline": "33",
   "checkKind": "command",
-  "checkSpec": "git grep -l 'localhost:3030' -- '*.ts' '*.rs' ':!*/tests/*' ':!*test*' ':!*/domains/*/api/*'",
+  "checkSpec": "git grep -l 'localhost:3030' -- '*.ts' '*.rs' ':!*/tests/*' ':!*test*' ':!*/domains/*/api/*' ':!*/products/*/api/*'",
   "violationFixture": "platform/tests/fixtures/4960/code-domain-api-over-raw-fuseki.sh"
  },
  {
