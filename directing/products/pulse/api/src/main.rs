@@ -20,7 +20,7 @@ mod embedded_tests;
 #[cfg(test)]
 mod requirements_tests;
 
-use model::{ClassDef, API_VERSION, CLASSES, CRATE_VERSION, MODEL_VERSION, PRODUCT};
+use model::{ClassDef, API_VERSION, CLASSES, CRATE_VERSION, DOMAIN_UNIT, MODEL_VERSION, PRODUCT};
 use serde_json::{json, Value};
 use std::io::Read;
 use store::Engine as _;
@@ -172,7 +172,8 @@ pub fn write(ctx: &Ctx, caller: &auth::Caller, method: &str, class: &ClassDef, n
         "delete" => ctx.store.delete(class.graph, &s),
         "create" => ctx.store.write(class.graph, &s, Some(class.name), &cells, false),
         "replace" => ctx.store.write(class.graph, &s, Some(class.name), &cells, true),
-        _ => ctx.store.write(class.graph, &s, None, &cells, false),
+        // #4995 — a patch names its class too, so a field is written under the class's own IRIs
+        _ => ctx.store.write(class.graph, &s, Some(class.name), &cells, false),
     };
     if let Err(m) = result { rules::event(&ctx.events, &caller.principal, op, class, &name, "store-error"); return error(503, "store", &m); }
     rules::event(&ctx.events, &caller.principal, op, class, &name, "ok");
@@ -186,7 +187,12 @@ pub fn route(ctx: &Ctx, method: &str, url: &str, authorization: Option<&str>, bo
     if path == "/health" {
         return (200, json!({ "status": "ok", "product": PRODUCT, "productVersion": CRATE_VERSION, "apiVersion": API_VERSION }));
     }
-    let parts: Vec<&str> = path.trim_matches('/').split('/').collect();
+    let mut parts: Vec<&str> = path.trim_matches('/').split('/').collect();
+    // #4995 — a domain's crate serves /<domain>/<segment>; read it on the one dispatch
+    // path below as /<domain>/<domain>/<segment>, so domain and product crates share it
+    if DOMAIN_UNIT {
+        parts.insert(0, PRODUCT);
+    }
     // #4757 — no root header here: pulse serves its header from its sources (:3475/pulse)
     // #4744 — an operation (a live computation the model declares) answers under the same read rule
     if parts.len() >= 3 && parts[0] == PRODUCT && method == "GET" && ops::has(parts[1], parts[2]) {

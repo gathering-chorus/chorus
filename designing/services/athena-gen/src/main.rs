@@ -1,7 +1,7 @@
 // @domain: domains
 //! athena-gen (#4490):
 //!   athena-gen model    --root <repo> --product <name>              prints the product's slice of the model
-//!   athena-gen generate --root <repo> --product <name> --out <dir> [--verifier <chorus-oidc dir>] [--drop <route>]…
+//!   athena-gen generate --root <repo> (--domain|--product) <name> --out <dir> [--verifier <chorus-oidc dir>] [--drop <route>]…
 //!                                                                    writes the product's API crate
 //!   athena-gen generate --card <n> [--out <dir>] [--verifier <dir>]  #4515: every product the card's model
 //!                                                                    change touches, from the card's werk,
@@ -39,9 +39,21 @@ fn load_model(root: &Path) -> oxigraph::store::Store {
     store
 }
 
-/// Write one product's API crate into `out`.
-fn generate(store: &oxigraph::store::Store, root: &Path, product: &str, out: &Path, verifier: Option<&String>, drops: &[String]) {
-    let p = athena_gen::model::product(store, product).unwrap_or_else(|e| die(e));
+/// The unit a crate is generated for (#4995): one domain, or a product composing domains.
+#[derive(Clone, Copy)]
+enum Unit { Domain, Product }
+
+fn unit_model(store: &oxigraph::store::Store, unit: Unit, name: &str) -> athena_gen::model::Product {
+    match unit {
+        Unit::Domain => athena_gen::model::domain(store, name),
+        Unit::Product => athena_gen::model::product(store, name),
+    }
+    .unwrap_or_else(|e| die(e))
+}
+
+/// Write one unit's API crate into `out`.
+fn generate(store: &oxigraph::store::Store, root: &Path, unit: Unit, product: &str, out: &Path, verifier: Option<&String>, drops: &[String]) {
+    let p = unit_model(store, unit, product);
     // #4742 gap 8 (#4708) — a route the crate serves today leaves only when it is named
     if let Ok(old) = std::fs::read_to_string(out.join("src/model.rs")) {
         if old.contains("ClassDef {") && athena_gen::emit::old_routes(&old, product).is_empty() {
@@ -70,6 +82,15 @@ fn generate(store: &oxigraph::store::Store, root: &Path, product: &str, out: &Pa
         .collect::<Result<_, _>>()
         .unwrap_or_else(|e| die(e));
     for (path, text) in athena_gen::emit::crate_files_ops(&p, &mv, &settings, &oidc, &handlers) {
+        let f = out.join(&path);
+        if let Some(dir) = f.parent() {
+            std::fs::create_dir_all(dir).unwrap_or_else(|e| die(e));
+        }
+        std::fs::write(&f, text).unwrap_or_else(|e| die(e));
+        println!("wrote {}", f.display());
+    }
+    // #4995 (AC5) — the MCP binding, OpenAPI document and page for each class it serves
+    for (path, text) in athena_gen::surfaces::files(&p, &settings) {
         let f = out.join(&path);
         if let Some(dir) = f.parent() {
             std::fs::create_dir_all(dir).unwrap_or_else(|e| die(e));
@@ -167,7 +188,7 @@ fn card_mode(cmd: &str, card_id: &str, args: &[String]) {
     let out_base = arg(args, "--out").map(PathBuf::from).unwrap_or_else(|| root.join("directing/products"));
     let verifier = arg(args, "--verifier");
     for p in &built {
-        generate(&store, &root, p, &product_out(&out_base, p), verifier.as_ref(), &drops(args));
+        generate(&store, &root, Unit::Product, p, &product_out(&out_base, p), verifier.as_ref(), &drops(args));
     }
 }
 
@@ -205,19 +226,27 @@ fn main() {
         card_mode(&cmd, &c, &args);
         return;
     }
-    let Some(product) = arg(&args, "--product") else {
-        eprintln!("usage: athena-gen model|generate --root <repo> --product <name> [--out <dir>] | --card <n> [--out <dir>]");
-        std::process::exit(2);
+    // #4995 — the unit is one domain (--domain) or a product composing domains (--product)
+    let (unit, product) = match (arg(&args, "--domain"), arg(&args, "--product")) {
+        (Some(_), Some(_)) => die("name one unit: --domain <name> or --product <name>, not both"),
+        (Some(d), None) => (Unit::Domain, d),
+        (None, Some(p)) => (Unit::Product, p),
+        (None, None) => {
+            eprintln!("usage: athena-gen model|generate --root <repo> (--domain <name> | --product <name>) [--out <dir>] | --card <n> [--out <dir>]");
+            std::process::exit(2);
+        }
     };
     let store = load_model(&root);
     match cmd.as_str() {
-        "model" => {
-            let p = athena_gen::model::product(&store, &product).unwrap_or_else(|e| die(e));
-            println!("{p:#?}")
-        }
+        "model" => println!("{:#?}", unit_model(&store, unit, &product)),
         "generate" => {
-            let out = PathBuf::from(arg(&args, "--out").unwrap_or_else(|| die("generate needs --out <dir>")));
-            generate(&store, &root, &product, &out, arg(&args, "--verifier").as_ref(), &drops(&args));
+            // #4995 — a domain lands where the model's one template row says; --out overrides
+            let out = match (arg(&args, "--out"), unit) {
+                (Some(o), _) => PathBuf::from(o),
+                (None, Unit::Domain) => root.join(athena_gen::model::domain_out(&store, &product).unwrap_or_else(|e| die(e))),
+                (None, Unit::Product) => die("generate --product needs --out <dir>"),
+            };
+            generate(&store, &root, unit, &product, &out, arg(&args, "--verifier").as_ref(), &drops(&args));
         }
         other => die(format!("unknown command '{other}' (model | generate)")),
     }

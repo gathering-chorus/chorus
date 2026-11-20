@@ -9,8 +9,15 @@ use crate::store::{iri, Embedded, Engine, RowStore, Sparql};
 use crate::{write, Ctx};
 use serde_json::{json, Value};
 
+/// A class with a link field: the crate's own, or (#4995 — a domain like principles has
+/// none but ownedBy) its first class with one test link field added, as decimal_class does.
 fn class_with_link() -> &'static ClassDef {
-    CLASSES.iter().find(|c| c.fields.iter().any(|f| f.link && f.name != "ownedBy")).expect("a class with a link field")
+    CLASSES.iter().find(|c| c.fields.iter().any(|f| f.link && f.name != "ownedBy")).unwrap_or_else(|| {
+        let owned = CLASSES.first().expect("a class");
+        let mut f: Vec<crate::model::FieldDef> = owned.fields.to_vec();
+        f.push(crate::model::FieldDef { name: "relatesTo", iris: &[], link: true, datatype: "", required: false, many: false, allowed: &[] });
+        Box::leak(Box::new(ClassDef { fields: Box::leak(f.into_boxed_slice()), composed: false, ..*owned }))
+    })
 }
 
 fn caller(name: &str) -> Caller {
@@ -21,10 +28,10 @@ fn caller(name: &str) -> Caller {
 fn seeded() -> Embedded {
     let e = Embedded::memory();
     let mut triples = vec![format!("<{NS}principal-wren> a <{NS}Principal> .")];
-    for c in CLASSES {
-        for f in c.fields.iter().filter(|f| f.link && f.name != "ownedBy") {
-            triples.push(format!("<{NS}target-{}> a <{NS}Target> .", f.name));
-        }
+    // #4995 — the fallback link class's field too, when the crate has no link of its own
+    for f in CLASSES.iter().flat_map(|c| c.fields).chain(class_with_link().fields).filter(|f| f.link && f.name != "ownedBy") {
+        let t = format!("<{NS}target-{}> a <{NS}Target> .", f.name);
+        if !triples.contains(&t) { triples.push(t); }
     }
     e.update(&format!("INSERT DATA {{ GRAPH <urn:test:seed> {{ {} }} }}", triples.join(" "))).unwrap();
     e
@@ -224,7 +231,7 @@ fn every_collection_filters_and_searches_in_the_store() {
         store.write(c.graph, &iri(c, n), Some(c.name), &cells, false).unwrap();
     }
     let ctx = ctx(&store);
-    let path = format!("/{}/{}/{}", crate::model::PRODUCT, c.domain, c.segment);
+    let path = crate::model::route_of(c);
     let get = |q: &str| crate::route(&ctx, "GET", &format!("{path}?{q}"), None, "");
     let names = |out: &Value| out["data"].as_array().unwrap().iter().map(|r| r["name"].as_str().unwrap().to_string()).collect::<Vec<_>>();
 
@@ -254,7 +261,7 @@ fn a_stream_sorts_newest_first_and_pages_back_by_a_bound() {
         store.write(c.graph, &iri(c, n), Some(c.name), &cells, false).unwrap();
     }
     let ctx = ctx(&store);
-    let path = format!("/{}/{}/{}", crate::model::PRODUCT, c.domain, c.segment);
+    let path = crate::model::route_of(c);
     let names = |q: &str| {
         let (code, out) = crate::route(&ctx, "GET", &format!("{path}?{q}"), None, "");
         assert_eq!(code, 200, "{out}");
@@ -267,7 +274,7 @@ fn a_stream_sorts_newest_first_and_pages_back_by_a_bound() {
     assert!(names(&format!("{f}.lt=2026-01-01")).is_empty());
     // a bound on a number would compare as text: refused by name (Kade's review)
     if let Some((nc, nf)) = CLASSES.iter().find_map(|c| c.fields.iter().find(|f| !f.link && matches!(f.datatype, "integer" | "decimal")).map(|f| (c, f.name))) {
-        let (code, out) = crate::route(&ctx, "GET", &format!("/{}/{}/{}?{nf}.lt=5", crate::model::PRODUCT, nc.domain, nc.segment), None, "");
+        let (code, out) = crate::route(&ctx, "GET", &format!("{}?{nf}.lt=5", crate::model::route_of(nc)), None, "");
         assert_eq!((code, out["error"].as_str()), (400, Some("unordered-field")), "{out}");
     }
     // sorting by a field the class does not have is refused by name

@@ -1,0 +1,10 @@
+{
+  "class": "Principle",
+  "binding": "mcp",
+  "convention": "ADR-031 chorus_<plural-resource>_<verb>",
+  "tools": [
+    { "name": "chorus_principles_list", "verb": "list", "route": "GET /principles/principles" },
+    { "name": "chorus_principles_get", "verb": "get", "route": "GET /principles/principles/:name" },
+    { "name": "chorus_principles_add", "verb": "add", "route": "POST /principles/principles", "delegatesTo": "the generated door" }
+  ]
+}

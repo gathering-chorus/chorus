@@ -1,10 +1,11 @@
 // @domain: builds — picked by its owner, Kade, from the crawler's candidates (#4538)
 // #4491 — where the repo's Rust crates live, found by structure.
 //
-// A crate is a directory holding a Cargo.toml at one of three places:
+// A crate is a directory holding a Cargo.toml at one of four places:
 //   platform/services/<crate>/        the legacy home
 //   <step>/services/<crate>/          the ADR-041 tree (designing/services/athena-gen)
 //   <step>/products/<product>/api/    a product's own API (directing/products/pulse/api)
+//   <step>/domains/<domain>/api/      #4995 — a domain's own API (shaping/domains/principles/api)
 // `platform/services/shared/` is never a crate: its files are include!()d.
 // A crate's name is its Cargo package name (for every platform/services crate
 // that equals the directory name). Included by werk-build, werk-test and
@@ -17,6 +18,7 @@ pub fn crate_dir_of_path(path: &str, has_manifest: &dyn Fn(&str) -> bool) -> Opt
     let dir = match parts.as_slice() {
         [_, "services", c, _, ..] if !c.is_empty() => format!("{}/services/{}", parts[0], c),
         [_, "products", p, "api", _, ..] if !p.is_empty() => format!("{}/products/{}/api", parts[0], p),
+        [_, "domains", d, "api", _, ..] if !d.is_empty() => format!("{}/domains/{}/api", parts[0], d),
         _ => return None,
     };
     if dir == "platform/services/shared" || !has_manifest(&dir) {
@@ -68,6 +70,7 @@ pub fn crate_dirs(root: &std::path::Path) -> Vec<(String, String)> {
         let mut cands: Vec<String> = subdirs(&top.path().join("services"))
             .into_iter().map(|c| format!("{}/services/{}", top_name, c)).collect();
         cands.extend(subdirs(&top.path().join("products")).into_iter().map(|p| format!("{}/products/{}/api", top_name, p)));
+        cands.extend(subdirs(&top.path().join("domains")).into_iter().map(|d| format!("{}/domains/{}/api", top_name, d)));
         for dir in cands {
             if dir == "platform/services/shared" {
                 continue;
@@ -106,6 +109,8 @@ mod crate_dirs_4491 {
         assert_eq!(crate_dir_of_path("platform/services/werk-test/src/main.rs", &yes).as_deref(), Some("platform/services/werk-test"));
         assert_eq!(crate_dir_of_path("designing/services/athena-gen/src/lib.rs", &yes).as_deref(), Some("designing/services/athena-gen"));
         assert_eq!(crate_dir_of_path("directing/products/pulse/api/src/main.rs", &yes).as_deref(), Some("directing/products/pulse/api"));
+        // #4995 — a domain's own API
+        assert_eq!(crate_dir_of_path("shaping/domains/principles/api/src/main.rs", &yes).as_deref(), Some("shaping/domains/principles/api"));
     }
 
     /// NEGATIVE PROOF: a directory with no Cargo.toml is not a crate, shared/
@@ -119,6 +124,8 @@ mod crate_dirs_4491 {
         assert_eq!(crate_dir_of_path("designing/services/README.md", &yes), None);
         assert_eq!(crate_dir_of_path("directing/products/pulse/ui/app.ts", &yes), None);
         assert_eq!(crate_dir_of_path("platform/api/src/server.ts", &yes), None);
+        // #4995 — a domain's model folder is not a crate; only its api/ is
+        assert_eq!(crate_dir_of_path("shaping/domains/principles/model.ttl", &yes), None);
     }
 
     #[test]
@@ -133,7 +140,8 @@ mod crate_dirs_4491 {
         let root = std::env::temp_dir().join(format!("crate-dirs-4491-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         for (dir, name) in [("platform/services/werk-test", "werk-test"), ("designing/services/athena-gen", "athena-gen"),
-                            ("directing/products/pulse/api", "pulse-api"), ("platform/services/shared", "shared")] {
+                            ("directing/products/pulse/api", "pulse-api"), ("platform/services/shared", "shared"),
+                            ("shaping/domains/principles/api", "principles-api")] {
             std::fs::create_dir_all(root.join(dir)).unwrap();
             std::fs::write(root.join(dir).join("Cargo.toml"), format!("[package]\nname = \"{}\"\n", name)).unwrap();
         }
@@ -143,6 +151,7 @@ mod crate_dirs_4491 {
             ("athena-gen".to_string(), "designing/services/athena-gen".to_string()),
             ("pulse-api".to_string(), "directing/products/pulse/api".to_string()),
             ("werk-test".to_string(), "platform/services/werk-test".to_string()),
+            ("principles-api".to_string(), "shaping/domains/principles/api".to_string()),
         ]);
         assert_eq!(crate_rel_dir(&root, "pulse-api"), "directing/products/pulse/api");
         assert_eq!(crate_rel_dir(&root, "unknown"), "platform/services/unknown");

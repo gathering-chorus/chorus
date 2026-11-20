@@ -1,0 +1,10 @@
+{
+  "class": "Heartbeat",
+  "binding": "mcp",
+  "convention": "ADR-031 chorus_<plural-resource>_<verb>",
+  "tools": [
+    { "name": "chorus_heartbeats_list", "verb": "list", "route": "GET /pulse/awareness/heartbeats" },
+    { "name": "chorus_heartbeats_get", "verb": "get", "route": "GET /pulse/awareness/heartbeats/:name" },
+    { "name": "chorus_heartbeats_add", "verb": "add", "route": "POST /pulse/awareness/heartbeats", "delegatesTo": "the generated door" }
+  ]
+}

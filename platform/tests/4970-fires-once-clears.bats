@@ -23,13 +23,13 @@ import json, sys
 q, d = sys.argv[1], sys.argv[2]
 rules = {"groups": [{"name": "g", "rules": [{"alert": "disk-full", "expr": q}]}]}
 json.dump(rules, open(f"{d}/rules.yml", "w"))
-L = lambda mp: '{__name__="%s",instance="192.168.86.242:9100",fstype="apfs",mountpoint="%s"}'
+L = lambda mp: '{__name__="%s",instance="192.0.2.10:9100",fstype="apfs",mountpoint="%s"}'
 size = 1000
 def series(mp, used):  # used % per minute -> avail and size series
     return [{"series": (L(mp) % ("node_filesystem_size_bytes", mp)), "values": " ".join([str(size)] * len(used))},
             {"series": (L(mp) % ("node_filesystem_avail_bytes", mp)), "values": " ".join(str(round(size * (100 - u) / 100, 1)) for u in used)}]
 s = series("/Volumes/VideosNew", [94.06] * 6) + series("/Volumes/VideosKem-Lat", [94.0, 99.72, 99.72, 99.72, 98.0, 98.0])
-lbl = {"instance": "192.168.86.242:9100", "fstype": "apfs", "mountpoint": "/Volumes/VideosKem-Lat"}
+lbl = {"instance": "192.0.2.10:9100", "fstype": "apfs", "mountpoint": "/Volumes/VideosKem-Lat"}
 t = {"rule_files": ["rules.yml"], "evaluation_interval": "1m", "tests": [{"interval": "1m", "input_series": s, "alert_rule_test": [
     {"eval_time": "0m", "alertname": "disk-full", "exp_alerts": []},
     {"eval_time": "1m", "alertname": "disk-full", "exp_alerts": [{"exp_labels": lbl}]},

@@ -20,6 +20,7 @@ fn pulse() -> Product {
                 store: "graph".into(),
                 fields: vec![Field {
                     name: "stateValue".into(),
+                    iris: vec!["https://jeffbridwell.com/chorus#stateValue".into()],
                     kind: Kind::Literal { datatype: "string".into() },
                     required: true,
                     many: false,
@@ -28,6 +29,7 @@ fn pulse() -> Product {
             }],
         }],
         operations: Vec::new(),
+        domain_unit: false,
     }
 }
 

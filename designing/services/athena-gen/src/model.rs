@@ -33,6 +33,11 @@ pub enum Kind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Field {
     pub name: String,
+    /// #4995 — every sh:path with this local name, whole, the unit's namespace first.
+    /// athena-make's rule (#3749/#4291): one field per name; a read takes the first
+    /// IRI that holds a value (chorus: wins ties), a write goes to every IRI. Empty for
+    /// a path that is not an IRI (a blank-node sh:inversePath).
+    pub iris: Vec<String>,
     pub kind: Kind,
     pub required: bool,
     pub many: bool,
@@ -66,6 +71,9 @@ pub struct Product {
     pub domains: Vec<Domain>,
     /// #4744 — analytical operations (a live computation, not stored rows) the product serves
     pub operations: Vec<Operation>,
+    /// #4995 — built for one domain (`--domain`): routes are `/<domain>/<segment>`, not
+    /// `/<product>/<domain>/<segment>`
+    pub domain_unit: bool,
 }
 
 /// #4744 — an Operation row: served at `/<product>/<domain>/<segment>`, computed by the
@@ -239,35 +247,90 @@ pub fn product(store: &Store, name: &str) -> Result<Product, ModelError> {
     if owned.is_empty() {
         return Err(ModelError(format!("product '{name}' has no domains in the model (c:{name} a c:Product ; c:hasDomain …)")));
     }
-    let mut out = Product { name: name.to_string(), domains: Vec::new(), operations: Vec::new() };
-    // #4519 — a class with no instancesGraph lives under the product's own graph
-    // prefix, never a Chorus default
-    let declared = settings(store, name)?;
-    let prefix = declared.iter().find(|(k, _)| k == "store.graph_prefix").map(|(_, v)| v.clone());
-    // #4519 reopen — the product's classes are named in its own namespace (wine-diary:Wine).
-    // A product that declares none is refused, never read as a Chorus product.
-    let Some(ns) = declared.iter().find(|(k, _)| k == "model.namespace").map(|(_, v)| v.clone()) else {
-        return Err(ModelError(format!("{name} declares no model.namespace: add a Property row (c:{name} c:hasProperty …)")));
-    };
+    // #4995 (AC4) — a product only composes domains; a class it defines itself has no domain
+    if let Some(c) = select(store, &format!("SELECT ?c WHERE {{ c:{name} a c:Product ; c:definesVocabulary ?c }} ORDER BY ?c LIMIT 1"))?.first() {
+        return Err(ModelError(format!("{name} defines {} itself: a product only composes domains; move the class into one of its domains", c["c"])));
+    }
     // #4742 — the product's child routes are the domains it owns, then the ones it composes
     // (a composition, not an orchestration); a domain it also owns is served once, as owned.
     let composed = select(store, &format!(
         "SELECT DISTINCT ?d WHERE {{ c:{name} c:composes ?d FILTER NOT EXISTS {{ c:{name} c:hasDomain ?d }} }} ORDER BY ?d"))?;
-    let domains = owned.into_iter().map(|d| (d, false)).chain(composed.into_iter().map(|d| (d, true)));
-    for (d, composed) in domains {
-        let dname = d["d"].clone();
-        let mut domain = Domain { name: dname.clone(), composed, classes: Vec::new() };
-        for c in select_iri(store, &format!("SELECT DISTINCT ?c WHERE {{ c:{dname} c:definesVocabulary ?c }} ORDER BY ?c"))? {
-            let iri = &c["c"];
-            if !iri.starts_with(&ns) {
-                return Err(ModelError(format!(
-                    "{dname} defines {iri}, which is not in {name}'s namespace {ns}: a product serves only its own classes")));
-            }
-            domain.classes.push(class(store, &dname, iri, prefix.as_deref(), name)?);
-        }
-        out.domains.push(domain);
+    let domains: Vec<(String, bool)> = owned.into_iter().map(|d| (d["d"].clone(), false))
+        .chain(composed.into_iter().map(|d| (d["d"].clone(), true))).collect();
+    build(store, name, &domains)
+}
+
+/// #4995 — the domain is the generator's unit (Jeff 11-12: "athena-gen is supposed to be
+/// athena-make (v2) for generating domain apis"). One domain, owned, read from its own
+/// rows and its own settings (`c:<domain> c:hasProperty …`); no product row is needed.
+pub fn domain(store: &Store, name: &str) -> Result<Product, ModelError> {
+    if select(store, &format!("SELECT ?d WHERE {{ BIND(c:{name} AS ?d) c:{name} a c:Domain }} LIMIT 1"))?.is_empty() {
+        return Err(ModelError(format!("domain '{name}' is not in the model (c:{name} a c:Domain)")));
     }
-    // #4744 — an operation lives in one of the product's own domains, or it is refused by name
+    // #4995 AC2 — a domain with nothing to serve, or nothing to run on, is refused by name
+    if settings(store, name)?.is_empty() {
+        return Err(ModelError(format!("domain '{name}' declares no settings: add Property rows (c:{name} c:hasProperty …)")));
+    }
+    let mut p = build(store, name, &[(name.to_string(), false)])?;
+    if p.domains.iter().all(|d| d.classes.is_empty()) {
+        return Err(ModelError(format!("domain '{name}' defines no classes: nothing to generate (c:{name} c:definesVocabulary …)")));
+    }
+    p.domain_unit = true;
+    Ok(p)
+}
+
+/// #4995 (Jeff 18:40 via Wren 18:41) — where a domain's generated API lands, from ONE
+/// athena-gen Property row (`athena-gen.domain_out`, a template over `{step}` and
+/// `{domain}`) and the domain's atStep (value-stream-step-shaping → shaping). Jeff
+/// changes one row to move every domain. Refused by name with no row, two rows, or
+/// no atStep — never a path the code invents.
+pub fn domain_out(store: &Store, name: &str) -> Result<String, ModelError> {
+    let rows = select(store, "SELECT ?v WHERE { ?p c:propertyKey \"athena-gen.domain_out\" ; c:propertyValue ?v }")?;
+    let template = match rows.as_slice() {
+        [one] => one["v"].clone(),
+        [] => return Err(ModelError("no Property row holds athena-gen.domain_out (the template for where a domain's API lands)".into())),
+        _ => return Err(ModelError(format!("{} Property rows hold athena-gen.domain_out; keep one", rows.len()))),
+    };
+    let steps = select(store, &format!("SELECT DISTINCT ?s WHERE {{ c:{name} c:atStep ?s }}"))?;
+    let step = match steps.as_slice() {
+        [one] => one["s"].trim_start_matches("value-stream-step-").to_string(),
+        [] => return Err(ModelError(format!("{name} declares no atStep: its API's home is <step>/domains/{name} (ADR-041)"))),
+        _ => return Err(ModelError(format!("{name} declares {} atStep values: one home per domain (ADR-041)", steps.len()))),
+    };
+    Ok(template.replace("{step}", &step).replace("{domain}", name))
+}
+
+/// #4995 (AC4) — ONE domain, built from its own rows: its classes (definesVocabulary),
+/// each with its fields. The single place a domain is turned into classes; a product
+/// and a domain unit both call it, passing the unit's settings (namespace, graph prefix).
+pub fn domain_slice(store: &Store, dname: &str, composed: bool, unit: &str, declared: &[(String, String)]) -> Result<Domain, ModelError> {
+    // #4519 — a class with no instancesGraph lives under the unit's own graph prefix
+    let prefix = declared.iter().find(|(k, _)| k == "store.graph_prefix").map(|(_, v)| v.clone());
+    // #4519 reopen — the unit's classes are named in its own namespace; none declared is refused
+    let Some(ns) = declared.iter().find(|(k, _)| k == "model.namespace").map(|(_, v)| v.clone()) else {
+        return Err(ModelError(format!("{unit} declares no model.namespace: add a Property row (c:{unit} c:hasProperty …)")));
+    };
+    let mut domain = Domain { name: dname.to_string(), composed, classes: Vec::new() };
+    for c in select_iri(store, &format!("SELECT DISTINCT ?c WHERE {{ c:{dname} c:definesVocabulary ?c }} ORDER BY ?c"))? {
+        let iri = &c["c"];
+        if !iri.starts_with(&ns) {
+            return Err(ModelError(format!(
+                "{dname} defines {iri}, which is not in {unit}'s namespace {ns}: a product serves only its own classes")));
+        }
+        domain.classes.push(class(store, dname, iri, prefix.as_deref(), unit)?);
+    }
+    Ok(domain)
+}
+
+/// #4995 — the one path that turns domains into classes. A product and a domain both
+/// come through here; the product adds only which domains it owns and composes.
+fn build(store: &Store, name: &str, domains: &[(String, bool)]) -> Result<Product, ModelError> {
+    let mut out = Product { name: name.to_string(), domains: Vec::new(), operations: Vec::new(), domain_unit: false };
+    let declared = settings(store, name)?;
+    for (dname, composed) in domains {
+        out.domains.push(domain_slice(store, dname, *composed, name, &declared)?);
+    }
+    // #4744 — an operation lives in one of the unit's own domains, or it is refused by name
     for o in select(store, &format!(
         "SELECT ?o ?d ?seg ?h WHERE {{ c:{name} c:servesOperation ?o . ?o c:homeDomain ?d ; c:operationPath ?seg ; c:handlerPath ?h }} ORDER BY ?o"))? {
         let (oname, d) = (o["o"].clone(), o["d"].clone());
@@ -324,6 +387,7 @@ fn class(store: &Store, domain: &str, iri: &str, prefix: Option<&str>, product: 
             Kind::Literal { datatype: p.get("datatype").map_or_else(|| "string".into(), |d| local_name(d)) }
         };
         fields.push(Field {
+            iris: if path.starts_with("http") { vec![path.clone()] } else { Vec::new() },
             name: fname,
             kind,
             required: p.get("min").and_then(|m| m.parse::<u32>().ok()).unwrap_or(0) > 0,
@@ -333,6 +397,34 @@ fn class(store: &Store, domain: &str, iri: &str, prefix: Option<&str>, product: 
             allowed,
         });
     }
+    // #4995 — one field per local name (rdfs:label and chorus:label are both `label`):
+    // merge their IRIs, the unit's namespace first, as athena-make serves them
+    let ns = iri.rsplit_once(['#', '/']).map(|(n, _)| &iri[..n.len() + 1]).unwrap_or("");
+    let mut merged: Vec<Field> = Vec::new();
+    for f in fields {
+        match merged.iter_mut().find(|m| m.name == f.name) {
+            Some(m) => {
+                m.iris.extend(f.iris);
+                m.required |= f.required;
+                m.many |= f.many;
+                if m.allowed.is_empty() { m.allowed = f.allowed; }
+            }
+            None => merged.push(f),
+        }
+    }
+    for m in &mut merged {
+        // #3749/#4291 (athena-make's rule) — label and comment are read from chorus: then
+        // rdfs: and written under both, whichever the shape declared: rows the door wrote
+        // under <ns>label before a shape named rdfs:label must still read back
+        if (m.name == "label" || m.name == "comment") && !m.iris.is_empty() {
+            for i in [format!("{ns}{}", m.name), format!("http://www.w3.org/2000/01/rdf-schema#{}", m.name)] {
+                if !m.iris.contains(&i) { m.iris.push(i); }
+            }
+        }
+        m.iris.sort_by_key(|i| (!i.starts_with(ns), i.clone()));
+        m.iris.dedup();
+    }
+    let fields = merged;
     Ok(Class { segment: segment(domain, &name), name, graph, store: row_store, fields })
 }
 

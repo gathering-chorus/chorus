@@ -1,0 +1,10 @@
+{
+  "class": "StreamEvent",
+  "binding": "mcp",
+  "convention": "ADR-031 chorus_<plural-resource>_<verb>",
+  "tools": [
+    { "name": "chorus_streamevents_list", "verb": "list", "route": "GET /pulse/streams/events" },
+    { "name": "chorus_streamevents_get", "verb": "get", "route": "GET /pulse/streams/events/:name" },
+    { "name": "chorus_streamevents_add", "verb": "add", "route": "POST /pulse/streams/events", "delegatesTo": "the generated door" }
+  ]
+}
