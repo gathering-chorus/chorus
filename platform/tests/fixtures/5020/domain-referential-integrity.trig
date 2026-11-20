@@ -1,0 +1,7 @@
+# @domain: policies
+# #5020 — one violation of domain-referential-integrity: a row of x links to c:gone, a row nowhere;
+# its link to c:here resolves, and y's rows link only to rows that exist.
+@prefix c: <https://jeffbridwell.com/chorus#> .
+<urn:chorus:domains:x> { c:x-one a c:Thing ; c:relatesTo c:gone , c:here . }
+<urn:chorus:domains:y> { c:y-one a c:Thing ; c:relatesTo c:here . }
+<urn:chorus:domains:z> { c:here a c:Thing . }

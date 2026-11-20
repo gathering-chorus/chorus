@@ -2,6 +2,7 @@
 """#4963, #4964 — the counters behind the policies' command checks (one tool for every gate).
 
   policy-count <policy-name>
+  policy-count <domain-policy-name> <domain>     (#5020: the domain lint's counters)
 
 Run in the git tree being measured (canonical main for the sensor, the werk at the demo, a
 fixture tree in the tests). Prints one line per violation, so policy-validate's command kind
@@ -12,7 +13,8 @@ what was narrowed and why (AC3).
 
 Seams (tests): ARCH_SERVICE_LABELS (a file of launchd labels, in place of the store),
 CHORUS_MAKE (the chorus-make binary), FUSEKI_QUERY (the store's query endpoint),
-CARDS (the board CLI), POLICY_COUNT_ROWS (the door's policies answer).
+CARDS (the board CLI), POLICY_COUNT_ROWS (the door's policies answer), SHACL_DATA and
+SHACL_SHAPES (a domain's rows and the shapes, as Turtle files, in place of the store).
 """
 # @domain: policies
 import json
@@ -523,6 +525,174 @@ def negative_proof_for_gates():
     return out
 
 
+# --- #5020: the domain lint's counters. Each takes the domain's name. A domain's rows live
+# in urn:chorus:domains:<name> (the one-store check reds a Domain row naming no graph).
+
+CHORUS = "https://jeffbridwell.com/chorus#"
+
+
+def domain_graph(domain):
+    return f"urn:chorus:domains:{domain}"
+
+
+def scripts_and_source():
+    """Code: source files by extension, plus the extensionless scripts under platform/scripts."""
+    out = []
+    for f in files():
+        if is_test(f) or "/node_modules/" in f or "/dist/" in f or "/public/" in f:
+            continue
+        if f.endswith(SOURCE) or (f.startswith("platform/scripts/") and "." not in os.path.basename(f)):
+            out.append(f)
+    return out
+
+
+def domain_side_door(domain):
+    """ADR-048/DEC-093 for one domain, narrowed: code outside the domain's own unit
+    (*/domains/<name>/) that names the domain's store graph reads or writes its rows past
+    its door. Tests, fixtures, the model (.ttl) and prose do not count."""
+    own = f"/domains/{domain}/"
+    rx = re.compile(re.escape(domain_graph(domain)) + r"(?![a-z0-9-])")
+    return hits([f for f in scripts_and_source() if own not in f"/{f}"], rx)
+
+
+def domain_has_tests(domain):
+    """The domain has tests: one tracked test file at least carries `@domain: <name>`."""
+    rx = re.compile(r"@domain:\s*" + re.escape(domain) + r"(?![a-z0-9-])")
+    for f in files():
+        if is_test(f) and rx.search(read(f)[:3000]):
+            return []
+    return [f"{domain}: no test file names @domain: {domain}"]
+
+
+def construct(query):
+    """A CONSTRUCT's triples as N-Triples lines."""
+    req = urllib.request.Request(FUSEKI, data=urllib.parse.urlencode({"query": query}).encode(),
+                                 headers={"Accept": "application/n-triples"})
+    try:
+        with urllib.request.urlopen(req, timeout=300) as r:
+            return [l for l in r.read().decode().splitlines() if l.strip()]
+    except OSError as e:
+        raise Broken(f"store unreachable: {e}")
+
+
+NQ = re.compile(r"^(.*\S)\s+<([^>]+)>\s*\.\s*$")
+DOMAINS_GRAPH = "urn:chorus:domains:domains"
+
+
+def store_rows(domain):
+    """{graph: [n-triples]} for one domain (domain=None: every domain graph), the Domain rows'
+    graph always. From SHACL_DATA (a TriG file, in tests) or the store, read-only."""
+    trig = os.environ.get("SHACL_DATA")
+    if trig:
+        p = subprocess.run(["riot", "--output=nq", trig], capture_output=True, text=True, timeout=120)
+        if p.returncode != 0:
+            raise Broken(f"cannot read {trig}: {p.stderr.strip()[-200:]}")
+        out = {}
+        for line in p.stdout.splitlines():
+            m = NQ.match(line)
+            if m:
+                out.setdefault(m.group(2), []).append(m.group(1) + " .")
+        return out
+    if domain is None:
+        q = 'SELECT DISTINCT ?g WHERE { GRAPH ?g { } FILTER(STRSTARTS(STR(?g), "urn:chorus:domains:")) }'
+        graphs = sorted(sparql_column(q))
+    else:
+        graphs = [domain_graph(domain)]
+    graphs = sorted(set(graphs) | {DOMAINS_GRAPH})
+    out = {g: construct(f"CONSTRUCT {{ ?s ?p ?o }} WHERE {{ GRAPH <{g}> {{ ?s ?p ?o }} }}") for g in graphs}
+    if domain is not None:
+        # one domain: the types of the rows it links to, and the rows linking to its Domain row,
+        # so a link to a row in another graph still finds that row's class
+        g, d = domain_graph(domain), f"<{CHORUS}{domain}>"
+        out["links"] = sum((construct(q) for q in (
+            f"CONSTRUCT {{ ?o a ?t }} WHERE {{ GRAPH <{g}> {{ ?s ?p ?o FILTER(isIRI(?o)) }} GRAPH ?h {{ ?o a ?t }} }}",
+            f"CONSTRUCT {{ ?o a ?t }} WHERE {{ GRAPH <{DOMAINS_GRAPH}> {{ {d} ?p ?o FILTER(isIRI(?o)) }} GRAPH ?h {{ ?o a ?t }} }}",
+            f"CONSTRUCT {{ ?x ?p {d} . ?x a ?t }} WHERE {{ GRAPH ?h {{ ?x ?p {d} }} OPTIONAL {{ GRAPH ?k {{ ?x a ?t }} }} }}")), [])
+    return out
+
+
+def shacl_by_domain(domain=None):
+    """One Jena SHACL pass; each validation result goes to the domain(s) it belongs to: the
+    domain whose graph holds the failing row, and the domain a failing Domain row defines.
+    domain=None validates every domain graph at once (#5020: one JVM, not one per domain)."""
+    import tempfile
+    rows = store_rows(domain)
+    shapes = os.environ.get("SHACL_SHAPES")
+    tmp = tempfile.mkdtemp(prefix="domain-shacl-")
+    try:
+        given, shapes = shapes, os.path.join(tmp, "shapes.nt")
+        if given:  # any RDF syntax in, N-Triples out, so it can sit in the data file too
+            p = subprocess.run(["riot", "--output=nt", given], capture_output=True, text=True, timeout=120)
+            if p.returncode != 0:
+                raise Broken(f"cannot read {given}: {p.stderr.strip()[-200:]}")
+            text = p.stdout
+        else:
+            text = "\n".join(construct("CONSTRUCT { ?s ?p ?o } WHERE { GRAPH <urn:chorus:ontology> { ?s ?p ?o } }")) + "\n"
+        with open(shapes, "w") as f:
+            f.write(text)
+        owner = {}  # subject -> domains whose rows it is
+        for g, lines in rows.items():
+            if not g.startswith("urn:chorus:domains:"):
+                continue
+            name = g.rsplit(":", 1)[1]
+            for l in lines:
+                owner.setdefault(l.split(" ", 1)[0], set()).add(name)
+        for l in rows.get(DOMAINS_GRAPH, []):
+            subj = l.split(" ", 1)[0]
+            if subj.startswith(f"<{CHORUS}"):
+                owner.setdefault(subj, set()).add(subj[len(CHORUS) + 1:-1])
+        data = os.path.join(tmp, "data.nt")
+        with open(data, "w") as f:  # the class chain lives with the shapes; validate over both
+            for lines in rows.values():
+                f.write("\n".join(lines) + "\n")
+            f.write(read(shapes) + "\n")
+        try:
+            p = subprocess.run(["shacl", "validate", "--shapes", shapes, "--data", data, "--text"],
+                               capture_output=True, text=True, timeout=900)
+        except (OSError, subprocess.TimeoutExpired) as e:
+            raise Broken(f"shacl: {e}")
+        text = p.stdout.strip()
+        if p.returncode != 0 or not (text == "Conforms" or text.startswith("Node=")):
+            raise Broken(f"shacl exit {p.returncode}: {(p.stderr or p.stdout).strip()[-200:]}")
+        out = {}
+        for block in re.split(r"(?m)^(?=Node=)", text):
+            node = re.match(r"Node=(\S+)", block)
+            if not node:
+                continue
+            msg = re.search(r"Message:\s*(.+)", block)
+            path = re.search(r"Path=(\S+)", block)
+            line = f"{node.group(1)} {path.group(1) if path else ''}: {msg.group(1).strip() if msg else 'violation'}"
+            for d in owner.get(node.group(1), ()):
+                out.setdefault(d, []).append(line)
+        return out
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def domain_shacl(domain):
+    """The domain's rows (and its Domain row) against their shapes: one line per validation
+    result. In a policy-validate full run (POLICY_RUN_DIR + POLICY_RUN_ALL_DOMAINS) the first
+    call validates every domain in one pass and the rest read that run's answer."""
+    run = os.environ.get("POLICY_RUN_DIR")
+    if not (run and os.environ.get("POLICY_RUN_ALL_DOMAINS")):
+        return shacl_by_domain(domain).get(domain, [])
+    cache = os.path.join(run, "domain-shacl.json")
+    if not os.path.exists(cache):
+        tmp = f"{cache}.{os.getpid()}"
+        with open(tmp, "w") as f:
+            json.dump(shacl_by_domain(None), f)
+        os.replace(tmp, cache)
+    with open(cache) as f:
+        return json.load(f).get(domain, [])
+
+
+DOMAIN_COUNTERS = {
+    "domain-no-side-door": domain_side_door,
+    "domain-has-tests": domain_has_tests,
+    "domain-shacl-conforms": domain_shacl,
+}
+
+
 COUNTERS = {
     "arch-cmdb-service-registered": cmdb_service_registered,
     "arch-compute-decoupled-via-store": compute_decoupled_via_store,
@@ -551,11 +721,19 @@ COUNTERS = {
 
 
 def main(argv):
-    if len(argv) != 2 or argv[1] not in COUNTERS:
-        print("usage: policy-count <" + "|".join(COUNTERS) + ">", file=sys.stderr)
+    if len(argv) == 3 and argv[1] in DOMAIN_COUNTERS:
+        if not re.match(r"^[a-z0-9]+(-[a-z0-9]+)*$", argv[2]):
+            print(f"policy-count: not a domain name: {argv[2]!r}", file=sys.stderr)
+            return 2
+        count = lambda: DOMAIN_COUNTERS[argv[1]](argv[2])
+    elif len(argv) == 2 and argv[1] in COUNTERS:
+        count = COUNTERS[argv[1]]
+    else:
+        print("usage: policy-count <" + "|".join(COUNTERS) + ">\n"
+              "       policy-count <" + "|".join(DOMAIN_COUNTERS) + "> <domain>", file=sys.stderr)
         return 2
     try:
-        for line in COUNTERS[argv[1]]():
+        for line in count():
             print(line)
     except Broken as e:
         print(f"policy-count {argv[1]}: cannot measure: {e}", file=sys.stderr)

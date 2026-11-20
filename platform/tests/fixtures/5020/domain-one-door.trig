@@ -1,0 +1,7 @@
+# @domain: policies
+# #5020 — one violation of domain-one-door: x has no server.bind Property (no generated door); y has one.
+@prefix c: <https://jeffbridwell.com/chorus#> .
+<urn:chorus:domains:domains> { c:x a c:Domain ; c:ownedBy c:principal-wren ; c:hasProperty c:property-x-store-kind .
+                               c:y a c:Domain ; c:ownedBy c:principal-wren ; c:hasProperty c:property-y-server-bind . }
+<urn:chorus:domains:properties> { c:property-x-store-kind c:propertyKey "store.kind" .
+                                  c:property-y-server-bind c:propertyKey "server.bind" . }

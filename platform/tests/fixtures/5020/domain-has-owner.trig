@@ -1,0 +1,5 @@
+# @domain: policies
+# #5020 — one violation of domain-has-owner: the Domain row of x names no owner (y does).
+@prefix c: <https://jeffbridwell.com/chorus#> .
+<urn:chorus:domains:domains> { c:x a c:Domain ; c:instancesGraph "urn:chorus:domains:x" .
+                               c:y a c:Domain ; c:instancesGraph "urn:chorus:domains:y" ; c:ownedBy c:principal-wren . }
