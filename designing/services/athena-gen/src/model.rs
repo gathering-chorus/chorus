@@ -413,6 +413,14 @@ fn class(store: &Store, domain: &str, iri: &str, prefix: Option<&str>, product: 
         }
     }
     for m in &mut merged {
+        // #3749/#4291 (athena-make's rule) — label and comment are read from chorus: then
+        // rdfs: and written under both, whichever the shape declared: rows the door wrote
+        // under <ns>label before a shape named rdfs:label must still read back
+        if (m.name == "label" || m.name == "comment") && !m.iris.is_empty() {
+            for i in [format!("{ns}{}", m.name), format!("http://www.w3.org/2000/01/rdf-schema#{}", m.name)] {
+                if !m.iris.contains(&i) { m.iris.push(i); }
+            }
+        }
         m.iris.sort_by_key(|i| (!i.starts_with(ns), i.clone()));
         m.iris.dedup();
     }

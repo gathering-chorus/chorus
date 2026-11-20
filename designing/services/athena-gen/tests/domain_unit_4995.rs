@@ -90,27 +90,29 @@ fn a_field_keeps_its_own_iris_and_twins_are_one_field() {
     let of = |n: &str| f.iter().filter(|x| x.name == n).map(|x| x.iris.clone()).collect::<Vec<_>>();
     assert_eq!(of("label"), vec![vec!["https://jeffbridwell.com/chorus#label".to_string(), "http://www.w3.org/2000/01/rdf-schema#label".to_string()]],
         "one label field, chorus first");
-    assert_eq!(of("comment"), vec![vec!["http://www.w3.org/2000/01/rdf-schema#comment".to_string()]]);
+    // comment, like label, always probes chorus: then rdfs: (athena-make #3749/#4291)
+    assert_eq!(of("comment"), vec![vec!["https://jeffbridwell.com/chorus#comment".to_string(), "http://www.w3.org/2000/01/rdf-schema#comment".to_string()]]);
     assert_eq!(of("statement"), vec![vec!["https://jeffbridwell.com/chorus#statement".to_string()]]);
     let model_rs = athena_gen::emit::model_rs(&p, "test", &settings(&store, "principles").unwrap());
     assert!(model_rs.contains("iris: &[\"https://jeffbridwell.com/chorus#label\", \"http://www.w3.org/2000/01/rdf-schema#label\"]"), "the crate carries both IRIs");
 }
 
 /// Borg Queen 18:36 — a twin field's IRIs belong to its class: in one unit, Principle
-/// declares label under chorus: and rdfs:, Tenet only under chorus:. NEGATIVE PROOF:
-/// Tenet's label must not pick up rdfs:label, and the crate says so per class.
+/// declares source under chorus: and dcterms:, Tenet only under chorus:. NEGATIVE PROOF:
+/// Tenet's source must not pick up dcterms:source. (label and comment always carry both,
+/// by athena-make's rule, so they cannot show the scoping.)
 #[test]
 fn twin_iris_stay_in_their_class() {
     let ttl = FIXTURE.replace("c:definesVocabulary c:Principle ;", "c:definesVocabulary c:Principle, c:Tenet ;").replace(
         "sh:property [ sh:path c:statement ; sh:datatype xsd:string ; sh:minCount 1 ] .",
-        "sh:property [ sh:path c:label ; sh:datatype xsd:string ] , \
-         [ sh:path <http://www.w3.org/2000/01/rdf-schema#label> ; sh:datatype xsd:string ] .\n\
+        "sh:property [ sh:path c:source ; sh:datatype xsd:string ] , \
+         [ sh:path <http://purl.org/dc/terms/source> ; sh:datatype xsd:string ] .\n\
          c:TenetShape a sh:NodeShape ; sh:targetClass c:Tenet ; c:instancesGraph \"urn:chorus:domains:principles\" ;\n\
-           sh:property [ sh:path c:label ; sh:datatype xsd:string ] .");
+           sh:property [ sh:path c:source ; sh:datatype xsd:string ] .");
     let (store, _) = load(&[fixture("scoped", &ttl)]).unwrap();
     let p = domain(&store, "principles").unwrap();
-    let label = |class: &str| p.domains[0].classes.iter().find(|c| c.name == class).unwrap()
-        .fields.iter().find(|f| f.name == "label").unwrap().iris.clone();
-    assert_eq!(label("Principle").len(), 2, "{:?}", label("Principle"));
-    assert_eq!(label("Tenet"), vec!["https://jeffbridwell.com/chorus#label".to_string()]);
+    let source = |class: &str| p.domains[0].classes.iter().find(|c| c.name == class).unwrap()
+        .fields.iter().find(|f| f.name == "source").unwrap().iris.clone();
+    assert_eq!(source("Principle").len(), 2, "{:?}", source("Principle"));
+    assert_eq!(source("Tenet"), vec!["https://jeffbridwell.com/chorus#source".to_string()]);
 }

@@ -64,8 +64,8 @@ pub const CLASSES: &[ClassDef] = &[
     ClassDef {
         domain: "principles", name: "Principle", kind: "principle", plural: "principles", segment: "principles", graph: "urn:chorus:domains:principles", store: "graph", composed: false,
         fields: &[
-            FieldDef { name: "comment", iris: &["http://www.w3.org/2000/01/rdf-schema#comment"], link: false, datatype: "string", required: true, many: false, allowed: &[] },
-            FieldDef { name: "label", iris: &["http://www.w3.org/2000/01/rdf-schema#label"], link: false, datatype: "string", required: true, many: false, allowed: &[] },
+            FieldDef { name: "comment", iris: &["https://jeffbridwell.com/chorus#comment", "http://www.w3.org/2000/01/rdf-schema#comment"], link: false, datatype: "string", required: true, many: false, allowed: &[] },
+            FieldDef { name: "label", iris: &["https://jeffbridwell.com/chorus#label", "http://www.w3.org/2000/01/rdf-schema#label"], link: false, datatype: "string", required: true, many: false, allowed: &[] },
             FieldDef { name: "jeffReading", iris: &["https://jeffbridwell.com/chorus#jeffReading"], link: false, datatype: "string", required: true, many: false, allowed: &[] },
             FieldDef { name: "order", iris: &["https://jeffbridwell.com/chorus#order"], link: false, datatype: "integer", required: true, many: false, allowed: &[] },
             FieldDef { name: "ownedBy", iris: &["https://jeffbridwell.com/chorus#ownedBy"], link: true, datatype: "", required: true, many: false, allowed: &[] },
