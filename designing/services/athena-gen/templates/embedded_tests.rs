@@ -285,10 +285,11 @@ fn a_stream_sorts_newest_first_and_pages_back_by_a_bound() {
 
 // ── #5017: a row another door wrote under its bare name reads and writes in place ──
 
-/// One row stored as athena-make wrote every principle: subject `<NS><name>`, no kind prefix.
+/// One row stored as athena-make wrote every principle: subject `<NS><name>`, no kind prefix,
+/// in the seeded store (so a new row's links have targets).
 fn bare_row(name: &str) -> Sparql {
     let c = any_class();
-    let e = Embedded::memory();
+    let e = seeded();
     e.update(&format!(
         "INSERT DATA {{ GRAPH <{g}> {{ <{NS}{name}> a <{NS}{cls}> ; <{NS}ownedBy> <{NS}principal-wren> ; <http://www.w3.org/2000/01/rdf-schema#label> \"before\" }} }}",
         g = c.graph, cls = c.name
