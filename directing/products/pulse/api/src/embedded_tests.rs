@@ -319,6 +319,17 @@ fn a_bare_named_row_reads_by_its_name() {
 }
 
 #[test]
+fn a_bare_named_row_reads_through_the_seen_by_path_too() {
+    let c = any_class();
+    let store = bare_row("hemenway-observe");
+    let wren = format!("{NS}principal-wren");
+    let row = store.get_seen_by(c, "hemenway-observe", &wren).unwrap().expect("its owner sees the bare-named row");
+    assert_eq!(row["name"], json!("hemenway-observe"), "{row:?}");
+    // NEGATIVE PROOF: someone else still does not see it
+    assert!(store.get_seen_by(c, "hemenway-observe", &format!("{NS}principal-stranger")).unwrap().is_none());
+}
+
+#[test]
 fn a_patch_to_a_bare_named_row_writes_that_row_not_a_new_one() {
     let c = any_class();
     let store = bare_row("hemenway-observe");

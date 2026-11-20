@@ -25,7 +25,7 @@ type Row = Record<string, string>;
 function fakeUpstream(names: string[], entities: Record<string, Row>) {
   return async (url: string | URL | Request): Promise<Response> => {
     const href = typeof url === 'string' ? url : url.toString();
-    if (href.endsWith('/principles')) {
+    if (href.endsWith('/principles/principles')) {
       return new Response(JSON.stringify({ data: names.map((n) => ({ name: n })) }), { status: 200 });
     }
     const name = decodeURIComponent(href.split('/principles/principles/')[1] ?? '');

@@ -50,7 +50,7 @@ start() {
 healthy() {
   local port="$1" i
   for i in $(seq 1 60); do
-    curl -sf --max-time 2 "http://127.0.0.1:$port/health" | grep -q '"product":"principles"\|"product": "principles"' && return 0
+    curl -sf --max-time 2 "http://127.0.0.1:$port/health" | grep -qE '"product": ?"principles"' && return 0
     sleep 0.5
   done
   return 1
