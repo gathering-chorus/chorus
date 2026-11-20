@@ -32,7 +32,7 @@ fn slot_rule_broken(name: &str, yaml: &str) -> Option<String> {
 }
 
 fn pipelines() -> Vec<(String, String)> {
-    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../pipelines");
+    let dir = std::path::PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("cargo sets CARGO_MANIFEST_DIR")).join("../../pipelines");
     let mut out: Vec<(String, String)> = std::fs::read_dir(&dir)
         .expect("platform/pipelines")
         .flatten()

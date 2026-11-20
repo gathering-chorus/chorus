@@ -64,8 +64,9 @@ printf 'fn main() {}\n' > platform/services/chorus-inject/src/main.rs
 printf '<plist><string>chorus-inject</string></plist>' > config/launchagents/com.chorus.inject.plist
 printf '{"name":"chorus-api","scripts":{"build":"tsc"}}' > platform/api/package.json
 git add . >/dev/null && git -c user.email=t@t -c user.name=t commit -qm "silas: #9999 fixture" >/dev/null
-mkdir -p platform/services/chorus-inject/target/release
-printf 'BINARY-V1' > platform/services/chorus-inject/target/release/chorus-inject
+# #4555: one workspace — the build lands in the checkout's folder for this account
+mkdir -p "target/$(id -un)/release"
+printf 'BINARY-V1' > "target/$(id -un)/release/chorus-inject"
 
 # --- stubs (PATH precedence) ---
 cat > "$STUB/chorus-bin-install" <<EOF
@@ -121,7 +122,7 @@ cat > "$STUB/codesign" <<EOF
 for last; do :; done
 [ -e "\$last" ] || { echo "\$last: No such file" >&2; exit 1; }
 case "\$*" in
-  *target/release*) echo "CDHash=DEADBEEF" ;;
+  */target/*/release/*) echo "CDHash=DEADBEEF" ;;
   *) if [ -f "\$CS_MARKER" ]; then echo "CDHash=DEADBEEF"; else echo "CDHash=OLD000"; fi ;;
 esac
 EOF
