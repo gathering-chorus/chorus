@@ -1617,6 +1617,18 @@ SHIM="${CHORUS_ROOT}/target/chorus-kade/release/chorus-hook-shim"
     }
 
     #[test]
+    fn a_repo_root_file_is_exercised_by_a_test_that_names_it() {
+        let rows = vec![
+            TestRow { file_path: "platform/tests/ws.bats".into(), covers: String::new(), pyramid_layer: String::new(), hermeticity: String::new(), test_concern: String::new(), needs: String::new() },
+            TestRow { file_path: "platform/tests/other.bats".into(), covers: String::new(), pyramid_layer: String::new(), hermeticity: String::new(), test_concern: String::new(), needs: String::new() },
+        ];
+        let text = |p: &str| Some(if p.ends_with("ws.bats") { "grep -q x \"$r/Cargo.lock\"".to_string() } else { "Cargo.lockfile Cargo".to_string() });
+        assert_eq!(exercisers_of("Cargo.lock", &rows, &text, &|_| None, None), vec!["platform/tests/ws.bats".to_string()]);
+        // NEGATIVE PROOF: a longer name or the bare stem is not the file
+        assert!(exercisers_of("Cargo.toml", &rows, &text, &|_| None, None).is_empty());
+    }
+
+    #[test]
     fn a_binary_builds_in_the_workspace_its_own_crate_or_not_at_all() {
         let ws = vec!["werk-test".to_string(), "chorus-hook-shim".to_string()];
         assert_eq!(bin_build_plan("chorus-hook-shim", &ws, None), BinBuild::Workspace);
@@ -6426,7 +6438,13 @@ pub fn exercisers_of(
     crate_of: &dyn Fn(&str) -> Option<String>,
     changed_routes: Option<&[String]>,
 ) -> Vec<String> {
+    // #4555 — a repo-root file (Cargo.toml, Cargo.lock: the workspace) has no folder
+    // to key on, so a test exercises it by naming the file itself, e.g. `$ROOT/Cargo.lock`
+    let at_root = !f.contains('/');
     let mut out: Vec<String> = match (mention_key(f), crate_of(f)) {
+        _ if at_root => rows.iter().map(|r| &r.file_path)
+            .filter(|p| text_of(p).is_some_and(|t| mentions(&t, f)))
+            .cloned().collect(),
         (None, Some(c)) => rows.iter().map(|r| &r.file_path)
             .filter(|p| p.starts_with(&format!("{c}/"))).cloned().collect(),
         // inside a TS package `src/server` names a different file in every
