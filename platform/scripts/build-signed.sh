@@ -134,6 +134,9 @@ checkout="$(git -C "$crate_dir" rev-parse --show-toplevel 2>/dev/null)" || {
   exit 1
 }
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$checkout/target/$(id -un)}"
+# #4555 — a caller's PATH may not hold rustup's cargo (chorus-api's runner did not:
+# "cargo: command not found", 11-20 05:12); the account's own toolchain is the one.
+case ":$PATH:" in *":$HOME/.cargo/bin:"*) ;; *) [ -d "$HOME/.cargo/bin" ] && export PATH="$HOME/.cargo/bin:$PATH" ;; esac
 echo "build-signed: cargo build --release in $crate_dir (target $CARGO_TARGET_DIR)"
 (cd "$crate_dir" && cargo build --release)
 
