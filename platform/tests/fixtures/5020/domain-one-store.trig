@@ -1,0 +1,5 @@
+# @domain: policies
+# #5020 — one violation of domain-one-store: x names two stores (instancesGraph twice); y one.
+@prefix c: <https://jeffbridwell.com/chorus#> .
+<urn:chorus:domains:domains> { c:x a c:Domain ; c:ownedBy c:principal-wren ; c:instancesGraph "urn:chorus:domains:x", "urn:chorus:domains:x2" .
+                               c:y a c:Domain ; c:ownedBy c:principal-wren ; c:instancesGraph "urn:chorus:domains:y" . }

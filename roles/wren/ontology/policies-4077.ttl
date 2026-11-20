@@ -39,6 +39,14 @@ chorus:violationFixture a owl:DatatypeProperty ; rdfs:label "violation fixture" 
     rdfs:comment "A replay of a real violation that must trip the check (#3734). A check without one cannot gate." ;
     rdfs:domain chorus:Policy ; rdfs:range xsd:string .
 
+# #5020 — a policy's scope. Unset, it applies to every domain (Jeff via Wren, 11-20); set, to
+# those domains only, and one policy may cover several. A checkSpec naming {domain} runs once
+# per domain in scope; `policy-validate --domain X` is the lint of one domain. Scope is this one
+# field; gate still says which review runs the check (Silas, 11-20).
+chorus:appliesTo a owl:ObjectProperty ; rdfs:label "applies to" ;
+    rdfs:comment "The domains this policy applies to. None means every domain." ;
+    rdfs:domain chorus:Policy ; rdfs:range chorus:Domain .
+
 chorus:PolicyShape a sh:NodeShape ;
     sh:targetClass chorus:Policy ; sh:node chorus:CoreShape ;
     rdfs:comment "A binary team rule, in plain words, and the hook that holds it when one does." ;
@@ -64,6 +72,8 @@ chorus:PolicyShape a sh:NodeShape ;
                   sh:description "Optional. sparql, test, command or runtime." ] ;
     sh:property [ sh:path chorus:checkSpec ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:name "check spec" ;
                   sh:description "Required with a check. What runs." ] ;
+    sh:property [ sh:path chorus:appliesTo ; sh:nodeKind sh:IRI ; sh:class chorus:Domain ; sh:name "applies to" ;
+                  sh:description "Optional. The domains this policy applies to; none means every domain." ] ;
     sh:property [ sh:path chorus:violationFixture ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:name "violation fixture" ;
                   sh:description "Required with a check. The replay of a real violation that must trip it." ] ;
     # a policy with a check carries all of it, or it cannot gate

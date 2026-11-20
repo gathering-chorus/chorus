@@ -1,0 +1,79 @@
+[
+  {
+    "name": "domain-has-owner",
+    "gate": "product",
+    "checkKind": "sparql",
+    "label": "A domain has a Domain row and an owner",
+    "comment": "Complete-domain rule (#5020, Jeff 11-20 09:03): the domain has its Domain row, and the row names who owns it. A domain nobody owns has nobody to make it green.",
+    "checkSpec": "SELECT ?problem WHERE { { FILTER NOT EXISTS { GRAPH <urn:chorus:domains:domains> { chorus:{domain} a chorus:Domain } } BIND(\"no Domain row\" AS ?problem) } UNION { GRAPH <urn:chorus:domains:domains> { chorus:{domain} a chorus:Domain FILTER NOT EXISTS { chorus:{domain} chorus:ownedBy ?o } } BIND(\"no owner\" AS ?problem) } }",
+    "status": "ratchet",
+    "baseline": "0",
+    "violationFixture": "platform/tests/fixtures/5020/domain-has-owner.trig"
+  },
+  {
+    "name": "domain-one-store",
+    "gate": "data",
+    "checkKind": "sparql",
+    "label": "A domain keeps its rows in one store",
+    "comment": "Complete-domain rule (#5020; Jeff 11-20 09:01, one and only one source of a type of data). Narrowed: the Domain row names exactly one instancesGraph, the one store its rows live in.",
+    "checkSpec": "SELECT ?problem WHERE { { SELECT (COUNT(DISTINCT ?ig) AS ?n) WHERE { OPTIONAL { GRAPH <urn:chorus:domains:domains> { chorus:{domain} chorus:instancesGraph ?ig } } } } FILTER(?n != 1) BIND(CONCAT(STR(?n), \" instancesGraph values\") AS ?problem) }",
+    "status": "ratchet",
+    "baseline": "27",
+    "violationFixture": "platform/tests/fixtures/5020/domain-one-store.trig"
+  },
+  {
+    "name": "domain-one-door",
+    "gate": "arch",
+    "checkKind": "sparql",
+    "label": "A domain is served by its own generated API door",
+    "comment": "Complete-domain rule (#5020; #4995 athena-gen doors). Narrowed: the Domain row carries a server.bind Property, the setting its generated API is served from (athena-make stops mounting a domain that has one, #5017).",
+    "checkSpec": "SELECT ?problem WHERE { FILTER NOT EXISTS { GRAPH <urn:chorus:domains:domains> { chorus:{domain} chorus:hasProperty ?b } GRAPH <urn:chorus:domains:properties> { ?b chorus:propertyKey \"server.bind\" } } BIND(\"no generated API door (no server.bind Property)\" AS ?problem) }",
+    "status": "ratchet",
+    "baseline": "63",
+    "violationFixture": "platform/tests/fixtures/5020/domain-one-door.trig"
+  },
+  {
+    "name": "domain-no-side-door",
+    "gate": "code",
+    "checkKind": "command",
+    "label": "No code reads or writes a domain's rows past its door",
+    "comment": "Complete-domain rule (#5020; DEC-093, ADR-048). Narrowed: code outside the domain's own unit (*/domains/<name>/) naming the domain's store graph, urn:chorus:domains:<name>. Tests, fixtures, the model and prose do not count.",
+    "checkSpec": "p=platform/scripts/policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" domain-no-side-door {domain}",
+    "status": "ratchet",
+    "baseline": "169",
+    "violationFixture": "platform/tests/fixtures/5020/domain-no-side-door.sh"
+  },
+  {
+    "name": "domain-has-tests",
+    "gate": "quality",
+    "checkKind": "command",
+    "label": "A domain has tests",
+    "comment": "Complete-domain rule (#5020). Narrowed: at least one tracked test file carries @domain: <name> (#4334's header).",
+    "checkSpec": "p=platform/scripts/policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" domain-has-tests {domain}",
+    "status": "ratchet",
+    "baseline": "19",
+    "violationFixture": "platform/tests/fixtures/5020/domain-has-tests.sh"
+  },
+  {
+    "name": "domain-referential-integrity",
+    "gate": "data",
+    "checkKind": "sparql",
+    "label": "Every link from a domain's rows reaches a row",
+    "comment": "Complete-domain rule (#5020). Every chorus IRI a row in the domain's graph links to (rdf:type aside) is the subject of a row somewhere in the store. Runs on its own; it waits on neither #4049 nor #5019 (Borg Queen, 11-20).",
+    "checkSpec": "SELECT DISTINCT ?s ?p ?o WHERE { GRAPH <urn:chorus:domains:{domain}> { ?s ?p ?o FILTER(isIRI(?o) && STRSTARTS(STR(?o), STR(chorus:)) && ?p != rdf:type) } FILTER NOT EXISTS { GRAPH ?any { ?o ?pp ?oo } } }",
+    "status": "ratchet",
+    "baseline": "77",
+    "violationFixture": "platform/tests/fixtures/5020/domain-referential-integrity.trig"
+  },
+  {
+    "name": "domain-shacl-conforms",
+    "gate": "data",
+    "checkKind": "command",
+    "label": "A domain's rows conform to their shapes",
+    "comment": "Complete-domain rule (#5020 AC5): the domain's rows and its Domain row, validated by Jena's SHACL against the live shapes, with the types of the rows they link to. Each validation result is a violation, so the shape and the policy push the same domain to green.",
+    "checkSpec": "p=platform/scripts/policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" domain-shacl-conforms {domain}",
+    "status": "ratchet",
+    "baseline": "913",
+    "violationFixture": "platform/tests/fixtures/5020/domain-shacl-conforms.sh"
+  }
+]
