@@ -18,7 +18,7 @@ const entity = (name: string, fields: Record<string, string>) => ({
   json: async () => ({ data: { iri: `https://jeffbridwell.com/chorus#${name}`, ...fields } }),
 }) as unknown as Response;
 
-describe('#3749 fetchLoomPrinciples via athena-make', () => {
+describe('#3749 fetchLoomPrinciples via principles-api (#5017)', () => {
   test('folds list + entity reads into the legacy envelope shape', async () => {
     const fetchFn = jest.fn(async (url: RequestInfo | URL) => {
       const u = String(url);

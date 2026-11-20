@@ -21,14 +21,14 @@ import { fetchLoomPrinciples } from '../src/handlers/loom-principles';
 
 type Row = Record<string, string>;
 
-/** A fake athena-make: `names` is what the collection reports, `entities` what resolves. */
+/** A fake principles-api (#5017): `names` is what the collection reports, `entities` what resolves. */
 function fakeUpstream(names: string[], entities: Record<string, Row>) {
   return async (url: string | URL | Request): Promise<Response> => {
     const href = typeof url === 'string' ? url : url.toString();
     if (href.endsWith('/principles')) {
       return new Response(JSON.stringify({ data: names.map((n) => ({ name: n })) }), { status: 200 });
     }
-    const name = decodeURIComponent(href.split('/principles/')[1] ?? '');
+    const name = decodeURIComponent(href.split('/principles/principles/')[1] ?? '');
     const row = entities[name];
     if (!row) return new Response(JSON.stringify({ kind: 'Error' }), { status: 404 });
     return new Response(JSON.stringify({ data: row }), { status: 200 });

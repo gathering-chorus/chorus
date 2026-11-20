@@ -2535,8 +2535,15 @@ app.use('/owl', async (req: Request, res: Response) => {
   }
   // read at request time so tests can stub the upstream after import
   const owlUpstream = process.env.OWL_UPSTREAM || 'http://127.0.0.1:3360';
+  // #5017 — principles is served by its own generated API (athena-gen, :3393) at
+  // /principles/...; athena-make no longer mounts it. The public path stays /owl/v1/principles/.
+  const path = req.originalUrl.replace(/^\/owl/, '');
+  const principles = /^\/v1\/principles(\/|\?|$)/.test(path);
+  const target = principles
+    ? (process.env.PRINCIPLES_UPSTREAM || 'http://127.0.0.1:3393') + path.replace(/^\/v1/, '')
+    : owlUpstream + path;
   try {
-    const r = await fetch(owlUpstream + req.originalUrl.replace(/^\/owl/, ''), {
+    const r = await fetch(target, {
       headers: { Accept: String(req.headers.accept || 'application/json') },
     });
     res.status(r.status);
@@ -2544,7 +2551,7 @@ app.use('/owl', async (req: Request, res: Response) => {
     if (ct) res.type(ct);
     res.send(Buffer.from(await r.arrayBuffer()));
   } catch {
-    res.status(502).json({ error: 'athena-make unreachable through the proxy' });
+    res.status(502).json({ error: `${principles ? 'principles-api' : 'athena-make'} unreachable through the proxy` });
   }
 });
 

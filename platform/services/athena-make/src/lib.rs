@@ -1170,14 +1170,22 @@ pub fn project_domain_vocab_index(domain: &str, classes: &[&str]) -> String {
     )
 }
 
+/// #5017 — the domains served by their own generated API: a Domain row carrying a
+/// `server.bind` Property (the settings athena-gen's crate listens on).
+pub const OWN_DOOR_FILTER: &str = "FILTER NOT EXISTS { GRAPH <urn:chorus:domains:domains> { ?d chorus:hasProperty ?own } GRAPH <urn:chorus:domains:properties> { ?own chorus:propertyKey \"server.bind\" } }";
+
 /// #3494 — enumerate EVERY class any domain `definesVocabulary` across the model
 /// (distinct, sorted). The serve fan-out uses this to mount every vocabulary
 /// surface on one origin: each class generates its #3454 CRUD table and dispatches
 /// via the existing `select_table`. Zero edges → empty Vec (serve adds nothing).
+///
+/// #5017 — a domain that declares its own `server.bind` Property is served by its own
+/// generated API (athena-gen), so this door does not mount its classes: one door per
+/// domain, read from the model, never a list in code. Principles is the first.
 pub fn all_vocab_classes() -> R<Vec<String>> {
     let q = format!(
-        "PREFIX chorus: <{ns}> SELECT DISTINCT ?v WHERE {{ GRAPH <{g}> {{ ?d chorus:definesVocabulary ?c BIND(REPLACE(STR(?c), '.*[#/]', '') AS ?v) }} }} ORDER BY ?v",
-        ns = NS, g = DOMAINS_GRAPH
+        "PREFIX chorus: <{ns}> SELECT DISTINCT ?v WHERE {{ GRAPH <{g}> {{ ?d chorus:definesVocabulary ?c BIND(REPLACE(STR(?c), '.*[#/]', '') AS ?v) }} {own} }} ORDER BY ?v",
+        ns = NS, g = DOMAINS_GRAPH, own = OWN_DOOR_FILTER
     );
     let mut cs = select_v(&sparql_json(&q)?);
     cs.sort();

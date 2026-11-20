@@ -1,7 +1,7 @@
 // @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #2450 — Live principles injection into SessionStart envelope.
 //!
-//! Boot fetches the canonical principle set (athena-make /v1/principles/principles, #4353), renders
+//! Boot fetches the canonical principle set (principles-api through the /owl door, #5017), renders
 //! a `## Principles (live from graph)` section into additionalContext, writes
 //! a sibling hash file for cross-role drift detection, and falls back to a
 //! last-known-good cache when the API is unavailable.
@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs;
 
-const DEFAULT_API_URL: &str = "http://localhost:3360/v1/principles/principles";
+const DEFAULT_API_URL: &str = "http://localhost:3340/owl/v1/principles/principles";
 const DEFAULT_CACHE_PATH: &str = "/tmp/principles-cache.json";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -288,6 +288,6 @@ mod tests {
 
     #[test]
     fn the_default_source_is_the_door_not_an_mcp_server() {
-        assert_eq!(DEFAULT_API_URL, "http://localhost:3360/v1/principles/principles");
+        assert_eq!(DEFAULT_API_URL, "http://localhost:3340/owl/v1/principles/principles");
     }
 }

@@ -7,7 +7,7 @@
 
 use crate::auth::Caller;
 use crate::model::{ClassDef, FieldDef, NS, PREFIX};
-use crate::store::{iri, Row, RowStore};
+use crate::store::{Row, RowStore};
 use serde_json::{json, Map, Value};
 
 pub struct Refusal {
@@ -125,10 +125,6 @@ pub fn event(command: &str, caller: &str, op: &str, class: &ClassDef, name: &str
     } else {
         eprintln!("event owl.write {caller} {}", fields.join(" "));
     }
-}
-
-pub fn subject(class: &ClassDef, name: &str) -> String {
-    iri(class, name)
 }
 
 /// #4742 gap 7 (the door's #4717 rule, same spelling): the one spelling of a decimal Jena can

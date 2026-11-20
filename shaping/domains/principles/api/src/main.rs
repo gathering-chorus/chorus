@@ -136,7 +136,8 @@ pub fn write(ctx: &Ctx, caller: &auth::Caller, method: &str, class: &ClassDef, n
         (_, Some(n)) => n.to_string(),
         _ => return error(405, "method", "this route takes GET and POST"),
     };
-    let s = rules::subject(class, &name);
+    // #5017 — a row another door wrote keeps its subject; a new row gets the minted one
+    let s = match ctx.store.subject_of(class, &name) { Ok(s) => s, Err(m) => return error(503, "store", &m) };
     // #4757 — every refusal past this point is on the spine: pulse's role-state replaces failed
     // for an evening with nothing logged, because these 503s returned before any event
     let prior = match ctx.store.get(class, &name) { Ok(p) => p, Err(m) => { rules::event(&ctx.events, &caller.principal, "read", class, &name, "store-error"); return error(503, "store", &m) } };
