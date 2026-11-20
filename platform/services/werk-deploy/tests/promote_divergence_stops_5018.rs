@@ -1,22 +1,29 @@
 // @test-type: unit
 // @domain: builds
-//! #5018 — AC3: a promoted divergence never ends green. #4555's land
-//! (11-20 10:15) promoted run 8's werk-test (cdhash ed73d4f9…) while Jeff's demo
-//! was run 9's (ec8ee06a…): deploy.cdhash.diverged was only a warning and the
-//! land finished green with the other binary in prod.
+//! #5018 AC3: a promoted crate's divergence never ends green. The plan is decided for
+//! every crate before any copy: one diverged crate fails the whole plan, so no crate of
+//! that land is copied, installed or reported deployed.
+//! #4555 land (11-20 10:15) promoted run 8 werk-test (cdhash ed73d4f9) while
+//! the demo Jeff saw was run 9 (ec8ee06a); the divergence only warned and the land went green.
+use werk_deploy::{promote_plan, PromoteVerdict};
 
+const RUN8: &str = "ed73d4f980e7876f67cbdabd20420f37894d2931";
+const RUN9: &str = "ec8ee06a219faed7efc7ebf2e918de7962198ae6";
+
+fn p(c: &str, h: &str) -> (String, String) { (c.to_string(), h.to_string()) }
 
 #[test]
-fn a_promoted_divergence_stops_the_land_before_any_install() {
-    // structural: the refusal returns Err from promote_crates (before the copy and before
-    // any install), and the later divergence block also returns Err for a promoted crate,
-    // so deploy.cdhash.diverged on a promoted crate can never be followed by deploy.completed
-    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/lib.rs")).unwrap();
-    let promote = src.find("fn promote_crates(").expect("promote_crates is gone: this check must be moved, not dropped");
-    let body = &src[promote..];
-    let refuse = body.find("promote_verdict(demo, c, file_hash.as_deref())").expect("promote no longer checks the demo cdhash");
-    let copy = body.find("\"cp\", &[\"-c\"").expect("promote copy moved");
-    assert!(refuse < copy, "the demo check must come before the copy");
-    assert!(src.contains("promoted_names.contains(c)"), "the divergence block no longer stops on a promoted crate");
-    assert!(src.contains("&crates, &demo)?;"), "deploy_canonical no longer stops on a refused promote");
+fn one_diverged_crate_fails_the_whole_plan_even_after_a_matching_one() {
+    let demo = [p("werk-build", RUN9), p("werk-test", RUN9)];
+    let cands = [("werk-build".to_string(), vec![Some(RUN9.to_string())]), ("werk-test".to_string(), vec![Some(RUN8.to_string())])];
+    let r = promote_plan(&demo, &cands);
+    assert!(r.is_err(), "werk-build matched but werk-test diverged: nothing may ship, got {r:?}");
+}
+
+#[test]
+fn control_an_all_matching_plan_ships_every_crate() {
+    let demo = [p("werk-build", RUN9), p("werk-test", RUN8)];
+    let cands = [("werk-build".to_string(), vec![Some(RUN9.to_string())]), ("werk-test".to_string(), vec![Some(RUN8.to_string())])];
+    let plan = promote_plan(&demo, &cands).unwrap();
+    assert_eq!(plan, vec![("werk-build".to_string(), PromoteVerdict::Ship(RUN9.into())), ("werk-test".to_string(), PromoteVerdict::Ship(RUN8.into()))]);
 }
