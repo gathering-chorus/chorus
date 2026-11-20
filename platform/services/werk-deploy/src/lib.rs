@@ -2227,11 +2227,41 @@ pub fn may_promote(werk: &[(String, String)], main: &[(String, String)]) -> bool
         && werk.iter().zip(main).all(|((p1, t1), (p2, t2))| p1 == p2 && !t1.is_empty() && t1 == t2)
 }
 
+/// #5018 — may the land install this promoted file? Only when it is the binary the demo
+/// proved: its cdhash equals the demo's for the crate. #4555's land promoted run 8's
+/// werk-test (ed73d4f9) while Jeff's demo was run 9's (ec8ee06a), warned, and went green.
+#[derive(Debug, PartialEq, Eq)]
+pub enum PromoteVerdict {
+    /// the file is the demo's binary
+    Ship,
+    /// the file is not the demo's binary: stop before any install
+    Refuse { demo: String, file: String },
+    /// no demo cdhash recorded for the crate (or the file's could not be read): the
+    /// #3316 unverified case, reported, not compared
+    Unverified,
+}
+
+/// #5018 — the verdict for crate `krate` whose built file has cdhash `file`. Pure.
+pub fn promote_verdict(demo: &[(String, String)], krate: &str, file: Option<&str>) -> PromoteVerdict {
+    match (demo.iter().find(|(c, _)| c == krate), file) {
+        (Some((_, d)), Some(f)) if d == f => PromoteVerdict::Ship,
+        (Some((_, d)), Some(f)) => PromoteVerdict::Refuse { demo: d.clone(), file: f.to_string() },
+        (Some((_, d)), None) => PromoteVerdict::Refuse { demo: d.clone(), file: "(unreadable)".into() },
+        (None, _) => PromoteVerdict::Unverified,
+    }
+}
+
+/// #5018 — the land's stop line for a refused promote: names the crate and both cdhashes. Pure.
+pub fn promote_refusal(krate: &str, demo: &str, file: &str) -> String {
+    format!("{krate}: the binary the land would install (cdhash {file}) is not the one the demo proved \
+(cdhash {demo}); nothing installed. Run the card again so the demo and the land read one build.")
+}
+
 /// #4494 — split the card's crates into (promoted pairs, crates to rebuild).
 /// A promoted crate's binaries are cloned (cp -c) from the werk into
 /// canonical's target/release, where the install path already reads them.
-fn promote_crates(home: &Path, werk_s: &str, role: &str, card: u64, trace: &str, canon: &Path, crates: &[String])
-    -> (Vec<(String, String)>, Vec<String>) {
+fn promote_crates(home: &Path, werk_s: &str, role: &str, card: u64, trace: &str, canon: &Path, crates: &[String],
+    demo: &[(String, String)]) -> R<(Vec<(String, String)>, Vec<String>)> {
     let mut promoted = Vec::new();
     let mut rebuild = Vec::new();
     let tree = |rev: &str, p: &str| run_env(Some(werk_s), &[], "git", &["-C", werk_s, "rev-parse", &format!("{}:{}", rev, p)])
@@ -2252,6 +2282,14 @@ fn promote_crates(home: &Path, werk_s: &str, role: &str, card: u64, trace: &str,
                 &format!(",\"target\":\"canonical\",\"crate\":\"{}\",\"reason\":\"{}\"", c, why));
             rebuild.push(c.clone());
             continue;
+        }
+        // #5018 — match or stop: the file must be the demo's binary, checked before it is copied
+        let file_hash = file_cdhash(&built[0]);
+        if let PromoteVerdict::Refuse { demo: d, file: f } = promote_verdict(demo, c, file_hash.as_deref()) {
+            jsonl(home, role, card, trace, "deploy.cdhash.diverged",
+                &format!(",\"crate\":\"{}\",\"demo\":\"{}\",\"prod\":\"{}\",\"stage\":\"promote\"", c, d, f));
+            emit_spine(home, "deploy.cdhash.diverged", role, card, trace, &[("crate", c), ("demo", &d), ("prod", &f)]);
+            return Err(died(home, role, card, trace, "promote-not-demo", promote_refusal(c, &d, &f)));
         }
         let dst_dir = Path::new(&account_target_dir(&canon.to_string_lossy(), &account)).join("release");
         let _ = fs::create_dir_all(&dst_dir);
@@ -2276,7 +2314,7 @@ fn promote_crates(home: &Path, werk_s: &str, role: &str, card: u64, trace: &str,
             }
         }
     }
-    (promoted, rebuild)
+    Ok((promoted, rebuild))
 }
 
 fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &str, landed_commit: Option<&str>) -> R<String> {
@@ -2397,7 +2435,11 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
     let mut prod_hashes: Vec<(String, String)> = Vec::new();
     // #4494 — build once: a crate whose inputs are the same in the werk and on
     // main ships the binary the demo ran; any other crate builds from main.
-    let (promoted, rebuild) = promote_crates(home, werk_s, role, card, trace, &canon, &crates);
+    let demo = fs::read_to_string(home.join("ops/logs/werk-deploy.jsonl"))
+        .map(|c| demo_cdhashes(&c, card))
+        .unwrap_or_default();
+    let (promoted, rebuild) = promote_crates(home, werk_s, role, card, trace, &canon, &crates, &demo)?;
+    let promoted_names: Vec<String> = promoted.iter().map(|(c, _)| c.clone()).collect();
     prod_hashes.extend(promoted);
     if !rebuild.is_empty() {
         let only = rebuild.join(",");
@@ -2420,9 +2462,6 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
     // (follow-on: flip to refuse once proven). Rust crates only — TS dist-SHA determinism is
     // unproven, so TS is left for the follow-on rather than risk false-refusing TS lands.
     if !prod_hashes.is_empty() {
-        let demo = fs::read_to_string(home.join("ops/logs/werk-deploy.jsonl"))
-            .map(|c| demo_cdhashes(&c, card))
-            .unwrap_or_default();
         if demo.is_empty() {
             jsonl(home, role, card, trace, "deploy.cdhash.unverified",
                 ",\"reason\":\"no-demo-baseline\"");
@@ -2439,6 +2478,11 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
                         &format!(",\"crate\":\"{}\",\"demo\":\"{}\",\"prod\":\"{}\"", c, dh, ph));
                     emit_spine(home, "deploy.cdhash.diverged", role, card, trace,
                         &[("crate", c), ("demo", dh), ("prod", ph)]);
+                }
+                // #5018 — a promoted crate is the demo's binary or the land stops; a rebuilt
+                // one (main moved under it) stays a warning: its bytes depend on the folder
+                if let Some((c, dh, ph)) = div.iter().find(|(c, _, _)| promoted_names.contains(c)) {
+                    return Err(died(home, role, card, trace, "promote-not-demo", promote_refusal(c, dh, ph)));
                 }
             }
         }
