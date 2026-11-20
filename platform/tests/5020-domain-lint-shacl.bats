@@ -14,6 +14,8 @@ PLAN="$ROOT/designing/domains/policies/policy-checks-5020.json"
 PV="$ROOT/platform/scripts/policy-validate"
 COUNT="$ROOT/platform/scripts/policy-count"
 FX="$ROOT/platform/tests/fixtures/5020"
+# Named here so a change to it runs this suite (werk-test ties a file to the tests that name it):
+# platform/tests/fixtures/5020/domain-shacl-conforms.sh
 
 setup() {
   T="$BATS_TEST_TMPDIR"

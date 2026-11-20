@@ -13,6 +13,13 @@ ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 PLAN="$ROOT/designing/domains/policies/policy-checks-5020.json"
 PV="$ROOT/platform/scripts/policy-validate"
 FX="$ROOT/platform/tests/fixtures/5020"
+# Named here so a change to any of them runs this suite (werk-test ties a file to the tests that name it).
+FIXTURES="platform/tests/fixtures/5020/domain-has-owner.trig
+platform/tests/fixtures/5020/domain-has-tests.sh
+platform/tests/fixtures/5020/domain-no-side-door.sh
+platform/tests/fixtures/5020/domain-one-door.trig
+platform/tests/fixtures/5020/domain-one-store.trig
+platform/tests/fixtures/5020/domain-referential-integrity.trig"
 
 setup() {
   T="$BATS_TEST_TMPDIR"
@@ -81,6 +88,10 @@ red_for_x_only() {
   mkdir "$T/tree" && sh "$FX/domain-has-tests.sh" "$T/tree"
   cd "$T/tree"
   red_for_x_only domain-has-tests
+}
+
+@test "every fixture this suite names is in the tree" {
+  for f in $FIXTURES; do [ -f "$ROOT/$f" ] || { echo "missing $f"; return 1; }; done
 }
 
 @test "NEGATIVE: a lint whose check cannot run is exit 2, never green" {
