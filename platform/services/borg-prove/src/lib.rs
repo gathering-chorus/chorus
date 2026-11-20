@@ -615,6 +615,13 @@ pub struct DeploymentRecord {
 }
 
 /// #4773 AC4 / AC5 — Parse deployment rows for a card from door JSON response, returning Err if JSON is invalid
+/// #5018 — the door's Deployment rows for one card. The bare list is one page of 100
+/// rows; #4555's land added 36, so #5018's row (the 102nd) was never read and its land
+/// failed "missing deployment manifest". Asking by card reads every row the card has. Pure.
+pub fn deployments_url(door: &str, card: u32) -> String {
+    format!("{}/v1/cicd/deployments?cardId={}", door.trim_end_matches('/'), card)
+}
+
 pub fn parse_deployments_for_card_checked(json: &str, card: u32) -> Result<Vec<DeploymentRecord>, String> {
     let v: serde_json::Value = serde_json::from_str(json).map_err(|e| e.to_string())?;
     let data = v.get("data").and_then(|d| d.as_array())

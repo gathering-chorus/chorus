@@ -180,7 +180,7 @@ fn check_manifest(
     codesign_bin: Option<&str>,
 ) -> Outcome {
     let door = env("CHORUS_DOOR", "http://127.0.0.1:3360");
-    let url = format!("{}/v1/cicd/deployments", door.trim_end_matches('/'));
+    let url = borg_prove::deployments_url(&door, card);
     let Some(body) = curl(&[&url]) else {
         return Outcome::Unmeasured(format!("door did not answer at {url}"));
     };
