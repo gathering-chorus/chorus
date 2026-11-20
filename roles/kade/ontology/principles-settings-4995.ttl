@@ -9,14 +9,8 @@
 # server.bind 3393: free on Library 2026-11-19 18:2x; nothing deploys this crate yet
 # (switching :3340's principles route is a follow-on card).
 
-chorus:principles chorus:hasProperty
-    chorus:property-principles-server-bind, chorus:property-principles-store-kind,
-    chorus:property-principles-store-endpoint, chorus:property-principles-store-user-var,
-    chorus:property-principles-store-password-var, chorus:property-principles-store-path,
-    chorus:property-principles-identity-issuer, chorus:property-principles-identity-graph-prefix,
-    chorus:property-principles-events-command, chorus:property-principles-model-namespace,
-    chorus:property-principles-model-prefix, chorus:property-principles-store-graph-prefix,
-    chorus:property-principles-reads-public .
+# The principles → property edges live with the principles Domain row
+# (roles/wren/ontology/domains-wren-silas.ttl), as pulse's live with its product row.
 
 chorus:property-principles-server-bind a chorus:Property ; chorus:ownedBy chorus:principal-wren ;
     rdfs:label "principles API: where it listens" ;

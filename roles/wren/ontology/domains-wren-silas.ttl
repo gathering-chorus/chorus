@@ -38,6 +38,16 @@ chorus:principles a chorus:Domain ;
   chorus:ownedBy chorus:principal-wren ;
   chorus:atStep chorus:value-stream-step-shaping ;
   chorus:repoTarget "loom/principles" ; chorus:definesVocabulary chorus:Principle .
+# #4995 — the settings the principles domain's own generated API reads (rows in
+# roles/kade/ontology/principles-settings-4995.ttl, Wren's yes 2026-11-19 18:21).
+chorus:principles chorus:hasProperty
+    chorus:property-principles-server-bind, chorus:property-principles-store-kind,
+    chorus:property-principles-store-endpoint, chorus:property-principles-store-user-var,
+    chorus:property-principles-store-password-var, chorus:property-principles-store-path,
+    chorus:property-principles-identity-issuer, chorus:property-principles-identity-graph-prefix,
+    chorus:property-principles-events-command, chorus:property-principles-model-namespace,
+    chorus:property-principles-model-prefix, chorus:property-principles-store-graph-prefix,
+    chorus:property-principles-reads-public .
 
 # #4006 — values is its own domain, not a property of principles. The level
 # above the principles needed a home before anything could serve it: athena-make
