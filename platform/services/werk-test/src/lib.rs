@@ -298,7 +298,10 @@ pub fn own_build_to_run(
     }
     // #4555 — the workspace build of werk-test, in the checkout's folder for this account
     let own = std::path::PathBuf::from(built_binary(werk, &current_account(), "werk-test"));
-    if current == own {
+    // a binary that runs from inside this werk was built from this werk: it is the
+    // card's own build, wherever in the werk the build put it (#4555: the first run
+    // of this card is built by the installed werk-build, into the old crate folder)
+    if current == own || current.starts_with(werk) {
         return Ok(None);
     }
     if !exists(&own) {
@@ -6896,6 +6899,9 @@ mod own_build_4442 {
         let wt = ch(&["platform/services/werk-test/src/lib.rs"]);
         assert_eq!(own_build_to_run(WERK, &wt, Path::new(INSTALLED), true, &|_| true), Ok(None));
         assert_eq!(own_build_to_run(WERK, &wt, &own(), false, &|_| true), Ok(None));
+        // #4555 — a build of this werk anywhere inside it is the card's own build
+        let in_werk = Path::new(WERK).join("platform/services/werk-test/target/release/werk-test");
+        assert_eq!(own_build_to_run(WERK, &wt, &in_werk, false, &|_| false), Ok(None));
     }
 
     /// A card that changes werk-test with no build of its own blocks; it is
