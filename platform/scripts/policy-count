@@ -86,7 +86,14 @@ def cmdb_service_registered():
                               "WHERE { GRAPH <urn:chorus:domains:services> { ?s chorus:launchdLabel ?l } }")
         if not known:
             raise Broken("the store returned no launchd labels")
-    return [f"{label} ({path})" for label, path in sorted(labels.items()) if label not in known]
+    # #5017 (Silas) — a label mapped in service-instance-map.json is registered: the crawler
+    # writes its ServiceInstance row from that map once launchd loads it (after the land),
+    # so a new service passes before its row exists. A label in neither still counts.
+    try:
+        mapped = {k for k in json.loads(read("platform/config/service-instance-map.json") or "{}") if not k.startswith("_")}
+    except ValueError as e:
+        raise Broken(f"service-instance-map.json is not JSON: {e}")
+    return [f"{label} ({path})" for label, path in sorted(labels.items()) if label not in known and label not in mapped]
 
 
 SQLITE_HOMES = {  # a database → the one package that may open it ("" = no package of ours: a foreign system's)

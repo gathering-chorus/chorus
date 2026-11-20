@@ -282,3 +282,63 @@ fn a_stream_sorts_newest_first_and_pages_back_by_a_bound() {
     assert_eq!((code, out["error"].as_str()), (400, Some("unknown-field")), "{out}");
 }
 
+
+// ── #5017: a row another door wrote under its bare name reads and writes in place ──
+
+/// One row stored as athena-make wrote every principle: subject `<NS><name>`, no kind prefix,
+/// in the seeded store (so a new row's links have targets).
+fn bare_row(name: &str) -> Sparql {
+    let c = any_class();
+    let e = seeded();
+    e.update(&format!(
+        "INSERT DATA {{ GRAPH <{g}> {{ <{NS}{name}> a <{NS}{cls}> ; <{NS}ownedBy> <{NS}principal-wren> ; <http://www.w3.org/2000/01/rdf-schema#label> \"before\" }} }}",
+        g = c.graph, cls = c.name
+    )).unwrap();
+    Sparql::over(Box::new(e))
+}
+
+fn subjects(s: &Sparql) -> Vec<String> {
+    let c = any_class();
+    let mut v: Vec<String> = store_engine(s)
+        .select(&format!("SELECT ?s WHERE {{ GRAPH <{g}> {{ ?s a <{NS}{cls}> }} }}", g = c.graph, cls = c.name)).unwrap()
+        .iter().filter_map(|r| r["s"]["value"].as_str().map(str::to_string)).collect();
+    v.sort();
+    v
+}
+
+#[test]
+fn a_bare_named_row_reads_by_its_name() {
+    let c = any_class();
+    let store = bare_row("hemenway-observe");
+    let row = store.get(c, "hemenway-observe").unwrap().expect("the bare-named row reads by its name");
+    assert_eq!(row["name"], json!("hemenway-observe"), "{row:?}");
+    // NEGATIVE PROOF: the minted subject holds nothing, so a minted-only lookup misses this row
+    assert_ne!(iri(c, "hemenway-observe"), format!("{NS}hemenway-observe"));
+    assert!(!subjects(&store).contains(&iri(c, "hemenway-observe")));
+    assert!(store.get(c, "hemenway-gone").unwrap().is_none(), "a name with no row is still None");
+}
+
+#[test]
+fn a_bare_named_row_reads_through_the_seen_by_path_too() {
+    let c = any_class();
+    let store = bare_row("hemenway-observe");
+    let wren = format!("{NS}principal-wren");
+    let row = store.get_seen_by(c, "hemenway-observe", &wren).unwrap().expect("its owner sees the bare-named row");
+    assert_eq!(row["name"], json!("hemenway-observe"), "{row:?}");
+    // NEGATIVE PROOF: someone else still does not see it
+    assert!(store.get_seen_by(c, "hemenway-observe", &format!("{NS}principal-stranger")).unwrap().is_none());
+}
+
+#[test]
+fn a_patch_to_a_bare_named_row_writes_that_row_not_a_new_one() {
+    let c = any_class();
+    let store = bare_row("hemenway-observe");
+    let (code, out) = write(&ctx(&store), &caller("wren"), "PATCH", c, Some("hemenway-observe"), &json!({ "label": "after" }).to_string());
+    assert_eq!(code, 200, "{out}");
+    assert_eq!(subjects(&store), vec![format!("{NS}hemenway-observe")], "one row, the bare-named one");
+    assert_eq!(store.get(c, "hemenway-observe").unwrap().unwrap()["label"], json!("after"));
+    // a new row still gets the minted subject
+    let (code, out) = write(&ctx(&store), &caller("wren"), "POST", c, None, &body_for(c, "fresh"));
+    assert_eq!(code, 201, "{out}");
+    assert!(subjects(&store).contains(&iri(c, "fresh")));
+}

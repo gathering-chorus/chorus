@@ -107,6 +107,19 @@ platform/tests/fixtures/4963/arch-verb-naming-and-atomic-core.trig"
   [ "$status" -eq 0 ] && [ -z "$output" ] || { echo "$output"; return 1; }
 }
 
+@test "#5017: a label mapped in service-instance-map.json is registered; an unmapped one still counts" {
+  red="$T/cmdb3"; mkdir -p "$red"; sh "$ROOT/platform/tests/fixtures/4963/arch-cmdb-service-registered.sh" "$red" >/dev/null
+  echo "com.chorus.some-other-service" > "$T/labels3"
+  # unmapped: no row and no map entry → counted (the violation the check exists for)
+  run sh -c "cd '$red' && ARCH_SERVICE_LABELS='$T/labels3' '$COUNT' arch-cmdb-service-registered"
+  [ "$status" -eq 0 ] && [[ "$output" == *"com.chorus.zz-unregistered"* ]] || { echo "$output"; return 1; }
+  # mapped to a Service: the crawler writes its row after launchd loads it → not counted
+  mkdir -p "$red/platform/config"
+  printf '{"_comment":"x","com.chorus.zz-unregistered":"service-athena"}\n' > "$red/platform/config/service-instance-map.json"
+  run sh -c "cd '$red' && ARCH_SERVICE_LABELS='$T/labels3' '$COUNT' arch-cmdb-service-registered"
+  [ "$status" -eq 0 ] && [ -z "$output" ] || { echo "$output"; return 1; }
+}
+
 @test "negative proof: a check that cannot measure is exit 2 (store down, chorus-make broken), never a pass" {
   red="$T/cmdb2"; mkdir -p "$red"; sh "$ROOT/platform/tests/fixtures/4963/arch-cmdb-service-registered.sh" "$red" >/dev/null
   run sh -c "cd '$red' && unset ARCH_SERVICE_LABELS && FUSEKI_QUERY=http://127.0.0.1:9/none '$COUNT' arch-cmdb-service-registered"

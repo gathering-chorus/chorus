@@ -18,11 +18,11 @@ const entity = (name: string, fields: Record<string, string>) => ({
   json: async () => ({ data: { iri: `https://jeffbridwell.com/chorus#${name}`, ...fields } }),
 }) as unknown as Response;
 
-describe('#3749 fetchLoomPrinciples via athena-make', () => {
+describe('#3749 fetchLoomPrinciples via principles-api (#5017)', () => {
   test('folds list + entity reads into the legacy envelope shape', async () => {
     const fetchFn = jest.fn(async (url: RequestInfo | URL) => {
       const u = String(url);
-      if (u.endsWith('/principles')) return list(['hemenway-observe', 'hemenway-connect']);
+      if (u.endsWith('/principles/principles')) return list(['hemenway-observe', 'hemenway-connect']);
       if (u.includes('hemenway-observe')) return entity('hemenway-observe', { label: 'Observe', comment: 'Watch first.', techReading: 'Gemba.', jeffReading: 'Reads the board.', order: '1' });
       return entity('hemenway-connect', { label: 'Connect', comment: 'Relative location.', order: '2' });
     });
@@ -59,7 +59,7 @@ describe('#3749 fetchLoomPrinciples via athena-make', () => {
   test('a single vanished entity mid-walk is skipped; the count tells the truth', async () => {
     const fetchFn = jest.fn(async (url: RequestInfo | URL) => {
       const u = String(url);
-      if (u.endsWith('/principles')) return list(['hemenway-observe', 'hemenway-gone']);
+      if (u.endsWith('/principles/principles')) return list(['hemenway-observe', 'hemenway-gone']);
       if (u.includes('hemenway-observe')) return entity('hemenway-observe', { label: 'Observe', comment: 'c' });
       return { ok: false, status: 404, json: async () => ({}) } as unknown as Response;
     });

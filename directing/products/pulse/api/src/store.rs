@@ -33,6 +33,12 @@ pub trait RowStore: Send + Sync {
     /// #4744 — a page of the rows that match `w` (and that `viewer` may see, when given),
     /// with the count of all matches: the filter runs in the store, before the page is cut.
     fn list_where(&self, class: &ClassDef, limit: usize, offset: usize, viewer: Option<&str>, w: &Where) -> Result<(Vec<Row>, usize), String>;
+    /// #5017 — the subject a name reads and writes: the row already stored under the
+    /// minted `<kind>-<name>` or under the bare `<name>` (rows another door wrote, as
+    /// athena-make wrote every principle), else the minted IRI for a new row.
+    fn subject_of(&self, class: &ClassDef, name: &str) -> Result<String, String> {
+        Ok(iri(class, name))
+    }
 }
 
 /// #4744 — one filter for every collection: each `eq` field holds the value (a literal
@@ -582,7 +588,7 @@ impl RowStore for Sparql {
     }
 
     fn get_seen_by(&self, class: &ClassDef, name: &str, viewer: &str) -> Result<Option<Row>, String> {
-        let s = iri(class, name);
+        let s = self.subject_of(class, name)?;
         let (g, c, f) = (class.graph, class.name, seen_by(viewer, class.graph));
         let hit = self.select(&format!("SELECT ?s WHERE {{ BIND(<{s}> AS ?s) GRAPH <{g}> {{ ?s a <{NS}{c}> }} {f} }} LIMIT 1"))?;
         if hit.is_empty() {
@@ -591,8 +597,18 @@ impl RowStore for Sparql {
         Ok(self.rows(class, &[s])?.into_iter().next())
     }
 
+    fn subject_of(&self, class: &ClassDef, name: &str) -> Result<String, String> {
+        let (minted, bare) = (iri(class, name), format!("{NS}{name}"));
+        let found = self.select(&format!(
+            "SELECT ?s WHERE {{ VALUES ?s {{ <{minted}> <{bare}> }} GRAPH <{g}> {{ ?s a <{NS}{c}> }} }}",
+            g = class.graph, c = class.name
+        ))?;
+        let has = |x: &str| found.iter().any(|r| r["s"]["value"].as_str() == Some(x));
+        Ok(if !has(&minted) && has(&bare) { bare } else { minted })
+    }
+
     fn get(&self, class: &ClassDef, name: &str) -> Result<Option<Row>, String> {
-        let s = iri(class, name);
+        let s = self.subject_of(class, name)?;
         let hit = self.select(&format!(
             "SELECT ?s WHERE {{ GRAPH <{g}> {{ <{s}> a <{NS}{c}> . BIND(<{s}> AS ?s) }} }} LIMIT 1",
             g = class.graph, c = class.name

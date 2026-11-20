@@ -32,7 +32,7 @@ function defaultEnvelope(name: string, data: unknown, durationMs: number, extra:
 }
 
 export interface LoomPrinciplesOwlDeps {
-  /** injectable for tests — defaults to global fetch against the local athena-make */
+  /** injectable for tests — defaults to global fetch against the local principles-api (#5017) */
   fetchFn?: typeof fetch;
   owlApiUrl?: string;
   now?: () => number;
@@ -54,22 +54,23 @@ export async function fetchLoomPrinciples(
   const now = deps.now ?? (() => Date.now());
   const envelope = deps.envelope ?? defaultEnvelope;
   const fetchFn = deps.fetchFn ?? fetch;
-  const base = deps.owlApiUrl ?? process.env.OWL_UPSTREAM ?? 'http://127.0.0.1:3360';
+  // #5017 — principles has its own generated API (athena-gen, :3393); athena-make no longer serves it
+  const base = deps.owlApiUrl ?? process.env.PRINCIPLES_UPSTREAM ?? 'http://127.0.0.1:3393';
   const started = now();
   try {
-    const listRes = await fetchFn(`${base}/principles`);
+    const listRes = await fetchFn(`${base}/principles/principles`);
     if (!listRes.ok) {
       // an unreachable generated surface must never read as "no principles"
       return {
         status: 502,
-        body: envelope('principles', { error: `athena-make /principles answered ${listRes.status}` }, now() - started, { error: true }),
+        body: envelope('principles', { error: `principles-api /principles/principles answered ${listRes.status}` }, now() - started, { error: true }),
       };
     }
     const list = (await listRes.json()) as { data?: Array<{ name?: string }> };
     const names = (list.data ?? []).map((r) => r.name ?? '').filter(Boolean);
     const principles: PrincipleRow[] = [];
     for (const name of names) {
-      const entRes = await fetchFn(`${base}/principles/${encodeURIComponent(name)}`);
+      const entRes = await fetchFn(`${base}/principles/principles/${encodeURIComponent(name)}`);
       if (!entRes.ok) continue; // a vanished entity mid-walk: skip, count tells
       // Partial<...>: the wire can omit any field — the type must admit that or the
       // ?? fallbacks below read as dead code to the linter while guarding real gaps (#3766).
@@ -104,7 +105,7 @@ export async function fetchLoomPrinciples(
         status: 502,
         body: envelope(
           'principles',
-          { error: `athena-make named ${names.length} principle(s) but none could be read — entity reads are failing` },
+          { error: `principles-api named ${names.length} principle(s) but none could be read — entity reads are failing` },
           now() - started,
           { error: true, named: names.length, resolved: 0 },
         ),
@@ -114,7 +115,7 @@ export async function fetchLoomPrinciples(
     const durationMs = now() - started;
     return {
       status: 200,
-      body: envelope('principles', { principles }, durationMs, { count: principles.length, servedFrom: 'athena-make:/principles' }),
+      body: envelope('principles', { principles }, durationMs, { count: principles.length, servedFrom: 'principles-api:/principles/principles' }),
     };
   } catch (err) {
     const durationMs = now() - started;
