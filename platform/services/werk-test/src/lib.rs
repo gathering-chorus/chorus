@@ -1218,6 +1218,30 @@ pub enum BuildTarget {
     Package(String),
 }
 
+/// #4555 — how to build a binary a suite runs. `workspace_bins` are the bins the
+/// repo-root workspace builds; `outside_crate` is `platform/services/<name>` when that
+/// crate has a Cargo.toml but sits outside the workspace (chorus-inject: own lock, lto).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BinBuild {
+    /// `cargo build --release --bin <name>` at the werk's root
+    Workspace,
+    /// `cargo build --release` in that crate's dir, into the same account folder
+    OwnCrate(String),
+    /// no crate here builds it (a test's stub name, e.g. `fake-bin`): nothing to build;
+    /// a suite that truly needs it fails on its own, measured
+    Nothing,
+}
+
+pub fn bin_build_plan(name: &str, workspace_bins: &[String], outside_crate: Option<String>) -> BinBuild {
+    if workspace_bins.iter().any(|b| b == name) {
+        BinBuild::Workspace
+    } else if let Some(dir) = outside_crate {
+        BinBuild::OwnCrate(dir)
+    } else {
+        BinBuild::Nothing
+    }
+}
+
 /// #4392 — the build targets a suite's text names. `packages` are the werk's
 /// package dirs that have a build script (relative, e.g. `directing/clearing`);
 /// a package counts when the suite names its `dist/`.
@@ -1590,6 +1614,18 @@ SHIM="${CHORUS_ROOT}/target/chorus-kade/release/chorus-hook-shim"
         // without dist/, or a release/ path outside target/ is source, not a run
         let n = "platform/services/chorus-principal/src/lib.rs platform/pulse/src/store.ts docs/release/notes.md target/release/deps/x";
         assert!(suite_build_targets(n, &pk).is_empty(), "{:?}", suite_build_targets(n, &pk));
+    }
+
+    #[test]
+    fn a_binary_builds_in_the_workspace_its_own_crate_or_not_at_all() {
+        let ws = vec!["werk-test".to_string(), "chorus-hook-shim".to_string()];
+        assert_eq!(bin_build_plan("chorus-hook-shim", &ws, None), BinBuild::Workspace);
+        assert_eq!(bin_build_plan("chorus-inject", &ws, Some("/w/platform/services/chorus-inject".into())),
+            BinBuild::OwnCrate("/w/platform/services/chorus-inject".into()));
+        // NEGATIVE PROOF: a stub name no crate builds is not a failed build (run 5: fake-bin
+        // made a suite UNMEASURED), and a workspace bin never builds as its own crate
+        assert_eq!(bin_build_plan("fake-bin", &ws, None), BinBuild::Nothing);
+        assert_eq!(bin_build_plan("werk-test", &ws, Some("/w/x".into())), BinBuild::Workspace);
     }
 
     #[test]
