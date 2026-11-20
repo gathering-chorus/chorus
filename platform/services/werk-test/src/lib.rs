@@ -6900,7 +6900,7 @@ mod own_build_4442 {
         assert_eq!(own_build_to_run(WERK, &wt, Path::new(INSTALLED), true, &|_| true), Ok(None));
         assert_eq!(own_build_to_run(WERK, &wt, &own(), false, &|_| true), Ok(None));
         // #4555 — a build of this werk anywhere inside it is the card's own build
-        let in_werk = Path::new(WERK).join("platform/services/werk-test/target/release/werk-test");
+        let in_werk = Path::new(WERK).join("an/old/build/folder/werk-test");
         assert_eq!(own_build_to_run(WERK, &wt, &in_werk, false, &|_| false), Ok(None));
     }
 
