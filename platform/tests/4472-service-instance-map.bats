@@ -8,9 +8,10 @@
 # authored, and one that lists a werk slot (<label>.werk.<role>), which is
 # service-werk by rule and goes stale whenever no card is up.
 
+. "$BATS_TEST_DIRNAME/../scripts/lib/workspace-bin.sh"  # #4915: where a workspace build puts a binary
 setup() {
   BIN="${CHORUS_CRAWL_BIN:-$BATS_TEST_DIRNAME/../../target/$(id -un)/release/chorus-crawl}"
-  [ -x "$BIN" ] || BIN="$BATS_TEST_DIRNAME/../services/chorus-crawl/target/debug/chorus-crawl"
+  [ -x "$BIN" ] || BIN="$(workspace_bin "$BATS_TEST_DIRNAME/../.." debug chorus-crawl)"
   [ -x "$BIN" ] || skip "chorus-crawl not built at $BIN"
   ROOT="$BATS_TEST_DIRNAME/../.."
   MAP="$ROOT/platform/config/service-instance-map.json"

@@ -7,6 +7,7 @@
 # run. Negative proof (#3734): the cage is shown to separate its two states —
 # caged → the nudge reaches NOTHING; seam to a stub → it delivers.
 
+. "$BATS_TEST_DIRNAME/../scripts/lib/workspace-bin.sh"  # #4915: where a workspace build puts a binary
 OPS_NUDGE="$BATS_TEST_DIRNAME/../scripts/ops-nudge"
 
 # #4515 — ops-nudge sends through `chorus-hook-shim nudge-send`; the cage is
@@ -14,9 +15,11 @@ OPS_NUDGE="$BATS_TEST_DIRNAME/../scripts/ops-nudge"
 # tree's own build: an installed one may predate nudge-send. No build is a
 # failure that says so, never a pass.
 setup() {
-  local hooks="$BATS_TEST_DIRNAME/../services/chorus-hooks/target"
+  # #4915: a workspace build is in CARGO_TARGET_DIR, target/<account> (pipeline) or target/ (by hand)
+  local root="$BATS_TEST_DIRNAME/../.." hooks
+  hooks="$(dirname "$(dirname "$(workspace_bin "$root" release chorus-hook-shim)")")"
   SHIM=""
-  for b in "$hooks/release/chorus-hook-shim" "$hooks/debug/chorus-hook-shim"; do
+  for b in "$(workspace_bin "$root" release chorus-hook-shim)" "$(workspace_bin "$root" debug chorus-hook-shim)"; do
     [ -x "$b" ] && "$b" nudge-send 2>&1 | grep -q "usage: nudge-send" && { SHIM="$b"; break; }
   done
   [ -n "$SHIM" ] || { echo "no chorus-hook-shim build with nudge-send under $hooks: build chorus-hooks first"; return 1; }

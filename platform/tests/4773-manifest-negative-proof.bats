@@ -3,6 +3,7 @@
 # @domain: cicd
 # #4773 AC5: Negative proof: a deployment with mismatched or missing manifest is rejected by borg-prove.
 
+. "$BATS_TEST_DIRNAME/../scripts/lib/workspace-bin.sh"  # #4915: where a workspace build puts a binary
 setup() {
   ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
   TEST_DIR="$(mktemp -d)"
@@ -10,7 +11,7 @@ setup() {
   export CHORUS_HOME="$ROOT"
   export CHORUS_BIN_DIR="$TEST_DIR/.chorus/bin"
   mkdir -p "$CHORUS_BIN_DIR"
-  BORG_PROVE="$ROOT/platform/services/borg-prove/target/debug/borg-prove"
+  BORG_PROVE="$(workspace_bin "$ROOT" debug borg-prove)"
 }
 
 teardown() {

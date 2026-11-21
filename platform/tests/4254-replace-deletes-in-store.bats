@@ -15,6 +15,7 @@
 # The graphs here are minted per run and dropped in teardown, so this never
 # touches a graph anyone reads.
 
+. "$BATS_TEST_DIRNAME/../scripts/lib/workspace-bin.sh"  # #4915: where a workspace build puts a binary
 setup() {
   ROOT="$(cd "${BATS_TEST_DIRNAME}/../.." && pwd)"
   QUERY=http://localhost:3030/werk-silas/query
@@ -38,7 +39,7 @@ setup() {
   # #4965 — release first: the nightly builds release, and a stale debug build
   # (pre-#4960) still listed governance-checks-3846.ttl
   DEPLOY="${ROOT}/target/$(id -un)/release/athena-deploy"
-  test -x "$DEPLOY" || DEPLOY="${ROOT}/platform/services/athena-deploy/target/debug/athena-deploy"
+  test -x "$DEPLOY" || DEPLOY="$(workspace_bin "${ROOT}" debug athena-deploy)"
 }
 
 teardown() {

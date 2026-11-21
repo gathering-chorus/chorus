@@ -10,6 +10,7 @@
 # 2. principal-deployer is refused a write outside cicd.
 # 3. A post without credential is refused and borg-prove reads Unmeasured.
 
+. "$BATS_TEST_DIRNAME/../scripts/lib/workspace-bin.sh"  # #4915: where a workspace build puts a binary
 setup() {
   ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
   TEST_DIR="$(mktemp -d)"
@@ -138,7 +139,7 @@ httpd.serve_forever()
   # borg-prove manifest should read Unmeasured (not Met) and exit 1
   # #4940: build what it runs; target/debug/borg-prove exists only when this run built borg-prove
   cargo build -q --manifest-path "$ROOT/platform/services/borg-prove/Cargo.toml"
-  BORG_PROVE="${CARGO_TARGET_DIR:-$ROOT/platform/services/borg-prove/target}/debug/borg-prove"
+  BORG_PROVE="$(workspace_bin "$ROOT" debug borg-prove)"  # #4555: the workspace target
   run "$BORG_PROVE" manifest 4773 "['fake-unit']" "-" "codesign"
   kill "$FAIL_PID" 2>/dev/null || true
 
