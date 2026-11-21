@@ -73,9 +73,12 @@ def open_session(webid, tok, now, lasts, sparql, http, api, log):
         return None
     stored = reply["name"]
     log(f"person-session: {principal} signed in, session {stored}")
-    return {"principal": principal, "row": {"name": stored},
-            "refresh_token": tok.get("refresh_token", ""), "id_token": id_token,
-            "exp": int(tok.get("expires_in", 0) or 0) + int(now)}
+    exp = int(tok.get("expires_in", 0) or 0) + int(now)
+    # #5026 — the record keeps the row's expiresAt (the door writes the login's own expiry).
+    # #4517 kept only the name, so the guard never pruned an ended record, every old sid stayed
+    # "live", and #4966's close-at-sign-in skipped them all: 50 probe rows and Jeff's stayed open.
+    return {"principal": principal, "row": {"name": stored, "expiresAt": (reply or {}).get("expiresAt") or iso(exp)},
+            "refresh_token": tok.get("refresh_token", ""), "id_token": id_token, "exp": exp}
 
 
 def live_bearer(rec, now, refresh, log, why):
@@ -109,7 +112,8 @@ def touch_session(rec, now, expires_at, http, api, refresh, log):
     if status not in (200, 204):
         log(f"person-session: {rec.get('principal')} session {name} NOT renewed (HTTP {status})")
         return None
-    return dict(rec)
+    # #5026 — the door moved the row's expiresAt to this login's; the record follows it
+    return dict(rec, row=dict(rec["row"], expiresAt=iso(rec.get("exp", 0))))
 
 
 def close_session(rec, now, http, api, refresh, log):
