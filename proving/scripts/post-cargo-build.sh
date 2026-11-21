@@ -5,11 +5,12 @@
 # This script tests osascript inject and warns if it fails.
 # Run after: cargo build --release (in chorus-hooks)
 
+. "$(dirname "$0")/../../platform/scripts/lib/workspace-bin.sh"  # #4915: where a workspace build puts a binary
 set -euo pipefail
 
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 
-SHIM="${CHORUS_ROOT}/target/release/chorus-hook-shim"
+SHIM="$(workspace_bin "${CHORUS_ROOT}" release chorus-hook-shim)"
 
 if [[ ! -x "$SHIM" ]]; then
   echo "ERROR: chorus-hook-shim not found at $SHIM"

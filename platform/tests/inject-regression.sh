@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # @test-type: integration — auto-classified (#3528 sweep); service-hitting=integration(skip-if-absent), static-guard=unit
+. "$(dirname "$0")/../scripts/lib/workspace-bin.sh"  # #4915: where a workspace build puts a binary
 : "${CHORUS_ROOT:=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../.." && pwd)}"
 # inject-regression.sh — validates chorus-inject delivers to the correct role tab
 # AC: targeted delivery (not broadcast to focused window), all 3 roles, intra-team + alert
 set -euo pipefail
 
-INJECT="${CHORUS_ROOT}/target/release/chorus-inject"
+INJECT="$(workspace_bin "${CHORUS_ROOT}" release chorus-inject)"
 PASS=0
 FAIL=0
 

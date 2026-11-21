@@ -13,9 +13,10 @@
 #
 # Read-only against canonical model data except the sacrificial subject
 # chorus:role-dal-e2e-sacrificial (created + deleted here).
+. "$(dirname "$0")/../scripts/lib/workspace-bin.sh"  # #4915: where a workspace build puts a binary
 set -uo pipefail
 
-BIN="${CHORUS_MODEL_BIN:-$(command -v chorus-model || echo "$(dirname "$0")/../../target/debug/chorus-model")}"
+BIN="${CHORUS_MODEL_BIN:-$(command -v chorus-model || echo "$(workspace_bin "$(dirname "$0")/../.." debug chorus-model)")}"
 FUSEKI="${CHORUS_FUSEKI:-http://localhost:3030/pods}"
 NS="https://jeffbridwell.com/chorus#"
 PASS=0; FAIL=0

@@ -6,9 +6,10 @@
 # @domain names a domain the store does not list, before anything runs. On 11-07,
 # 19 such files had landed and #4919 landed 3 more (`werk`).
 
+. "$BATS_TEST_DIRNAME/../scripts/lib/workspace-bin.sh"  # #4915: where a workspace build puts a binary
 setup() {
   ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
-  BIN="$ROOT/target/debug/werk-test"
+  BIN="$(workspace_bin "$ROOT" debug werk-test)"
   [ -x "$BIN" ] || (cd "$ROOT/platform/services/werk-test" && cargo build -q)
   T="$(mktemp -d "${BATS_TMPDIR:-/tmp}/wt4915.XXXXXX")"
   mkdir -p "$T/door/v1/domains" "$T/werk/platform/tests"

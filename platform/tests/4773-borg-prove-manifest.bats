@@ -3,6 +3,7 @@
 # @domain: cicd
 # #4773 AC4: borg-prove reads the manifest on land and asserts prod running hashes match the manifest exactly.
 
+. "$BATS_TEST_DIRNAME/../scripts/lib/workspace-bin.sh"  # #4915: where a workspace build puts a binary
 setup() {
   ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
   TEST_DIR="$(mktemp -d)"
@@ -73,14 +74,14 @@ echo "CDHash=mock_cdhash_good" >&2
 EOF
   chmod +x "$TEST_DIR/bin/codesign"
 
-  BORG_PROVE="$ROOT/target/debug/borg-prove"
+  BORG_PROVE="$(workspace_bin "$ROOT" debug borg-prove)"
   run "$BORG_PROVE" manifest 4773 tool_a - "$TEST_DIR/bin/codesign"
   [ "$status" -eq 0 ]
   [[ "$output" =~ "verified 1 deployment record" ]] || return 1
 }
 
 @test "4773 AC4: zero expected units passes when card deployed no binaries" {
-  BORG_PROVE="$ROOT/target/debug/borg-prove"
+  BORG_PROVE="$(workspace_bin "$ROOT" debug borg-prove)"
   run "$BORG_PROVE" manifest 4773 ""
   [ "$status" -eq 0 ]
   [[ "$output" =~ "no binaries deployed for this card" ]] || return 1
@@ -104,7 +105,7 @@ EOF
   touch "$CHORUS_BIN_DIR/tool_a"
   touch "$CHORUS_BIN_DIR/tool_a-bin"
 
-  BORG_PROVE="$ROOT/target/debug/borg-prove"
+  BORG_PROVE="$(workspace_bin "$ROOT" debug borg-prove)"
   run "$BORG_PROVE" manifest 4773 tool_a - "$TEST_DIR/bin/codesign_bin"
   [ "$status" -eq 0 ]
   [[ "$output" =~ "verified 1 deployment record" ]] || return 1

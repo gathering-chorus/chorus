@@ -25,12 +25,13 @@
 # that is not the LAST line of a test can fail and the test still passes (#4185,
 # measured 2026-09-16: `[[ "a" == *"b"* ]]; true` → ok). Every assert here is a
 # simple command, which bash 3.2 does honour.
+. "$BATS_TEST_DIRNAME/../scripts/lib/workspace-bin.sh"  # #4915: where a workspace build puts a binary
 has()   { grep -qF -- "$1" <<<"${2-$output}"; }
 lacks() { if grep -qF -- "$1" <<<"${2-$output}"; then echo "unexpected: $1" >&2; return 1; fi; }
 eq()    { [ "$1" = "$2" ] || { echo "expected [$2] got [$1]" >&2; return 1; }; }
 
 setup() {
-  BIN="${CHORUS_CRAWL_BIN:-$BATS_TEST_DIRNAME/../../target/$(id -un)/release/chorus-crawl}"; [ -x "$BIN" ] || BIN="$BATS_TEST_DIRNAME/../../target/debug/chorus-crawl"; [ -x "$BIN" ] || skip "chorus-crawl not built at $BIN"
+  BIN="${CHORUS_CRAWL_BIN:-$BATS_TEST_DIRNAME/../../target/$(id -un)/release/chorus-crawl}"; [ -x "$BIN" ] || BIN="$(workspace_bin "$BATS_TEST_DIRNAME/../.." debug chorus-crawl)"; [ -x "$BIN" ] || skip "chorus-crawl not built at $BIN"
   TMP="$BATS_TEST_TMPDIR"
 }
 names_of() { "$BIN" --names-of "$1"; }

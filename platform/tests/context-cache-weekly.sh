@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # @test-type: integration — auto-classified (#3528 sweep); service-hitting=integration(skip-if-absent), static-guard=unit
+. "$(dirname "$0")/../scripts/lib/workspace-bin.sh"  # #4915: where a workspace build puts a binary
 : "${CHORUS_ROOT:=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../.." && pwd)}"
 # Test: context-cache-weekly subcommand exists and produces output
 # AC: subcommand runs, cruft scan writes, stale cards audited, disk trend logged, non-empty stdout
 set -euo pipefail
 
 CHORUS_ROOT="${CHORUS_ROOT:-${CHORUS_ROOT}}"
-SHIM="$CHORUS_ROOT/target/release/chorus-hook-shim"
+SHIM="$(workspace_bin "$CHORUS_ROOT" release chorus-hook-shim)"
 PASS=0
 FAIL=0
 

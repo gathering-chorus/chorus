@@ -11,6 +11,7 @@
 # embedded store. NEGATIVE: the same start with store.kind=embedded does create one,
 # and the check below goes red on it.
 
+. "$BATS_TEST_DIRNAME/../scripts/lib/workspace-bin.sh"  # #4915: where a workspace build puts a binary
 REPO="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
 CRATE="$REPO/shaping/domains/principles/api"
 PLIST="$REPO/platform/scripts/launchagents-canonical/com.chorus.principles-api.plist"
@@ -20,13 +21,11 @@ LAUNCH="$CRATE/principles-api-launch.sh"
 # Built once if missing; a failed build fails the test, never skips it.
 card_bin() {
   local c
-  for c in "${PRINCIPLES_API_BIN:-}" "${CARGO_TARGET_DIR:+$CARGO_TARGET_DIR/release/principles-api}" \
-           "$REPO/target/release/principles-api" "$CRATE/target/release/principles-api"; do
+  for c in "${PRINCIPLES_API_BIN:-}" "$(workspace_bin "$REPO" release principles-api)" "$CRATE/target/release/principles-api"; do
     [ -n "$c" ] && [ -x "$c" ] && { echo "$c"; return 0; }
   done
   (cd "$CRATE" && cargo build --release --quiet) >&2 || return 1
-  for c in "${CARGO_TARGET_DIR:+$CARGO_TARGET_DIR/release/principles-api}" \
-           "$REPO/target/release/principles-api" "$CRATE/target/release/principles-api"; do
+  for c in "$(workspace_bin "$REPO" release principles-api)" "$CRATE/target/release/principles-api"; do
     [ -n "$c" ] && [ -x "$c" ] && { echo "$c"; return 0; }
   done
   return 1

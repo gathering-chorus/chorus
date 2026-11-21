@@ -7,8 +7,9 @@
 # dropped emit reported success. This fixture is that exact violation state, and
 # the emit is shown to now refuse it.
 
+. "$BATS_TEST_DIRNAME/../scripts/lib/workspace-bin.sh"  # #4915: where a workspace build puts a binary
 setup() {
-  SHIM="${BATS_TEST_DIRNAME}/../../target/debug/chorus-hook-shim"
+  SHIM="$(workspace_bin "${BATS_TEST_DIRNAME}/../.." debug chorus-hook-shim)"
   TMP="$(mktemp -d)"
   # a regular file where a directory is needed -> create_dir_all + open both fail
   touch "$TMP/blocker"

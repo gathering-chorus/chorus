@@ -8,9 +8,10 @@
 # keychain refuses at once and Claude writes its own file.
 # Proof on the real account: chorus-silas starting this way, with no prompt and a saved login file.
 
+. "$BATS_TEST_DIRNAME/../scripts/lib/workspace-bin.sh"  # #4915: where a workspace build puts a binary
 setup() {
   REPO="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
-  PRINCIPAL_BIN="${CHORUS_PRINCIPAL_TEST_BIN:-$REPO/target/debug/chorus-principal}"
+  PRINCIPAL_BIN="${CHORUS_PRINCIPAL_TEST_BIN:-$(workspace_bin "$REPO" debug chorus-principal)}"
   [ -x "$PRINCIPAL_BIN" ] || PRINCIPAL_BIN="$REPO/target/$(id -un)/release/chorus-principal"
   [ -x "$PRINCIPAL_BIN" ] || { echo "FAIL: chorus-principal not built at $PRINCIPAL_BIN" >&2; return 1; }
   T="$BATS_TEST_TMPDIR"

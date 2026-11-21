@@ -2,6 +2,7 @@
 # @test-type: integration
 # @domain: identity — guards #4787 (Slice 4 of #4780): verified caller identity, narrow ops helper, named service events
 
+. "$BATS_TEST_DIRNAME/../scripts/lib/workspace-bin.sh"  # #4915: where a workspace build puts a binary
 setup_file() {
   # Build target shared across tests in this suite, hermetic to runner account
   export CARGO_TARGET_DIR="$BATS_FILE_TMPDIR/cargo-target"
@@ -116,7 +117,7 @@ setup() {
 
 @test "AC2 NEGATIVE PROOF (#3734): invalid verbs or arbitrary extra args/paths are refused by launchagent-ops" {
   # Build shim if needed
-  SHIM_BIN="${CARGO_TARGET_DIR:-$ROOT/target}/debug/chorus-hook-shim"  # #4555: the workspace target
+  SHIM_BIN="$(workspace_bin "$ROOT" debug chorus-hook-shim)"  # #4555: the workspace target
   if [ ! -x "$SHIM_BIN" ]; then
     (cd "$ROOT/platform/services/chorus-hooks" && cargo build --offline --frozen --bin chorus-hook-shim)
   fi
