@@ -7,7 +7,7 @@
 #
 # AC6: domain-no-side-door skips comments (whole-line #, //, /*, *, <!--, and trailing # or //,
 # never the // of a URL). NEGATIVE: a real reader still counts, including one whose line also
-# carries a comment or a URL. Its baseline is re-measured without comments, 169 to 126 (shrink only).
+# carries a comment or a URL. Its baseline is re-measured without comments, 169 to 128 (shrink only; comments are cut only outside quoted strings).
 
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 COUNT="$ROOT/platform/scripts/policy-count"
@@ -48,12 +48,22 @@ SH
   echo "$output" | grep -q '^platform/api/src/commented.ts:1$' || { echo "$output"; return 1; }
 }
 
-@test "AC6: the side-door row's baseline shrinks to the re-measured 126, never grows" {
+@test "AC6 NEGATIVE: a # or // inside a quoted query is code, not a comment, so the read still counts" {
+  tree
+  printf '%s\n' 'const Q = "SELECT * { # every row GRAPH <urn:chorus:domains:x> { ?s ?p ?o } }"; // reads x' > platform/api/src/hashed.ts
+  printf '%s\n' "q='a // b GRAPH <urn:chorus:domains:x>'" > platform/scripts/slashed
+  git add -A
+  run "$COUNT" domain-no-side-door x
+  echo "$output" | grep -q '^platform/api/src/hashed.ts:1$' || { echo "$output"; return 1; }
+  echo "$output" | grep -q '^platform/scripts/slashed:1$' || { echo "$output"; return 1; }
+}
+
+@test "AC6: the side-door row's baseline shrinks to the re-measured 128, never grows" {
   run python3 -c "
 import json
 old = [r for r in json.load(open('$ROOT/designing/domains/policies/policy-checks-5020.json')) if r['name']=='domain-no-side-door'][0]
 new = [r for r in json.load(open('$ROOT/designing/domains/policies/policy-checks-5021.json')) if r['name']=='domain-no-side-door'][0]
-assert int(new['baseline']) == 126 and int(new['baseline']) < int(old['baseline']), (old['baseline'], new['baseline'])
+assert int(new['baseline']) == 128 and int(new['baseline']) < int(old['baseline']), (old['baseline'], new['baseline'])
 print('ok')"
   [ "$output" = ok ] || { echo "$output"; return 1; }
 }

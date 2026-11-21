@@ -564,12 +564,29 @@ def domain_side_door(domain):
 
 # #5021: a comment naming a graph is prose, not a read. Whole-line comments (#, //, /*, *,
 # <!--) and trailing ones (` # ...`, ` // ...`, never the // of a URL) are dropped first.
-COMMENT_LINE = re.compile(r"^\s*(#|//|/\*|\*|<!--)")
-TRAILING = re.compile(r"(?:(?<=\s)#|(?<![:/])//).*$")
+COMMENT_LINE = re.compile(r"^\s*(#|//|/\*|\*(\s|/|$)|<!--)")
 
 
 def uncommented(line):
-    return "" if COMMENT_LINE.match(line) else TRAILING.sub("", line)
+    """The code on a line: a whole-line comment is nothing; a trailing `# ...` (after whitespace)
+    or `// ...` (not in a URL) is cut, but only outside a quoted string, so a read whose text
+    holds a # or // is still counted."""
+    if COMMENT_LINE.match(line):
+        return ""
+    quote = None
+    for i, ch in enumerate(line):
+        if quote:
+            if ch == "\\":
+                continue
+            if ch == quote and (i == 0 or line[i - 1] != "\\"):
+                quote = None
+        elif ch in "'\"`":
+            quote = ch
+        elif ch == "#" and i > 0 and line[i - 1].isspace():
+            return line[:i]
+        elif ch == "/" and line[i + 1:i + 2] == "/" and (i == 0 or line[i - 1] not in ":/"):
+            return line[:i]
+    return line
 
 
 def domain_has_tests(domain):

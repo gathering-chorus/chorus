@@ -4,10 +4,10 @@
     "gate": "code",
     "checkKind": "command",
     "label": "No code reads or writes a domain's rows past its door",
-    "comment": "Complete-domain rule (#5020; DEC-093, ADR-048). Narrowed: code outside the domain's own unit (*/domains/<name>/) naming the domain's store graph, urn:chorus:domains:<name>. Tests, fixtures, the model, prose and comments do not count (#5021: a comment naming the graph is not a read; the baseline re-measured without them, 169 to 126).",
+    "comment": "Complete-domain rule (#5020; DEC-093, ADR-048). Narrowed: code outside the domain's own unit (*/domains/<name>/) naming the domain's store graph, urn:chorus:domains:<name>. Tests, fixtures, the model, prose and comments do not count (#5021: a comment naming the graph is not a read; the baseline re-measured without them, 169 to 128; a # or // inside a quoted string is code).",
     "checkSpec": "p=platform/scripts/policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" domain-no-side-door {domain}",
     "status": "ratchet",
-    "baseline": "126",
+    "baseline": "128",
     "violationFixture": "platform/tests/fixtures/5020/domain-no-side-door.sh"
   },
   {

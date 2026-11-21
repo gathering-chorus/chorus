@@ -3,7 +3,7 @@
 # @domain: policies
 
 From designing/domains/policies/policy-checks-5021.json (it ships in this land, so
-the store and the repo cannot differ): domain-no-side-door's baseline shrinks 169 -> 126 (comments
+the store and the repo cannot differ): domain-no-side-door's baseline shrinks 169 -> 128 (comments
 no longer count), and two rows are added: domain-properties-declared (baseline 215) and
 domain-folds-filled (baseline 627, measured 11-20 18:35 through the page's own reads). Written by a principal with Write on the
 policies graph (Silas, as #5020's were). The door, the runner, the compare, the 403 wait and the exit
