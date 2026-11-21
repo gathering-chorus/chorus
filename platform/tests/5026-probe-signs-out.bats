@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — node only, no browser, no network, no credentials.
-# @domain: identity — the login probe walks Jeff's whole path, sign-out included (#5026 AC2)
+# @domain: identity — the login probe walks Jeff's whole path, sign-out included (#5026 AC2) · card #5021 (folded from 5026)
 #
 # Since #5015 each probe sign-in opens a Session row at the door. The flows signed
 # in and never signed out (the sign-out scenario started from an empty jar and
@@ -84,4 +84,69 @@ SPEC
   run gate "$d"
   [ "$status" -eq 1 ]
   [ "$output" = "signs in without the sign-out test: bad.spec.cjs" ]
+}
+
+# Code review 11-21 on the first cut: only the default page was signed out, a test that had
+# signed out was sent to logout again, and a failed logout turned a passing test red.
+# Two fake pages on one fake door; $1 picks the scenario. Prints what the door saw.
+end_of_walk() {
+  FLOW_USER=probe FLOW_PASS=x node -e '
+    const auth = require(process.argv[1]); const mode = process.argv[2];
+    let open = 0; const visits = []; const warned = [];
+    const mk = (name) => {
+      let url = "https://h/login";
+      const el = { first: () => el, waitFor: async () => {}, fill: async () => {},
+                   click: async () => { open += 1; url = "https://h/chorus"; } };
+      return { name, waitForLoadState: async () => {}, locator: () => el, url: () => url, waitForURL: async () => {},
+               isClosed: () => mode === "closed" && name === "second",
+               goto: async (u) => {
+                 if (mode === "broken") throw new Error("door down");
+                 visits.push(name); if (u.endsWith("/chorus/_auth/logout")) open -= 1; } };
+    };
+    (async () => {
+      const first = mk("first"), second = mk("second");
+      await auth.signIn(first); await auth.signIn(second);
+      if (mode === "already") { await first.goto("https://h/chorus/_auth/logout"); auth.markSignedOut(first); visits.length = 0; }
+      const done = await auth.signOutAll("https://h", (m) => warned.push(m));
+      const again = await auth.signOutAll("https://h", (m) => warned.push(m));
+      console.log(`open=${open} done=${done} again=${again} visits=${visits.join(",")} warned=${warned.length}`);
+    })().catch((e) => { console.log(`THREW ${e.message}`); process.exit(1); });
+  ' "$AUTH" "${1:-}"
+}
+
+@test "5026 AC2: the walk's end signs out every page it signed in, not only the default one" {
+  run end_of_walk
+  [ "$status" -eq 0 ]
+  [ "$output" = "open=0 done=2 again=0 visits=first,second warned=0" ]
+}
+
+@test "5026 AC2: a page the test signed out itself is not sent to logout again" {
+  run end_of_walk already
+  [ "$status" -eq 0 ]
+  [ "$output" = "open=0 done=1 again=0 visits=second warned=0" ]
+}
+
+# NEGATIVE PROOF: the sign-out really failing is said, never thrown (a passing test stays
+# passing) and never counted as done
+@test "5026 AC2 NEGATIVE PROOF: a logout that fails is warned about, not thrown and not counted" {
+  run end_of_walk broken
+  [ "$status" -eq 0 ]
+  [ "$output" = "open=2 done=0 again=0 visits= warned=2" ]
+}
+
+@test "5026 AC2: a signed-in page closed before the walk ended is said, and the other is still signed out" {
+  run end_of_walk closed
+  [ "$status" -eq 0 ]
+  [ "$output" = "open=1 done=1 again=0 visits=first warned=1" ]
+}
+
+# The sign-out scenario proves the visible control: it must assert it, with no bare-URL fallback.
+@test "5026 AC2: the sign-out flow asserts the visible Sign out control and has no URL fallback" {
+  f="$ROOT/proving/flows/login-journey.spec.cjs"
+  blk="$(awk "/test\('sign out ends the session everywhere on the host'/,/^  }\);/" "$f")"
+  [ -n "$blk" ]
+  printf '%s\n' "$blk" | grep -qF "toBeVisible()" || return 1
+  printf '%s\n' "$blk" | grep -qF "_auth/welcome" || return 1
+  ! printf '%s\n' "$blk" | grep -qF "logoutUrl(" || return 1
+  ! printf '%s\n' "$blk" | grep -qF "test.skip(" || return 1
 }

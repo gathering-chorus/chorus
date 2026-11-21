@@ -39,7 +39,7 @@ const { expect } = require('@playwright/test');
 // #5026 — one sign-in, from _auth: its signIn marks the page, and its test signs
 // the walk out when each test ends. This spec kept its own copies of these
 // helpers, which is how a walk could sign in and never be signed out.
-const { test, haveCreds, looksLikeLogin, signIn, passConsent, logoutUrl } = require('./_auth.cjs');
+const { test, haveCreds, looksLikeLogin, signIn, passConsent, gotoSignedIn, markSignedOut } = require('./_auth.cjs');
 
 const BASE = process.env.FLOW_BASE || 'https://lightlifeurbangardens.com';
 const PUBLIC_ROOT = process.env.FLOW_PUBLIC_ROOT || BASE;
@@ -207,18 +207,16 @@ test.describe('the journey — one sign-in, land where you asked', () => {
 
   test('sign out ends the session everywhere on the host', async ({ page }) => {
     // #5026 — this scenario starts with an empty jar, so it used to find no
-    // sign-out control and skip: the probe never once signed out. Sign in first,
-    // then sign out through the visible control, the way a person does.
-    await page.goto(CHORUS, { waitUntil: 'domcontentloaded' });
-    await page.locator('a, button').filter({ hasText: /sign in/i }).first().click();
-    await signIn(page);
-    await passConsent(page);
+    // sign-out control and skip: the probe never once signed out. Sign in the
+    // way every other walk does, then sign out the way a person does: by the
+    // visible control. The guard's own signed-in page carries it, and it must
+    // be there (no fallback to the bare URL: a person has no such fallback).
+    await gotoSignedIn(page, CHORUS);
+    await page.goto(`${BASE}/chorus/_auth/welcome`, { waitUntil: 'domcontentloaded' });
     const out = page.getByRole('link', { name: /sign out/i }).or(page.getByRole('button', { name: /sign out/i }));
-    if (await out.count()) {
-      await out.first().click();
-    } else {
-      await page.goto(logoutUrl(BASE), { waitUntil: 'domcontentloaded' });
-    }
+    await expect(out.first(), 'a signed-in person sees a Sign out control').toBeVisible();
+    await out.first().click();
+    markSignedOut(page);
     await page.goto(`${BASE}/chorus/domains`, { waitUntil: 'domcontentloaded' });
     await expect(page.locator('body')).toContainText(/sign in/i);
   });
