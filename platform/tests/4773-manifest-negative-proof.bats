@@ -10,7 +10,7 @@ setup() {
   export CHORUS_HOME="$ROOT"
   export CHORUS_BIN_DIR="$TEST_DIR/.chorus/bin"
   mkdir -p "$CHORUS_BIN_DIR"
-  BORG_PROVE="$ROOT/platform/services/borg-prove/target/debug/borg-prove"
+  BORG_PROVE="$ROOT/target/debug/borg-prove"
 }
 
 teardown() {

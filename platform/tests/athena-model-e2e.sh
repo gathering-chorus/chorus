@@ -15,7 +15,7 @@
 # chorus:role-dal-e2e-sacrificial (created + deleted here).
 set -uo pipefail
 
-BIN="${CHORUS_MODEL_BIN:-$(command -v chorus-model || echo "$(dirname "$0")/../services/chorus-model/target/debug/chorus-model")}"
+BIN="${CHORUS_MODEL_BIN:-$(command -v chorus-model || echo "$(dirname "$0")/../../target/debug/chorus-model")}"
 FUSEKI="${CHORUS_FUSEKI:-http://localhost:3030/pods}"
 NS="https://jeffbridwell.com/chorus#"
 PASS=0; FAIL=0

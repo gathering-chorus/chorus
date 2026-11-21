@@ -10,7 +10,7 @@
 
 setup() {
   BIN="${CHORUS_CRAWL_BIN:-$BATS_TEST_DIRNAME/../../target/$(id -un)/release/chorus-crawl}"
-  [ -x "$BIN" ] || BIN="$BATS_TEST_DIRNAME/../services/chorus-crawl/target/debug/chorus-crawl"
+  [ -x "$BIN" ] || BIN="$BATS_TEST_DIRNAME/../../target/debug/chorus-crawl"
   [ -x "$BIN" ] || skip "chorus-crawl not built at $BIN"
   ROOT="$BATS_TEST_DIRNAME/../.."
   MAP="$ROOT/platform/config/service-instance-map.json"

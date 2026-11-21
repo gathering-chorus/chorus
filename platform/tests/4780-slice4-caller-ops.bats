@@ -116,7 +116,7 @@ setup() {
 
 @test "AC2 NEGATIVE PROOF (#3734): invalid verbs or arbitrary extra args/paths are refused by launchagent-ops" {
   # Build shim if needed
-  SHIM_BIN="${CARGO_TARGET_DIR:-$ROOT/platform/services/chorus-hooks/target}/debug/chorus-hook-shim"
+  SHIM_BIN="${CARGO_TARGET_DIR:-$ROOT/target}/debug/chorus-hook-shim"  # #4555: the workspace target
   if [ ! -x "$SHIM_BIN" ]; then
     (cd "$ROOT/platform/services/chorus-hooks" && cargo build --offline --frozen --bin chorus-hook-shim)
   fi

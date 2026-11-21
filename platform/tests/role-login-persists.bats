@@ -10,7 +10,7 @@
 
 setup() {
   REPO="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
-  PRINCIPAL_BIN="${CHORUS_PRINCIPAL_TEST_BIN:-$REPO/platform/services/chorus-principal/target/debug/chorus-principal}"
+  PRINCIPAL_BIN="${CHORUS_PRINCIPAL_TEST_BIN:-$REPO/target/debug/chorus-principal}"
   [ -x "$PRINCIPAL_BIN" ] || PRINCIPAL_BIN="$REPO/target/$(id -un)/release/chorus-principal"
   [ -x "$PRINCIPAL_BIN" ] || { echo "FAIL: chorus-principal not built at $PRINCIPAL_BIN" >&2; return 1; }
   T="$BATS_TEST_TMPDIR"

@@ -29,7 +29,7 @@ lacks() { if grep -qF -- "$1" <<<"${2-$output}"; then echo "unexpected: $1" >&2;
 eq()    { [ "$1" = "$2" ] || { echo "expected [$2] got [$1]" >&2; return 1; }; }
 
 setup() {
-  BIN="${CHORUS_CRAWL_BIN:-$BATS_TEST_DIRNAME/../../target/$(id -un)/release/chorus-crawl}"; [ -x "$BIN" ] || BIN="$BATS_TEST_DIRNAME/../services/chorus-crawl/target/debug/chorus-crawl"; [ -x "$BIN" ] || skip "chorus-crawl not built at $BIN"
+  BIN="${CHORUS_CRAWL_BIN:-$BATS_TEST_DIRNAME/../../target/$(id -un)/release/chorus-crawl}"; [ -x "$BIN" ] || BIN="$BATS_TEST_DIRNAME/../../target/debug/chorus-crawl"; [ -x "$BIN" ] || skip "chorus-crawl not built at $BIN"
 }
 
 @test "negative proof: a jest name containing quotes is registered WHOLE" {

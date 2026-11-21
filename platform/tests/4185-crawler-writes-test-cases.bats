@@ -44,7 +44,7 @@ setup() {
   source "$BATS_TEST_DIRNAME/lib/test-store.sh"
   [ -n "${PRIVATE_DOOR_DS:-}" ] || ! variant_shares_prod "$OWL_URL" || skip "UNMEASURED — the variant at $OWL_URL writes the production store; this suite needs one of its own (#4334)"
   BIN="${CHORUS_CRAWL_BIN:-$REPO/target/$(id -un)/release/chorus-crawl}"
-  [ -x "$BIN" ] || BIN="$REPO/platform/services/chorus-crawl/target/debug/chorus-crawl"
+  [ -x "$BIN" ] || BIN="$REPO/target/debug/chorus-crawl"
   [ -x "$BIN" ] || skip "chorus-crawl not built at $BIN"
   TC="$("$REPO/platform/scripts/chorus-identity-token" crawler 2>/dev/null)"; [ -n "$TC" ]
 

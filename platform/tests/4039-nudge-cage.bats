@@ -14,7 +14,7 @@ OPS_NUDGE="$BATS_TEST_DIRNAME/../scripts/ops-nudge"
 # tree's own build: an installed one may predate nudge-send. No build is a
 # failure that says so, never a pass.
 setup() {
-  local hooks="$BATS_TEST_DIRNAME/../services/chorus-hooks/target"
+  local hooks="$BATS_TEST_DIRNAME/../../target"  # #4555: one workspace, one target/
   SHIM=""
   for b in "$hooks/release/chorus-hook-shim" "$hooks/debug/chorus-hook-shim"; do
     [ -x "$b" ] && "$b" nudge-send 2>&1 | grep -q "usage: nudge-send" && { SHIM="$b"; break; }

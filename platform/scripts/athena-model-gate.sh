@@ -46,7 +46,7 @@
 set -uo pipefail
 
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
-BIN="${ATHENA_MODEL_BIN:-$(command -v athena-model 2>/dev/null || echo "$CHORUS_ROOT/platform/services/chorus-model/target/release/athena-model")}"
+BIN="${ATHENA_MODEL_BIN:-$(command -v athena-model 2>/dev/null || echo "$CHORUS_ROOT/target/release/athena-model")}"
 
 if [ ! -x "$BIN" ]; then
   echo "athena-model-gate: binary not found at $BIN" >&2

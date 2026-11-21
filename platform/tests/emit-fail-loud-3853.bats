@@ -8,7 +8,7 @@
 # the emit is shown to now refuse it.
 
 setup() {
-  SHIM="${BATS_TEST_DIRNAME}/../services/chorus-hooks/target/debug/chorus-hook-shim"
+  SHIM="${BATS_TEST_DIRNAME}/../../target/debug/chorus-hook-shim"
   TMP="$(mktemp -d)"
   # a regular file where a directory is needed -> create_dir_all + open both fail
   touch "$TMP/blocker"

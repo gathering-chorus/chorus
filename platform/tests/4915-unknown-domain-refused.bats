@@ -8,7 +8,7 @@
 
 setup() {
   ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
-  BIN="$ROOT/platform/services/werk-test/target/debug/werk-test"
+  BIN="$ROOT/target/debug/werk-test"
   [ -x "$BIN" ] || (cd "$ROOT/platform/services/werk-test" && cargo build -q)
   T="$(mktemp -d "${BATS_TMPDIR:-/tmp}/wt4915.XXXXXX")"
   mkdir -p "$T/door/v1/domains" "$T/werk/platform/tests"

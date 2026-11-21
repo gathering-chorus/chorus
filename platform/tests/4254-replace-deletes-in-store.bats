@@ -38,7 +38,7 @@ setup() {
   # #4965 — release first: the nightly builds release, and a stale debug build
   # (pre-#4960) still listed governance-checks-3846.ttl
   DEPLOY="${ROOT}/target/$(id -un)/release/athena-deploy"
-  test -x "$DEPLOY" || DEPLOY="${ROOT}/platform/services/athena-deploy/target/debug/athena-deploy"
+  test -x "$DEPLOY" || DEPLOY="${ROOT}/target/debug/athena-deploy"
 }
 
 teardown() {

@@ -13,7 +13,7 @@ setup_file() {
   # unless this account can't write it (#4787: pipeline account vs role-owned
   # target → PermissionDenied), then fall back to a cold per-file target.
   if [ -z "${CARGO_TARGET_DIR:-}" ]; then
-    local crate_target="$ROOT/platform/services/chorus-hooks/target"
+    local crate_target="$ROOT/target"  # #4555: the workspace target
     # -w on the dir is not enough: files inside may belong to another account.
     if [ -d "$crate_target" ] && [ -w "$crate_target" ] \
        && [ -z "$(find "$crate_target" -maxdepth 3 ! -user "$(id -un)" -print -quit 2>/dev/null)" ]; then
