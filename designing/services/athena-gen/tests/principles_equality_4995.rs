@@ -91,6 +91,12 @@ fn differences(make: &Value, gen: &Value) -> Vec<String> {
             (Some(x), Some(y)) => {
                 let keys: std::collections::BTreeSet<&String> = x.as_object().unwrap().keys().chain(y.as_object().unwrap().keys()).collect();
                 for k in keys {
+                    // #5021 — athena-make serves status "" on every row; the generated door serves
+                    // status only where a shape declares it, and Principle's does not. An empty
+                    // status against none is that, nothing else; a status with a value still differs.
+                    if k == "status" && x.get(k) == Some(&Value::String(String::new())) && y.get(k).is_none() {
+                        continue;
+                    }
                     if x.get(k) != y.get(k) {
                         out.push(format!("{name}.{k}: athena-make {:?} vs generated {:?}", x.get(k), y.get(k)));
                     }
