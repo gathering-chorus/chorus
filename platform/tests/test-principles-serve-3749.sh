@@ -18,7 +18,8 @@ set -euo pipefail
 [ "${RUN_INTEGRATION:-}" = "true" ] || { echo "skip: RUN_INTEGRATION not set (integration test — live store + athena-make)"; exit 0; }
 
 FUSEKI_QUERY="${CHORUS_FUSEKI_QUERY:-http://localhost:3030/pods/query}"
-OWL_API="${OWL_API_URL:-http://localhost:3360}"
+# card 5017 moved principles off athena-make (:3360) to its own door, principles-api.
+OWL_API="${OWL_API_URL:-http://localhost:3340/owl/v1/principles}"
 NS="https://jeffbridwell.com/chorus#"
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
@@ -39,7 +40,7 @@ home=$(count_q "PREFIX c: <$NS> SELECT (COUNT(DISTINCT ?p) AS ?n) WHERE { GRAPH 
 served=$(curl -s -m 10 "$OWL_API/principles" | python3 -c "import json,sys
 d=json.load(sys.stdin)
 items=d.get('data', d.get('items', d.get('principles', d if isinstance(d, list) else [])))
-print(len(items))" 2>/dev/null) || fail "athena-make /principles did not answer parseable JSON"
+print(len(items))" 2>/dev/null) || fail "principles-api /principles did not answer parseable JSON"
 [ "$served" = "$home" ] || fail "/principles serves $served, store holds $home — surface exists but reads the wrong graph (the 2-of-29 class)"
 
 # B3 — SOURCE DISAMBIGUATION (Silas catch): the 14 must exist ONLY in the

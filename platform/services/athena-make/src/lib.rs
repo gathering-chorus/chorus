@@ -1170,18 +1170,14 @@ pub fn project_domain_vocab_index(domain: &str, classes: &[&str]) -> String {
     )
 }
 
-/// #5017 — the domains served by their own generated API: a Domain row carrying a
-/// `server.bind` Property (the settings athena-gen's crate listens on).
+/// #5017 — leaves out domains with their own door (a `server.bind` Property, athena-gen).
 pub const OWN_DOOR_FILTER: &str = "FILTER NOT EXISTS { GRAPH <urn:chorus:domains:domains> { ?d chorus:hasProperty ?own } GRAPH <urn:chorus:domains:properties> { ?own chorus:propertyKey \"server.bind\" } }";
 
 /// #3494 — enumerate EVERY class any domain `definesVocabulary` across the model
 /// (distinct, sorted). The serve fan-out uses this to mount every vocabulary
 /// surface on one origin: each class generates its #3454 CRUD table and dispatches
 /// via the existing `select_table`. Zero edges → empty Vec (serve adds nothing).
-///
-/// #5017 — a domain that declares its own `server.bind` Property is served by its own
-/// generated API (athena-gen), so this door does not mount its classes: one door per
-/// domain, read from the model, never a list in code. Principles is the first.
+/// #5017 — own-door domains (OWN_DOOR_FILTER) are not mounted: one door per domain.
 pub fn all_vocab_classes() -> R<Vec<String>> {
     let q = format!(
         "PREFIX chorus: <{ns}> SELECT DISTINCT ?v WHERE {{ GRAPH <{g}> {{ ?d chorus:definesVocabulary ?c BIND(REPLACE(STR(?c), '.*[#/]', '') AS ?v) }} {own} }} ORDER BY ?v",
@@ -2601,12 +2597,7 @@ fn dal_err_resp(e: &str) -> (u16, String) {
 pub fn entity_subject(class: &str, name: &str) -> String {
     let local = class.rsplit('#').next().unwrap_or(class);
     match local {
-        // #4114 — Principle joins the un-prefixed kinds because that is how all 28
-        // of its rows are actually authored (`chorus:hemenway-get-a-yield`,
-        // `chorus:xp-humanity`) — measured across every ontology file, 28 bare and
-        // 0 prefixed. Minting `principle-<name>` meant the entity read looked for a
-        // subject nobody ever wrote, so /principles listed 28 rows and every single
-        // read of one 404'd, which is why sessions booted with no principles at all.
+        // #4114 — Principle rows are authored bare (`chorus:xp-humanity`); minted subjects 404'd.
         // #4485 — Machine too: chorus:library and chorus:bedroom are authored bare, and
         // 269 onMachine links point at those IRIs. Minting `machine-library` made every
         // write to a listed machine 404 (measured on the staging door, 2026-10-11).
@@ -6522,25 +6513,17 @@ pub fn resolve_surface(path: &str, surfaces: &[DomainSurface]) -> Option<Surface
     None
 }
 
-/// #5021 — the composed-surface query, own-door domains left out (testable without a store).
-pub fn domain_surfaces_query() -> String {
-    format!(
-        "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?d chorus:repoTarget ?mount ; chorus:definesVocabulary ?c BIND(CONCAT(REPLACE(STR(?d), '.*[#/]', ''), '|', STR(?mount), '|', REPLACE(STR(?c), '.*[#/]', '')) AS ?v) }} {own} }} ORDER BY ?v",
-        ns = NS, g = DOMAINS_GRAPH, own = OWN_DOOR_FILTER
-    )
-}
-
 /// #3494 — read the composed domain surfaces from the model: every domain with a
 /// `chorus:repoTarget` (the mount) AND `chorus:definesVocabulary` edges (the
 /// classes). One SPARQL; grouped per domain. Empty → no composed routes.
-/// #5021 — a domain with its own door (a server.bind Property, OWN_DOOR_FILTER) gets no
-/// surface here either: athena-make serves none of its classes (#5017), so an index at its
-/// repoTarget would only point at routes this door no longer has.
+/// #5021 — own-door domains (OWN_DOOR_FILTER) get no surface: this door serves none of their routes.
 pub fn read_domain_surfaces() -> R<Vec<DomainSurface>> {
     // CONCAT dom|mount|cls into ?v (the single-var pattern select_v reads, as
     // generate() does for field|kind) — one row per (domain, class) pair.
-    let q = domain_surfaces_query();
-
+    let q = format!(
+        "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?d chorus:repoTarget ?mount ; chorus:definesVocabulary ?c BIND(CONCAT(REPLACE(STR(?d), '.*[#/]', ''), '|', STR(?mount), '|', REPLACE(STR(?c), '.*[#/]', '')) AS ?v) }} {own} }} ORDER BY ?v",
+        ns = NS, g = DOMAINS_GRAPH, own = OWN_DOOR_FILTER
+    );
     let body = sparql_json(&q)?;
     let mut by_mount: std::collections::BTreeMap<(String, String), Vec<String>> = std::collections::BTreeMap::new();
     for row in select_v(&body) {
