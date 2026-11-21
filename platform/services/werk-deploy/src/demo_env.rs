@@ -1016,6 +1016,21 @@ fn wait_for_smoke(url: &str, kind: &SmokeKind, timeout: Duration) -> R<()> {
 // No separate "start vs deploy" boundary needed — re-running env_up is the
 // refresh path. env_down is the destroy path. Two verbs, one lifecycle.
 
+/// #4915 — the folder env_up's Rust build writes to: the one `built_binary` (and so the
+/// plist) reads, the account's own folder in this werk.
+pub fn rust_build_target_dir(werk_root: &str, account: &str) -> String {
+    crate::account_target_dir(werk_root.trim_end_matches('/'), account)
+}
+
+/// #4915 — the cargo call env_up makes for a Rust service: its environment and arguments.
+/// CARGO_TARGET_DIR is the folder the plist reads (see `rust_build_target_dir`).
+pub fn rust_build_command(werk_root: &str, account: &str) -> (Vec<(String, String)>, Vec<String>) {
+    (
+        vec![("CARGO_TARGET_DIR".to_string(), rust_build_target_dir(werk_root, account))],
+        ["build", "--release", "--quiet"].iter().map(|s| s.to_string()).collect(),
+    )
+}
+
 /// Build dist for one service inside the werk. TS services run `npm run build`;
 /// future Rust-built TS services would extend this. Cheap (~2s); env_up calls
 /// this per service before bootstrapping the variant.
@@ -1031,9 +1046,13 @@ fn build_service_dist(svc: &EnvService, werk_root: &str, role: &str) -> R<()> {
                 .map_err(|e| format!("env_up: npm run build in {} failed: {}", svc_dir, e))
         }
         ProgramArgsTemplate::Rust { binary: _ } => {
-            // Reserved for future Rust services built in place; today's Rust
-            // services use the WerkBin templates below.
-            run_env(Some(&svc_dir), &[], "cargo", &["build", "--release", "--quiet"])
+            // #4915 — build where the plist reads (built_binary): the account's folder in the
+            // werk. Without CARGO_TARGET_DIR the workspace build landed in target/release while
+            // the plist ran target/<account>/release, so a fresh werk's hooks never started.
+            let (envs, args) = rust_build_command(werk_root, &crate::current_account());
+            let envs: Vec<(&str, &str)> = envs.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+            let args: Vec<&str> = args.iter().map(String::as_str).collect();
+            run_env(Some(&svc_dir), &envs, "cargo", &args)
                 .map(|_| ())
                 .map_err(|e| format!("env_up: cargo build in {} failed: {}", svc_dir, e))
         }
@@ -2075,3 +2094,4 @@ mod clearing_v2_demo_4625 {
         }
     }
 }
+

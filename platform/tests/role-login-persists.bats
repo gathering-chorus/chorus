@@ -11,13 +11,16 @@
 . "$BATS_TEST_DIRNAME/../scripts/lib/workspace-bin.sh"  # #4915: where a workspace build puts a binary
 setup() {
   REPO="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
-  PRINCIPAL_BIN="${CHORUS_PRINCIPAL_TEST_BIN:-$(workspace_bin "$REPO" debug chorus-principal)}"
-  [ -x "$PRINCIPAL_BIN" ] || PRINCIPAL_BIN="$REPO/target/$(id -un)/release/chorus-principal"
+  # #4915 slice 3: the newest build in either profile, built once if none exists (a fresh werk has none)
+  PRINCIPAL_BIN="${CHORUS_PRINCIPAL_TEST_BIN:-$(workspace_bin_built "$REPO" chorus-principal chorus-principal)}"
   [ -x "$PRINCIPAL_BIN" ] || { echo "FAIL: chorus-principal not built at $PRINCIPAL_BIN" >&2; return 1; }
   T="$BATS_TEST_TMPDIR"
 }
 
 @test "AC1: chorus-principal emits Silas pinned launchctl asuser command line" {
+  # these cases prove establish refuses an account other than silas's; run AS chorus-silas the
+  # establish is allowed, so there is nothing to refuse (Silas 11-21 13:40, like 6-7's runner skip)
+  if [ "$(id -un)" = "chorus-silas" ]; then skip "runs as chorus-silas: establish is allowed, nothing to refuse"; fi
   source "$REPO/platform/tests/lib/login-harness.bash"
   login_harness
   printf '{"data":{"principalKind":"agent","hostAccount":"chorus-silas"}}\n200\n' > "$T/principal-silas.json"
@@ -43,6 +46,9 @@ setup() {
 }
 
 @test "AC1: asuser pre-flight probe matches repo sudoers pinned rule" {
+  # these cases prove establish refuses an account other than silas's; run AS chorus-silas the
+  # establish is allowed, so there is nothing to refuse (Silas 11-21 13:40, like 6-7's runner skip)
+  if [ "$(id -un)" = "chorus-silas" ]; then skip "runs as chorus-silas: establish is allowed, nothing to refuse"; fi
   source "$REPO/platform/tests/lib/login-harness.bash"
   login_harness
   printf '{"data":{"principalKind":"agent","hostAccount":"chorus-silas"}}\n200\n' > "$T/principal-silas.json"

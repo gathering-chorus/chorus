@@ -17,15 +17,15 @@ CRATE="$REPO/shaping/domains/principles/api"
 PLIST="$REPO/platform/scripts/launchagents-canonical/com.chorus.principles-api.plist"
 LAUNCH="$CRATE/principles-api-launch.sh"
 
-# The card's build: PRINCIPLES_API_BIN, else the workspace target, else the crate's own.
+# The card's build: PRINCIPLES_API_BIN, else the workspace target (#4555: no crate has its own target/).
 # Built once if missing; a failed build fails the test, never skips it.
 card_bin() {
   local c
-  for c in "${PRINCIPLES_API_BIN:-}" "$(workspace_bin "$REPO" release principles-api)" "$CRATE/target/release/principles-api"; do
+  for c in "${PRINCIPLES_API_BIN:-}" "$(workspace_bin "$REPO" release principles-api)"; do
     [ -n "$c" ] && [ -x "$c" ] && { echo "$c"; return 0; }
   done
   (cd "$CRATE" && cargo build --release --quiet) >&2 || return 1
-  for c in "$(workspace_bin "$REPO" release principles-api)" "$CRATE/target/release/principles-api"; do
+  for c in "$(workspace_bin "$REPO" release principles-api)"; do
     [ -n "$c" ] && [ -x "$c" ] && { echo "$c"; return 0; }
   done
   return 1

@@ -16,13 +16,12 @@ OPS_NUDGE="$BATS_TEST_DIRNAME/../scripts/ops-nudge"
 # failure that says so, never a pass.
 setup() {
   # #4915: a workspace build is in CARGO_TARGET_DIR, target/<account> (pipeline) or target/ (by hand)
-  local root="$BATS_TEST_DIRNAME/../.." hooks
-  hooks="$(dirname "$(dirname "$(workspace_bin "$root" release chorus-hook-shim)")")"
+  # slice 3: the newest build in either profile, built once if none exists (a fresh werk has none)
+  local b
+  b="$(workspace_bin_built "$BATS_TEST_DIRNAME/../.." chorus-hook-shim chorus-hooks)"
   SHIM=""
-  for b in "$(workspace_bin "$root" release chorus-hook-shim)" "$(workspace_bin "$root" debug chorus-hook-shim)"; do
-    [ -x "$b" ] && "$b" nudge-send 2>&1 | grep -q "usage: nudge-send" && { SHIM="$b"; break; }
-  done
-  [ -n "$SHIM" ] || { echo "no chorus-hook-shim build with nudge-send under $hooks: build chorus-hooks first"; return 1; }
+  [ -x "$b" ] && "$b" nudge-send 2>&1 | grep -q "usage: nudge-send" && SHIM="$b"
+  [ -n "$SHIM" ] || { echo "no chorus-hook-shim build with nudge-send at ${b:-(none)}: the build failed or predates nudge-send"; return 1; }
   # nudge-send writes nudge.requested to the spine; a test brings its own (#3615)
   export CHORUS_LOG_FILE="$BATS_TEST_TMPDIR/spine.log"
   # #4532 — ops-nudge refuses any caller with a role; the ops callers these
