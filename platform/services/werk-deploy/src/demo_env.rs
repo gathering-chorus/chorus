@@ -1035,13 +1035,22 @@ pub fn rust_build_command(werk_root: &str, account: &str) -> (Vec<(String, Strin
 /// future Rust-built TS services would extend this. Cheap (~2s); env_up calls
 /// this per service before bootstrapping the variant.
 fn build_service_dist(svc: &EnvService, werk_root: &str, role: &str) -> R<()> {
+    build_service_dist_with(svc, werk_root, role, &crate::current_account(), &mut |d, e, c, a| run_env(d, e, c, a))
+}
+
+/// The commands a runner is handed: (dir, environment, program, args) → output.
+pub type CommandRunner<'a> = dyn FnMut(Option<&str>, &[(&str, &str)], &str, &[&str]) -> R<String> + 'a;
+
+/// #4915 (code review of e6353088c) — build_service_dist with its account and command runner
+/// passed in, so a test runs the real build path with a recording runner instead of cargo.
+pub fn build_service_dist_with(svc: &EnvService, werk_root: &str, role: &str, account: &str, run: &mut CommandRunner) -> R<()> {
     let svc_dir = format!("{}/{}", werk_root, svc.source_dir_rel);
     if !Path::new(&svc_dir).is_dir() {
         return Err(format!("env_up: service dir not found at {} (werk-pull first?)", svc_dir));
     }
     match svc.program_args_template {
         ProgramArgsTemplate::Node { .. } => {
-            run_env(Some(&svc_dir), &[], "npm", &["run", "build"])
+            run(Some(&svc_dir), &[], "npm", &["run", "build"])
                 .map(|_| ())
                 .map_err(|e| format!("env_up: npm run build in {} failed: {}", svc_dir, e))
         }
@@ -1049,10 +1058,10 @@ fn build_service_dist(svc: &EnvService, werk_root: &str, role: &str) -> R<()> {
             // #4915 — build where the plist reads (built_binary): the account's folder in the
             // werk. Without CARGO_TARGET_DIR the workspace build landed in target/release while
             // the plist ran target/<account>/release, so a fresh werk's hooks never started.
-            let (envs, args) = rust_build_command(werk_root, &crate::current_account());
+            let (envs, args) = rust_build_command(werk_root, account);
             let envs: Vec<(&str, &str)> = envs.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
             let args: Vec<&str> = args.iter().map(String::as_str).collect();
-            run_env(Some(&svc_dir), &envs, "cargo", &args)
+            run(Some(&svc_dir), &envs, "cargo", &args)
                 .map(|_| ())
                 .map_err(|e| format!("env_up: cargo build in {} failed: {}", svc_dir, e))
         }

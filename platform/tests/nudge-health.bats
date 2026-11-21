@@ -41,7 +41,7 @@ HEALTH_SCRIPT="${CHORUS_ROOT:-$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && p
 roles_measurable() {
   local n=0
   for r in wren silas kade; do
-    curl -sf --max-time 3 "${PULSE_URL:-http://localhost:3475}/api/where/$r" 2>/dev/null | grep -q '"kind":"resolved"' && n=$((n+1))
+    curl -sf --max-time 3 "${PULSE_LIVE_URL:-http://localhost:3475}/api/where/$r" 2>/dev/null | grep -q '"kind":"resolved"' && n=$((n+1))
   done
   [ "$n" -eq 3 ] || return 1
   command -v tmux >/dev/null 2>&1 || return 1

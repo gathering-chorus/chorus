@@ -20,15 +20,9 @@ LAUNCH="$CRATE/principles-api-launch.sh"
 # The card's build: PRINCIPLES_API_BIN, else the workspace target (#4555: no crate has its own target/).
 # Built once if missing; a failed build fails the test, never skips it.
 card_bin() {
-  local c
-  for c in "${PRINCIPLES_API_BIN:-}" "$(workspace_bin "$REPO" release principles-api)"; do
-    [ -n "$c" ] && [ -x "$c" ] && { echo "$c"; return 0; }
-  done
-  (cd "$CRATE" && cargo build --release --quiet) >&2 || return 1
-  for c in "$(workspace_bin "$REPO" release principles-api)"; do
-    [ -n "$c" ] && [ -x "$c" ] && { echo "$c"; return 0; }
-  done
-  return 1
+  [ -n "${PRINCIPLES_API_BIN:-}" ] && [ -x "$PRINCIPLES_API_BIN" ] && { echo "$PRINCIPLES_API_BIN"; return 0; }
+  local b; b="$(workspace_bin_built "$REPO" principles-api principles-api release)" || return 1
+  [ -x "$b" ] && echo "$b"
 }
 
 free_port() { python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1])'; }

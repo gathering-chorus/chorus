@@ -27,13 +27,19 @@ setup() {
 @test "no nudge in the window carries the three loudest alerts (Loki, one bounded count)" {
   # one metric query over the spine's nudge.emitted lines, never a scan of pulse's store
   # (11-11 10:24: a newest-first read of 23k nudges stalled pulse)
+  # #4915 round 5 — the window ends at the newest nudge at the source, not at now: at 04:00 no
+  # nudges is not "the count does not read the spine". None in 24h is UNMEASURED, never green.
+  local line at
+  line=$(python3 "$BATS_TEST_DIRNAME/lib/live_anchor.py" newest '{job="platform-chorus"} | json | event="nudge.emitted"') \
+    || skip "UNMEASURED: no nudge.emitted at the source (Loki) in 24h"
+  at=$(python3 -c "import sys; print(int(float(sys.argv[1])) + 1)" "${line%%$'\t'*}")
   count() {
-    curl -sfG --max-time 20 "$LOKI/loki/api/v1/query" --data-urlencode "query=sum(count_over_time({job=\"platform-chorus\"} |= \"\\\"event\\\":\\\"nudge.emitted\\\"\" $1 [${WINDOW}s]))" \
+    curl -sfG --max-time 20 "$LOKI/loki/api/v1/query" --data-urlencode "time=$at" --data-urlencode "query=sum(count_over_time({job=\"platform-chorus\"} |= \"\\\"event\\\":\\\"nudge.emitted\\\"\" $1 [${WINDOW}s]))" \
       | python3 -c 'import json,sys; r=json.load(sys.stdin)["data"]["result"]; print(int(float(r[0]["value"][1])) if r else 0)'
   }
   all=$(count "") || { echo "Loki did not answer"; false; }
   loud=$(count '|~ "content=(nightly RED now|crawler-out-of-sync:|deep-health:)"') || { echo "Loki did not answer"; false; }
-  echo "$all nudges in the last ${WINDOW}s, $loud from the three loudest sources"
+  echo "$all nudges in the ${WINDOW}s before the newest one ($at), $loud from the three loudest sources"
   [ "$all" -gt 0 ] || { echo "no nudges at all in the window: the count is not reading the spine"; false; }
   [ "$loud" -eq 0 ]
 }

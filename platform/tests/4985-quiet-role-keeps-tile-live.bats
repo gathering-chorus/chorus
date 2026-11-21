@@ -8,7 +8,7 @@
 # been quiet 2 hours, else this pass cannot measure the AC and says so.
 
 setup() {
-  PULSE_URL="${PULSE_URL:-http://127.0.0.1:3475}"
+  PULSE_URL="${PULSE_LIVE_URL:-http://127.0.0.1:3475}"  # #4915: a live READ; werk-test cages PULSE_URL (writes) to a dead port
   DOOR="${ATHENA_MAKE_URL:-http://localhost:3360}"
   V2_URL="${CLEARING_V2_URL:-http://127.0.0.1:3472}"
 }
