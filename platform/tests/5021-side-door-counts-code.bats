@@ -63,7 +63,9 @@ print('ok')"
   python3 - "$ROOT" "$T/live.json" <<'PY'
 import json, sys
 rows = json.load(open(sys.argv[1] + "/designing/domains/policies/policy-checks-5020.json"))
-json.dump({"policies": [{k: r[k] for k in ("name", "label", "comment", "gate", "status", "baseline", "checkKind", "checkSpec", "violationFixture")} for r in rows]}, open(sys.argv[2], "w"))
+probe = {"roles": [{"name": "flow-probe", "label": "flow-probe (browser-flow test identity)", "comment": "The login probe's role: walks Jeff's browser path. No grants (#5026).", "roleKind": "automation"}],
+         "teammates": [{"name": "flow-probe", "label": "flow-probe", "servesAs": "chorus:role-flow-probe", "signsInAs": "chorus:principal-flow-probe"}]}
+json.dump({"policies": [{k: r[k] for k in ("name", "label", "comment", "gate", "status", "baseline", "checkKind", "checkSpec", "violationFixture")} for r in rows], **probe}, open(sys.argv[2], "w"))
 PY
   printf '#!/bin/sh\necho "$*" >> %s/runner.log\n' "$T" > "$T/runner"; chmod +x "$T/runner"
   LAND_LIVE_JSON="$T/live.json" CHORUS_RUNNER="$T/runner" run python3 "$ROOT/platform/scripts/land-5021-rows"
