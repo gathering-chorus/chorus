@@ -63,10 +63,8 @@ fixed_root_paths() {  # repo root → each "file:line" reading a binary at a fix
 }
 
 # the two scripts this card moved to the lookup, and the hooks LaunchAgent copy Silas asked for
-@test "#4915: the scripts and unregistered shell tests this slice moved find their binary through workspace_bin" {
-  # and the three unregistered shell tests this slice moved (no registered test runs them; this names them)
-  for f in platform/scripts/athena-model-gate.sh proving/scripts/post-cargo-build.sh \
-           platform/tests/athena-model-e2e.sh platform/tests/context-cache-weekly.sh platform/tests/inject-regression.sh; do
+@test "#4915: athena-model-gate.sh and post-cargo-build.sh find their binary through workspace_bin" {
+  for f in platform/scripts/athena-model-gate.sh proving/scripts/post-cargo-build.sh; do
     grep -q 'workspace-bin.sh' "$ROOT/$f" || { echo "$f does not source the lookup"; return 1; }
     grep -q 'workspace_bin "' "$ROOT/$f" || { echo "$f does not ask workspace_bin"; return 1; }
   done

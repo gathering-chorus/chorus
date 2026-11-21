@@ -673,7 +673,7 @@ chorus:DeliveryShape-deliveryError a sh:PropertyShape ;
     sh:path chorus:deliveryError ; sh:maxCount 1 ; sh:datatype xsd:string .
 
 chorus:DeliveredNeedsAPresence a sh:SPARQLConstraint ;
-    sh:message "a delivered (or truncated) message to a principal who logs in landed somewhere: it names the presence (chorus:deliveredTo)" ;
+    sh:message "a delivered (or truncated) message to a principal who has a Presence landed somewhere: it names the presence (chorus:deliveredTo)" ;
     sh:select """
         SELECT $this WHERE {
           $this <https://jeffbridwell.com/chorus#deliveryOutcome> ?o .
@@ -681,7 +681,7 @@ chorus:DeliveredNeedsAPresence a sh:SPARQLConstraint ;
           FILTER NOT EXISTS { $this <https://jeffbridwell.com/chorus#deliveredTo> ?p }
           $this <https://jeffbridwell.com/chorus#deliveryOf> ?m .
           ?m <https://jeffbridwell.com/chorus#sentTo> ?to .
-          FILTER EXISTS { ?s a <https://jeffbridwell.com/chorus#Session> ; <https://jeffbridwell.com/chorus#ownedBy> ?to }
+          FILTER EXISTS { ?pr a <https://jeffbridwell.com/chorus#Presence> ; <https://jeffbridwell.com/chorus#ownedBy> ?to }
         }""" .
 
 # Presence grows the channels that reach it (additive).
