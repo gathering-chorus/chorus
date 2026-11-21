@@ -75,9 +75,11 @@ check("the record keeps the name the door chose, and what sign-out needs",
 # close-at-sign-in stops treating every old sid as live (4517 kept only the name: 50 rows stayed open)
 check("the record keeps the row's expiresAt, the login's own expiry",
       rec and rec["row"].get("expiresAt") == ps.iso(NOW + TOK["expires_in"]))
-ended = lambda r, now: bool((r.get("row") or {}).get("expiresAt", "")) and r["row"]["expiresAt"] <= ps.iso(now)
-check("NEGATIVE (#5026): a record past its expiry is pruned; the old name-only record never was",
-      rec and ended(rec, NOW + TOK["expires_in"]) and not ended({"row": {"name": "x"}}, NOW + 10**6))
+check("NEGATIVE (#5026): a record past its expiry is pruned, one before it is kept",
+      rec and ps.record_ended(rec, NOW + TOK["expires_in"]) and not ps.record_ended(rec, NOW))
+check("a name-only record from before #5026 is pruned by its login's own exp, never kept forever",
+      ps.record_ended({"row": {"name": "x"}, "exp": NOW}, NOW + 1) and not ps.record_ended({"row": {"name": "x"}, "exp": NOW + 60}, NOW)
+      and not ps.record_ended({"row": {"name": "x"}}, NOW + 10**6))
 touched = ps.touch_session(dict(rec, exp=NOW + 7200), NOW, None, Door(post_status=200), "http://door", lambda t: None, logs.append) if rec else None
 check("a renewal moves the record's expiresAt with the row's", touched and touched["row"]["expiresAt"] == ps.iso(NOW + 7200))
 

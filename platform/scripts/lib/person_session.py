@@ -40,6 +40,16 @@ def principal_for(webid, sparql):
     return name, (b.get("h") or {}).get("value")
 
 
+def record_ended(rec, now):
+    """#5026 — has this guard record's sign-in run out? The row's expiresAt when the record
+    keeps it; a record from before #5026 kept only the name, so its login's own exp decides.
+    A record with neither is kept (never guess an end)."""
+    exp = (rec.get("row") or {}).get("expiresAt", "")
+    if exp:
+        return exp <= iso(now)
+    return bool(rec.get("exp")) and int(rec["exp"]) <= int(now)
+
+
 def open_session(webid, tok, now, lasts, sparql, http, api, log):
     """Write his open browser Session. http(method, url, bearer, body) -> (status, json).
 
