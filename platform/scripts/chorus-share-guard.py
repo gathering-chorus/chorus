@@ -757,7 +757,7 @@ def open_person_session(webid, tok):
     try:
         with SESSIONS_LOCK:
             recs = load_state(SESSIONS_FILE)
-            ended = {k: r for k, r in recs.items() if person_session.record_ended(r, now)}
+            ended = {k: r for k, r in recs.items() if person_session.record_ended(r, now, SESSION_TTL)}
             for key in ended:
                 recs.pop(key)
             save_state(SESSIONS_FILE, recs)

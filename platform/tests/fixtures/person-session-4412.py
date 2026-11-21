@@ -71,17 +71,26 @@ check("NEGATIVE: it never writes a Session row itself", not [c for c in door.cal
 check("the record keeps the name the door chose, and what sign-out needs",
       rec and rec["row"]["name"] == "jeff-9f2c" and rec["refresh_token"] == "rt-1")
 
-# #5026 — the record keeps the row's expiry, so the guard can drop an ended record and #4966's
-# close-at-sign-in stops treating every old sid as live (4517 kept only the name: 50 rows stayed open)
-check("the record keeps the row's expiresAt, the login's own expiry",
-      rec and rec["row"].get("expiresAt") == ps.iso(NOW + TOK["expires_in"]))
-check("NEGATIVE (#5026): a record past its expiry is pruned, one before it is kept",
-      rec and ps.record_ended(rec, NOW + TOK["expires_in"]) and not ps.record_ended(rec, NOW))
-check("a name-only record from before #5026 is pruned by its login's own exp, never kept forever",
-      ps.record_ended({"row": {"name": "x"}, "exp": NOW}, NOW + 1) and not ps.record_ended({"row": {"name": "x"}, "exp": NOW + 60}, NOW)
-      and not ps.record_ended({"row": {"name": "x"}}, NOW + 10**6))
-touched = ps.touch_session(dict(rec, exp=NOW + 7200), NOW, None, Door(post_status=200), "http://door", lambda t: None, logs.append) if rec else None
-check("a renewal moves the record's expiresAt with the row's", touched and touched["row"]["expiresAt"] == ps.iso(NOW + 7200))
+# #5026 — the record keeps the COOKIE's expiry, so the guard can drop a dead record and #4966's
+# close-at-sign-in stops treating every old sid as live (4517 kept only the name: 50 rows stayed
+# open). Never the token's hour: the guard reads a pruned record as signed out (review 11-21).
+LASTS = 12 * 3600
+check("the record keeps the cookie's expiry (sign-in + the idle window), never the token's hour",
+      rec and rec["row"].get("expiresAt") == ps.iso(NOW + LASTS) != ps.iso(NOW + TOK["expires_in"]))
+check("NEGATIVE (#5026): a live cookie's record outlives the token's hour, and is pruned when the cookie dies",
+      rec and not ps.record_ended(rec, NOW + TOK["expires_in"] + 1, LASTS) and not ps.record_ended(rec, NOW + LASTS - 1, LASTS)
+      and ps.record_ended(rec, NOW + LASTS, LASTS))
+old_rec = {"row": {"name": "x"}, "exp": NOW}
+check("a name-only record from before #5026 is pruned once its login's exp plus the idle window has passed, not before",
+      ps.record_ended(old_rec, NOW + LASTS, LASTS) and not ps.record_ended(old_rec, NOW + LASTS - 1, LASTS)
+      and not ps.record_ended(old_rec, NOW + 1, LASTS))
+check("a record with no expiry at all, or no idle window given, is kept: never guess an end",
+      not ps.record_ended({"row": {"name": "x"}}, NOW + 10**9, LASTS) and not ps.record_ended(old_rec, NOW + 10**9))
+touch = lambda exp_at: ps.touch_session(dict(rec), NOW, exp_at, Door(post_status=200), "http://door", lambda t: None, logs.append)
+check("a renewal moves the record's expiresAt to the renewed cookie's exp",
+      rec and touch(NOW + LASTS + 600)["row"]["expiresAt"] == ps.iso(NOW + LASTS + 600))
+check("a renewal given no cookie exp leaves the record's expiresAt as it was",
+      rec and touch(None)["row"]["expiresAt"] == rec["row"]["expiresAt"])
 
 # NEGATIVE PROOF (Silas 01:34): no verified login, no row
 door_n, logs_n = Door(), []

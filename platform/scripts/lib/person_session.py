@@ -40,14 +40,20 @@ def principal_for(webid, sparql):
     return name, (b.get("h") or {}).get("value")
 
 
-def record_ended(rec, now):
-    """#5026 — has this guard record's sign-in run out? The row's expiresAt when the record
-    keeps it; a record from before #5026 kept only the name, so its login's own exp decides.
-    A record with neither is kept (never guess an end)."""
+def record_ended(rec, now, lasts=0):
+    """#5026 — is this guard record's COOKIE dead? The guard reads a missing record as signed
+    out, so a record must outlive its cookie, never end at the id token's hour (code review,
+    11-21: that signed a live 12h session out at anyone's next sign-in).
+
+    The record's expiresAt is the cookie's own expiry (sign-in + the idle window, moved by each
+    renewal). A record from before #5026 kept only the name: every renewal since either reached
+    the door with a live token (so it happened before `exp`) or failed and stamped expiresAt, so
+    its cookie is dead once `exp` + the idle window `lasts` has passed. With neither, or with no
+    `lasts`, the record is kept (never guess an end)."""
     exp = (rec.get("row") or {}).get("expiresAt", "")
     if exp:
         return exp <= iso(now)
-    return bool(rec.get("exp")) and int(rec["exp"]) <= int(now)
+    return bool(rec.get("exp")) and int(lasts) > 0 and int(rec["exp"]) + int(lasts) <= int(now)
 
 
 def open_session(webid, tok, now, lasts, sparql, http, api, log):
@@ -84,10 +90,11 @@ def open_session(webid, tok, now, lasts, sparql, http, api, log):
     stored = reply["name"]
     log(f"person-session: {principal} signed in, session {stored}")
     exp = int(tok.get("expires_in", 0) or 0) + int(now)
-    # #5026 — the record keeps the row's expiresAt (the door writes the login's own expiry).
-    # #4517 kept only the name, so the guard never pruned an ended record, every old sid stayed
-    # "live", and #4966's close-at-sign-in skipped them all: 50 probe rows and Jeff's stayed open.
-    return {"principal": principal, "row": {"name": stored, "expiresAt": (reply or {}).get("expiresAt") or iso(exp)},
+    # #5026 — the record keeps the COOKIE's expiry (now + the idle window `lasts`), as it did
+    # before #4517. #4517 kept only the name, so the guard never pruned an ended record, every
+    # old sid stayed "live", and #4966's close-at-sign-in skipped them all: 50 probe rows and
+    # Jeff's stayed open. Never the token's hour: the guard reads a pruned record as signed out.
+    return {"principal": principal, "row": {"name": stored, "expiresAt": iso(int(now) + int(lasts))},
             "refresh_token": tok.get("refresh_token", ""), "id_token": id_token, "exp": exp}
 
 
@@ -108,7 +115,8 @@ def live_bearer(rec, now, refresh, log, why):
 def touch_session(rec, now, expires_at, http, api, refresh, log):
     """#4500 — he is still here. #4517 AC6 — his (possibly refreshed) login renews his own
     open row at the door: lastSeenAt now, expiresAt the login's own (never later), tokenId the
-    new login. `expires_at` is kept for the caller's signature; the door decides the expiry.
+    new login. The door decides the ROW's expiry; `expires_at` (the renewed cookie's exp, epoch
+    seconds) is the RECORD's, the same value the guard's own fallback writes when this fails.
     Returns the updated record (tokens may be fresh), or None."""
     bearer = live_bearer(rec, now, refresh, log, "renewal could not touch")
     if not bearer:
@@ -122,8 +130,8 @@ def touch_session(rec, now, expires_at, http, api, refresh, log):
     if status not in (200, 204):
         log(f"person-session: {rec.get('principal')} session {name} NOT renewed (HTTP {status})")
         return None
-    # #5026 — the door moved the row's expiresAt to this login's; the record follows it
-    return dict(rec, row=dict(rec["row"], expiresAt=iso(rec.get("exp", 0))))
+    # #5026 — the record follows the renewed cookie; with no cookie exp given it keeps its own
+    return dict(rec, row=dict(rec["row"], expiresAt=iso(expires_at))) if expires_at else dict(rec)
 
 
 def close_session(rec, now, http, api, refresh, log):
