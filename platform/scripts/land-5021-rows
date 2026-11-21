@@ -1,0 +1,83 @@
+#!/usr/bin/env python3
+"""#5021: the complete-domain rows #5021 changes and adds. DRY RUN unless --apply.
+# @domain: policies
+
+From designing/domains/policies/policy-checks-5021.json (it ships in this land, so
+the store and the repo cannot differ): domain-no-side-door's baseline shrinks 169 -> 128 (comments
+no longer count), and two rows are added: domain-properties-declared (baseline 215) and
+domain-folds-filled (baseline 627, measured 11-20 18:35 through the page's own reads). Written by a principal with Write on the
+policies graph (Silas, as #5020's were). The door, the runner, the compare, the 403 wait and the exit
+codes are land-4960-rows' own (one implementation): this script only names a different plan.
+Folded from card 5026 (Jeff, 11-21 06:22): the login probe's own identity, Silas's plan 06:09.
+Role flow-probe (roleKind automation) and Teammate flow-probe (servesAs role-flow-probe, signsInAs
+principal-flow-probe), ZERO grants, roles before teammates so servesAs resolves. Why: every browser
+sign-in now names the role it acts as; the probe served none, so its sign-in would be refused 403
+and #4966's close of its own expired rows would never run. They are written only with --probe, by
+Wren after the land (the door makes the caller the owner, and every Teammate is wren's); the land's
+own run writes the policy rows alone.
+Exit 0 = plan printed (or applied); 1 = a write was refused; 2 = the door or the plan could not be read.
+--ttl <file> writes the planned rows as Turtle (for the shape test) and exits.
+"""
+import importlib.machinery
+import importlib.util
+import json
+import os
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+_loader = importlib.machinery.SourceFileLoader("land4960", os.path.join(HERE, "land-4960-rows"))
+_spec = importlib.util.spec_from_loader("land4960", _loader)
+land = importlib.util.module_from_spec(_spec)
+_loader.exec_module(land)
+
+PLAN = os.path.join(land.ROOT, "designing/domains/policies/policy-checks-5021.json")
+land.DOOR_CLASS = {**land.DOOR_CLASS,
+                   "roles": ("/v1/roles/roles", "roles", "roles"),
+                   "teammates": ("/v1/roles/teammates", "roles", "teammates")}
+
+PROBE = "--probe" in sys.argv[1:]
+
+# the door serves a link as chorus:role-<x> / chorus:principal-<x>; the plan writes the bare
+# name (the DAL mints the kind prefix, a prefixed one is refused as a double prefix, #4343).
+# Only a served link (it starts chorus:) loses its kind prefix, and only for the probe's rows:
+# a policy's text that happens to start role- or principal- is compared as it is.
+_bare = land.bare
+
+
+def bare(v):
+    v = _bare(v)
+    if v.startswith("chorus:"):
+        v = v[len("chorus:"):]
+        for p in ("role-", "principal-"):
+            if v.startswith(p):
+                return v[len(p):]
+    return v
+
+
+if PROBE:
+    land.bare = bare
+
+PROBE_ROWS = [
+    ("roles", "flow-probe", {"label": "flow-probe (browser-flow test identity)",
+                             "comment": "The login probe's role: walks Jeff's browser path. No grants (#5026).",
+                             "roleKind": "automation"}),
+    ("teammates", "flow-probe", {"label": "flow-probe",
+                                 "servesAs": "flow-probe",
+                                 "signsInAs": "flow-probe"}),
+]
+FIELDS = ("label", "comment", "gate", "status", "baseline", "checkKind", "checkSpec", "violationFixture")
+
+
+def policy_rows():
+    return [("policies", r["name"], {k: r[k] for k in FIELDS}) for r in json.load(open(PLAN))]
+
+
+def plan(_live):
+    return list(PROBE_ROWS) if PROBE else policy_rows()
+
+
+land.policy_rows = policy_rows  # write_ttl reads the plan through this name
+land.plan = plan
+
+if __name__ == "__main__":
+    sys.exit(land.main(sys.argv[1:]))

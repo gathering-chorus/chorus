@@ -15,6 +15,14 @@ const USER = process.env.FLOW_USER;
 const PASS = process.env.FLOW_PASS;
 const haveCreds = Boolean(USER && PASS);
 
+// #5026 AC2 — every walk ends the way a person's does: signed out. Since #5015
+// each probe sign-in opens a Session row at the door, and a walk that never
+// signed out left it open (50 open rows by 11-21, failing the open-session
+// rule). signIn remembers EVERY page it signed in (the default one or one a
+// spec opened itself); the `test` exported below signs them all out when the
+// test ends, pass or fail, so no spec has to remember to.
+const signedIn = new Set();
+
 /** A page is a login page if a person would see one: a password field. */
 async function looksLikeLogin(page) {
   return (await page.locator('input[type="password"]').count()) > 0;
@@ -38,6 +46,7 @@ async function signIn(page) {
   await page.locator('button[type="submit"], input[type="submit"]').first().click();
   await page.waitForURL((u) => u.toString() !== loginUrl, { timeout: 30000 });
   await page.waitForLoadState('networkidle');
+  signedIn.add(page);
 }
 
 /**
@@ -74,4 +83,67 @@ async function gotoSignedIn(page, url) {
   }
 }
 
-module.exports = { haveCreds, looksLikeLogin, signIn, passConsent, gotoSignedIn };
+/** The guard's sign-out, in the visitor's frame: <base>/chorus/_auth/logout. */
+function logoutUrl(base) {
+  return `${String(base).replace(/\/+$/, '')}/chorus/_auth/logout`;
+}
+
+/** A spec that signed `page` out itself says so, and the walk's end leaves it alone. */
+function markSignedOut(page) {
+  signedIn.delete(page);
+}
+
+/** Sign `page` out if this walk signed it in; returns whether it did. */
+async function signOutIfSignedIn(page, base) {
+  if (!signedIn.has(page)) return false;
+  signedIn.delete(page);
+  await page.goto(logoutUrl(base), { waitUntil: 'domcontentloaded' });
+  return true;
+}
+
+/**
+ * The walk's end: sign out every page this walk signed in and that is still
+ * signed in. Never throws: this runs after the test's own verdict, and a
+ * sign-out that fails must not turn a passing test red. It says so instead
+ * (the door's close-at-sign-in ends such a row at the next sign-in, #4966).
+ * Returns how many it signed out.
+ */
+async function signOutAll(base, warn = console.warn) {
+  let done = 0;
+  for (const page of [...signedIn]) {
+    try {
+      if (page.isClosed && page.isClosed()) {
+        signedIn.delete(page);
+        warn(`sign-out skipped: a signed-in page was closed before the walk ended; its session stays open until the next sign-in`);
+        continue;
+      }
+      if (await signOutIfSignedIn(page, base)) done += 1;
+    } catch (e) {
+      warn(`sign-out failed, session left open until the next sign-in: ${e && e.message ? e.message : e}`);
+    }
+  }
+  return done;
+}
+
+// Playwright's test plus one automatic fixture: after each test, every page
+// this walk signed in is signed out. It names `page` so it is torn down while
+// the pages are still open. Loaded on first use so the helpers above run (and
+// are tested) without the playwright package.
+let extended;
+function signedOutTest() {
+  if (!extended) {
+    extended = require('@playwright/test').test.extend({
+      signOutAfter: [async ({ page, baseURL }, use) => {
+        await use();
+        await signOutAll(process.env.FLOW_BASE || baseURL);
+      }, { auto: true }],
+    });
+  }
+  return extended;
+}
+
+module.exports = {
+  haveCreds, looksLikeLogin, signIn, passConsent, gotoSignedIn,
+  signedIn, logoutUrl, markSignedOut, signOutIfSignedIn, signOutAll,
+  get test() { return signedOutTest(); },
+};

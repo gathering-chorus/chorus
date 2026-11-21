@@ -20,7 +20,7 @@ export const LABELS = {
     cooking: 34, reading: 35, watching: 36, todo: 37, intentions: 38,
     music: 39, photos: 40, books: 41, stories: 42, notes: 43,
     blog: 44, social: 45, documents: 46, property: 47,
-    sexuality: 48, people: 49, values: 50, practices: 65,
+    sexuality: 48, people: 49, values: 50, practices: 65, principles: 271,  // #5021: the label `cards domain add principles` made, 2026-11-20
     self: 51, search: 52,
     // Chorus domains
     skills: 53, roles: 54, cards: 55, decisions: 56, briefs: 57, sessions: 58,

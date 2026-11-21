@@ -17,14 +17,15 @@
  * The second test is the one that keeps it useful after tonight: EVERY link is
  * followed, so the next dead one names itself instead of waiting for Jeff.
  */
-const { test, expect } = require('@playwright/test');
+const { expect } = require('@playwright/test');
 
 const BASE = process.env.FLOW_BASE || 'https://lightlifeurbangardens.com';
 // 2026-08-24 — these assertions describe the ENTRANCE, which anonymous never
 // sees: the public /chorus answers with our own sign-in door (correct posture,
 // #3878). Run anonymous they failed as "no link to the Clearing" — a red that
 // named the wrong state. Sign in like a person, or skip with the reason.
-const { haveCreds, gotoSignedIn } = require('./_auth.cjs');
+// #5026 — test from _auth signs each walk out when it ends.
+const { test, haveCreds, gotoSignedIn } = require('./_auth.cjs');
 
 
 

@@ -114,3 +114,29 @@ describe('fetchChorusDomainReleases (#2188)', () => {
     expect(body._meta.query_name).toBe('domain-releases');
   });
 });
+
+// #5021 — a land since #4707 is "#<card> (<role>) (#<PR>)"; the acp-only reader found none of them
+describe('#5021 land commits are releases', () => {
+  const log = [
+    'aaaa1111|2026-11-20T19:32:54Z|#5017 (kade) (#2007)',
+    'bbbb2222|2026-11-20T22:40:00Z|#5020 (kade) (#2008)',
+    'cccc3333|2026-11-20T23:00:00Z|silas: #5018 — silas: #5018 AC4 — a werk commit, not a land (#2006)',
+  ].join('\n');
+  const cards: ReleasesBoardCard[] = [
+    { id: '5017', tags: 'Kade|P2|domain:principles|type:enhance', title: 'principles get their own door' },
+    { id: '5020', tags: 'Kade|P2|domain:chorus|type:enhance', title: 'domain lint' },
+  ];
+  test('a land of a principles card is a principles release, titled from the board', () => {
+    const body = fetchChorusDomainReleases(deps({ gitLog: () => log, getCards: () => cards }), 'principles').body as {
+      data: { releases: Array<{ cardId: string; role: string; title: string; gates: string }> };
+    };
+    expect(body.data.releases).toEqual([expect.objectContaining({ cardId: '5017', role: 'kade', title: 'principles get their own door', gates: 'passed' })]);
+  });
+  test('NEGATIVE: another domain\'s land and a werk commit are not principles releases', () => {
+    const body = fetchChorusDomainReleases(deps({ gitLog: () => log, getCards: () => cards }), 'principles').body as {
+      data: { releases: Array<{ cardId: string }> };
+    };
+    expect(body.data.releases.map((r) => r.cardId)).not.toContain('5020');
+    expect(body.data.releases.map((r) => r.cardId)).not.toContain('5018');
+  });
+});

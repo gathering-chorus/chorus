@@ -1,0 +1,35 @@
+[
+  {
+    "name": "domain-no-side-door",
+    "gate": "code",
+    "checkKind": "command",
+    "label": "No code reads or writes a domain's rows past its door",
+    "comment": "Complete-domain rule (#5020; DEC-093, ADR-048). Narrowed: code outside the domain's own unit (*/domains/<name>/) naming the domain's store graph, urn:chorus:domains:<name>. Tests, fixtures, the model, prose and comments do not count (#5021: a comment naming the graph is not a read; the baseline re-measured without them, 169 to 128; a # or // inside a quoted string is code).",
+    "checkSpec": "p=platform/scripts/policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" domain-no-side-door {domain}",
+    "status": "ratchet",
+    "baseline": "128",
+    "violationFixture": "platform/tests/fixtures/5020/domain-no-side-door.sh"
+  },
+  {
+    "name": "domain-properties-declared",
+    "label": "A domain's rows carry only the properties their shape declares",
+    "comment": "Complete-domain rule (#5021; Wren 18:09, after the generated doors served status \"\" on classes with no status): each (class, property) pair stored on a row in the domain's graph that the class's shape does not declare (sh:property, its sh:node shapes, or an sh:or branch). The four Dublin Core stamps are CoreShape's rule, written by the DAL (#4312), so they count as declared.",
+    "gate": "data",
+    "status": "ratchet",
+    "baseline": "215",
+    "checkKind": "sparql",
+    "checkSpec": "SELECT DISTINCT ?c ?p WHERE { GRAPH <urn:chorus:domains:{domain}> { ?s a ?c ; ?p ?o FILTER(?p != rdf:type && ?p NOT IN (<http://purl.org/dc/terms/created>, <http://purl.org/dc/terms/modified>, <http://purl.org/dc/terms/creator>, <http://purl.org/dc/terms/contributor>)) } FILTER NOT EXISTS { GRAPH <urn:chorus:ontology> { ?sh sh:targetClass ?c . { ?sh sh:property/sh:path ?p } UNION { ?sh sh:node/sh:property/sh:path ?p } UNION { ?sh sh:or/rdf:rest*/rdf:first/sh:property/sh:path ?p } } } }",
+    "violationFixture": "platform/tests/fixtures/5021/domain-properties-declared.trig"
+  },
+  {
+    "name": "domain-folds-filled",
+    "label": "Every fold on a domain's Athena page is filled, or says why it is empty",
+    "comment": "Complete-domain rule (#5021 AC4; Jeff 11-20 11:48, every fold filled properly, coherently and completely). The counter reads what /athena/domain.html?d=<name> reads, through chorus-api; each fold that comes back empty is a violation unless the Domain row carries chorus:foldNote \"<Fold>: <why>\" for it. DomainShape's sh:pattern admits only the page's fold names.",
+    "gate": "product",
+    "status": "ratchet",
+    "baseline": "627",
+    "checkKind": "command",
+    "checkSpec": "p=platform/scripts/policy-count; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" domain-folds-filled {domain}",
+    "violationFixture": "platform/tests/fixtures/5021/domain-folds-filled.sh"
+  }
+]

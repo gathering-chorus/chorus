@@ -1447,6 +1447,13 @@ const domainFacetDeps = () => ({
   envelope: athenaEnvelope,
 });
 
+// #5021 — the Cards fold: the board's cards labelled domain:<name>, for any domain
+import { fetchDomainCards } from './handlers/domain-cards';
+app.get('/api/chorus/domain/:name/cards', (req: Request, res: Response) => {
+  const r = fetchDomainCards(getBoardCards, req.params.name);
+  res.status(r.status).json(r.body);
+});
+
 app.get('/api/chorus/domain/:name/tests', async (req: Request, res: Response) => {
   const r = await fetchDomainTests(domainFacetDeps(), req.params.name);
   res.status(r.status).json(r.body);
@@ -2741,7 +2748,7 @@ import { fetchAthenaValidate } from './handlers/athena-validate';
 import { fetchAthenaOwners } from './handlers/athena-owners';
 import { fetchAthenaMachines } from './handlers/athena-machines';
 import { fetchLoomPolicies } from './handlers/loom-policies';
-import { fetchPolicyCounts, type PolicyRow } from './handlers/policy-counts';
+import { fetchPolicyCounts, fetchDomainConformance, type PolicyRow, type PolicyCountsDeps } from './handlers/policy-counts';
 import { fetchAthenaCardDetail } from './handlers/athena-card-detail';
 app.get('/api/athena/health', async (_req: Request, res: Response) => {
   const r = await fetchAthenaHealth({
@@ -2847,7 +2854,16 @@ app.get('/api/loom/policies', async (_req: Request, res: Response) => {
 // worst first, measured by this tree's policy-validate (page: /loom/policy-counts.html).
 const policyTreeRoot = path.resolve(__dirname, '..', '..', '..');
 app.get('/api/chorus/policies/counts', async (req: Request, res: Response) => {
-  const r = await fetchPolicyCounts(typeof req.query.gate === 'string' ? req.query.gate : 'arch', {
+  const deps = policyCountsDeps();
+  // #5021 — ?domain=<name>: that domain's lint, for the Conformance fold on /athena/domain.html
+  const r = typeof req.query.domain === 'string'
+    ? await fetchDomainConformance(req.query.domain, deps)
+    : await fetchPolicyCounts(typeof req.query.gate === 'string' ? req.query.gate : 'arch', deps);
+  res.status(r.status).json(r.body);
+});
+
+function policyCountsDeps(): PolicyCountsDeps {
+  return {
     fetchPolicies: async () => {
       const resp = await fetch(`${doorBase()}/v1/policies/policies?limit=1000`, { signal: AbortSignal.timeout(15_000) });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -2866,19 +2882,20 @@ app.get('/api/chorus/policies/counts', async (req: Request, res: Response) => {
       const m = /platform\/scripts\/([\w.-]+)/.exec(row.checkSpec ?? '');
       return !m || fs.existsSync(path.join(policyTreeRoot, 'platform', 'scripts', m[1]));
     },
-    runValidate: (gate, rows) => new Promise((resolve) => {
+    runValidate: (gate, rows, args = []) => new Promise((resolve) => {
       const tmp = path.join(os.tmpdir(), `policy-counts-${process.pid}-${gate}-${Date.now()}.json`);
       fs.writeFileSync(tmp, JSON.stringify({ data: rows }));
-      // the rows handed over are the asked gates' only, so no --gate (several gates make one table, #4964)
-      execFile(path.join(policyTreeRoot, 'platform', 'scripts', 'policy-validate'), [], {
+      // the rows handed over are the asked gates' only, so no --gate (several gates make one table, #4964);
+      // a domain's lint passes --domain <name> (#5021)
+      execFile(path.join(policyTreeRoot, 'platform', 'scripts', 'policy-validate'), args, {
         cwd: policyTreeRoot, timeout: 300_000, maxBuffer: 4 * 1024 * 1024,
         // launchd's PATH has no node; the board CLI a counter runs needs the one running us (#4964)
-        env: { ...process.env, PATH: `${path.dirname(process.execPath)}:${process.env.PATH ?? ''}`, POLICIES_JSON: tmp, CHORUS_HOME: policyTreeRoot },
+        // a counter that reads the page's API reads THIS server (a werk's or prod's), never a fixed port (#5021)
+        env: { ...process.env, PATH: `${path.dirname(process.execPath)}:${process.env.PATH ?? ''}`, POLICIES_JSON: tmp, CHORUS_HOME: policyTreeRoot, CHORUS_API: `http://127.0.0.1:${PORT}` },
       }, (_err, stdout) => { fs.rmSync(tmp, { force: true }); resolve(stdout); });
     }),
-  });
-  res.status(r.status).json(r.body);
-});
+  };
+}
 
 // POST /api/athena/discover-code — RETIRED by #4154 (2026-09-12). It walked the
 // filesystem and wrote chorus:CodeFile rows by raw SPARQL into urn:chorus:instances

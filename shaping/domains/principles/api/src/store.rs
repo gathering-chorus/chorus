@@ -7,7 +7,7 @@ use crate::model::{ClassDef, CLASSES, GRAPH_PREFIX, NS};
 use crate::settings::Settings;
 use serde_json::{json, Map, Value};
 
-/// One row as the API serves it: name, label, status, then every field the shape declares.
+/// One row as the API serves it: name, label, then every field the shape declares (#5021: status only when declared).
 pub type Row = Map<String, Value>;
 
 pub trait RowStore: Send + Sync {
@@ -511,7 +511,8 @@ impl Sparql {
                     .collect()
             };
             row.insert("label".into(), json!(vals(&format!("{NS}label")).into_iter().next().unwrap_or_default()));
-            row.insert("status".into(), json!(vals(&format!("{NS}status")).into_iter().next().unwrap_or_default()));
+            // #5021 — no status unless the shape declares one (it then comes with the fields below):
+            // a hard-coded status served "" on every row of a class that has none
             for f in class.fields {
                 // #4995 — the first IRI that holds a value (chorus: wins ties, as athena-make)
                 let mut v = if f.iris.is_empty() { vals(&format!("{NS}{}", f.name)) } else {

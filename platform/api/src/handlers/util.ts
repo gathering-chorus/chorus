@@ -48,3 +48,8 @@ export function asStr(v: unknown, fallback = ''): string {
   if (typeof v === 'number' || typeof v === 'boolean') return String(v);
   return fallback;
 }
+
+/** #5021 — a domain name: lowercase letters, digits and single inner hyphens (no regex backtracking) */
+export function isDomainName(n: string): boolean {
+  return /^[a-z0-9-]+$/.test(n) && !n.startsWith('-') && !n.endsWith('-') && !n.includes('--');
+}

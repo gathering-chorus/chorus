@@ -206,24 +206,7 @@ describe('fetchDomainServices', () => {
 // --- fetchDomainDecisions ---
 
 describe('fetchDomainDecisions', () => {
-  test('shapes decisions and aggregates byEnforcement', async () => {
-    const result: SparqlResult = {
-      results: {
-        bindings: [
-          { id: { value: 'DEC-001' }, title: { value: 'A' }, date: { value: '2026-01-01' }, status: { value: 'active' }, level: { value: 'binding' }, type: { value: 'architecture' } },
-          { id: { value: 'DEC-002' }, title: { value: 'B' }, date: { value: '2026-02-01' }, status: { value: 'active' }, level: { value: 'binding' }, type: { value: 'process' } },
-          { id: { value: 'DEC-003' }, title: { value: 'C' }, date: { value: '2026-03-01' }, status: { value: 'active' }, level: { value: 'advisory' }, type: { value: 'architecture' } },
-        ],
-      },
-    };
-    const d = deps({ sparql: async () => result });
-    const r = await fetchDomainDecisions(d, 'awareness');
-    const body = r.body as { data: { decisions: unknown[]; byEnforcement: Record<string, number> } };
-    expect(body.data.decisions.length).toBe(3);
-    expect(body.data.byEnforcement.binding).toBe(2);
-    expect(body.data.byEnforcement.advisory).toBe(1);
-  });
-
+  // #5021's own Decisions cases live in domain-cards-5021.test.ts (AC 7's check)
   test('alias mapping: tests → quality also queried', async () => {
     let seenQuery = '';
     const d = deps({ sparql: async (q) => { seenQuery = q; return emptyResult(); } });
@@ -232,13 +215,6 @@ describe('fetchDomainDecisions', () => {
     expect(seenQuery).toContain('quality-domain');
   });
 
-  test('SPARQL throws returns empty envelope', async () => {
-    const d = deps({ sparql: async () => { throw new Error('oops'); } });
-    const r = await fetchDomainDecisions(d, 'awareness');
-    expect(r.status).toBe(200);
-    const body = r.body as { data: { decisions: unknown[] } };
-    expect(body.data.decisions).toEqual([]);
-  });
 });
 
 // --- fetchDomainAlerts ---

@@ -46,7 +46,9 @@ fn field_schema(f: &crate::model::Field) -> String {
 /// six routes the generated door serves (list, get, create, replace, patch, delete).
 pub fn openapi_json(p: &Product, domain: &str, c: &Class) -> String {
     let base = collection_route(p, domain, c);
-    let mut props: Vec<String> = vec!["\"name\": { \"type\": \"string\" }".into(), "\"status\": { \"type\": \"string\" }".into()];
+    // #5021 — the read schema says what a row carries: name, then the shape's fields (status only
+    // when the shape declares it, as the door now serves it)
+    let mut props: Vec<String> = vec!["\"name\": { \"type\": \"string\" }".into()];
     for f in &c.fields {
         props.retain(|x| !x.starts_with(&format!("\"{}\":", f.name)));
         props.push(format!("\"{}\": {}", f.name, field_schema(f)));

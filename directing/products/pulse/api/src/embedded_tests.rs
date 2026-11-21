@@ -342,3 +342,63 @@ fn a_patch_to_a_bare_named_row_writes_that_row_not_a_new_one() {
     assert_eq!(code, 201, "{out}");
     assert!(subjects(&store).contains(&iri(c, "fresh")));
 }
+
+// #5021 — a row carries the fields its shape declares and no others. The door served
+// "status": "" on every row of a class whose shape has no status (all 14 principles).
+fn declares_status(c: &ClassDef) -> bool {
+    c.fields.iter().any(|f| f.name == "status")
+}
+
+/// The classes whose shape declares no status: the ones a stray or written status must not reach.
+/// A universe where every class declares one is said out loud, never skipped in silence.
+fn no_status_classes() -> Vec<&'static ClassDef> {
+    let v: Vec<&ClassDef> = CLASSES.iter().filter(|c| !declares_status(c)).collect();
+    assert!(!v.is_empty() || CLASSES.iter().all(declares_status), "classes are either with or without status");
+    v
+}
+
+#[test]
+fn a_row_serves_status_only_when_its_shape_declares_one() {
+    // every class, so a store that serves status unasked is caught on each one without it
+    for c in CLASSES.iter() {
+        // a row with a stray status triple, as an old writer might have left
+        let e = Embedded::memory();
+        e.update(&format!(
+            "INSERT DATA {{ GRAPH <{g}> {{ <{r}> a <{NS}{cls}> ; <{NS}ownedBy> <{NS}principal-art> ; <{NS}status> \"open\" }} }}",
+            g = c.graph, r = iri(c, "row-art"), cls = c.name)).unwrap();
+        let s = Sparql::over(Box::new(e));
+        let row = s.get(c, "row-art").unwrap().expect("the row");
+        for k in row.keys() {
+            assert!(matches!(k.as_str(), "name" | "label") || c.fields.iter().any(|f| f.name == k.as_str()),
+                "{} serves '{k}', which its shape does not declare", c.name);
+        }
+        assert_eq!(row.contains_key("status"), declares_status(c), "{}: status served iff declared", c.name);
+    }
+}
+
+#[test]
+fn a_write_of_status_to_a_class_without_one_is_refused_off_model() {
+    // each class without status that this door writes: the same body is created without the
+    // status (control) and refused off-model with it. A class this door does not write (a spine
+    // or a composed class) refuses both, so it proves nothing here and is left out.
+    for c in no_status_classes().into_iter().filter(|c| c.fields.iter().any(|f| f.name == "ownedBy")) {
+        let plain = body_for(c, "s1");
+        let (code, _) = write(&ctx(&Sparql::over(Box::new(seeded()))), &caller("wren"), "POST", c, None, &plain);
+        if code != 201 { continue; }
+        let mut body: serde_json::Map<String, Value> = serde_json::from_str(&plain).unwrap();
+        body.insert("status".into(), json!("open"));
+        let (code, out) = write(&ctx(&Sparql::over(Box::new(seeded()))), &caller("wren"), "POST", c, None, &Value::Object(body).to_string());
+        assert_eq!(code, 422, "{}: {out}", c.name);
+        assert!(out.to_string().contains("off-model"), "{out}");
+    }
+}
+
+#[test]
+fn a_status_filter_on_a_class_without_one_is_refused_by_name() {
+    let store = Sparql::over(Box::new(Embedded::memory()));
+    let ctx = ctx(&store);
+    for c in no_status_classes() {
+        let (code, out) = crate::route(&ctx, "GET", &format!("{}?status=open", crate::model::route_of(c)), None, "");
+        assert_eq!((code, out["error"].as_str()), (400, Some("unknown-field")), "{}: {out}", c.name);
+    }
+}

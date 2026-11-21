@@ -62,11 +62,35 @@ rec = ps.open_session(JEFF, TOK, NOW, 12 * 3600, sparql_for("jeff"), door, "http
 posts = [c for c in door.calls if c[0] == "POST"]
 check("sign-in asks the door once, at the logins route", len(posts) == 1 and posts[0][1] == "http://door/v1/identity/logins")
 check("it asks with HIS token as the bearer, never a service credential", posts and posts[0][2] == TOK["id_token"])
-check("it names only the channel: owner, token id and expiry are the door's",
-      posts and posts[0][3] == {"channel": "browser"})
+check("it names only the channel and his role: owner, token id and expiry are the door's",
+      posts and posts[0][3] == {"channel": "browser", "actsAs": "role-jeff"})
+# #5026 NEGATIVE PROOF: a sign-in that names no role leaves an open row OpenSessionActsAsARole fails
+check("NEGATIVE (#5026): the ask always names the role it acts as, never the channel alone",
+      posts and posts[0][3] != {"channel": "browser"} and posts[0][3].get("actsAs") == "role-jeff")
 check("NEGATIVE: it never writes a Session row itself", not [c for c in door.calls if c[0] in ("PUT", "PATCH") or c[1].endswith("/v1/identity/sessions")])
 check("the record keeps the name the door chose, and what sign-out needs",
       rec and rec["row"]["name"] == "jeff-9f2c" and rec["refresh_token"] == "rt-1")
+
+# #5026 — the record keeps the COOKIE's expiry, so the guard can drop a dead record and #4966's
+# close-at-sign-in stops treating every old sid as live (4517 kept only the name: 50 rows stayed
+# open). Never the token's hour: the guard reads a pruned record as signed out (review 11-21).
+LASTS = 12 * 3600
+check("the record keeps the cookie's expiry (sign-in + the idle window), never the token's hour",
+      rec and rec["row"].get("expiresAt") == ps.iso(NOW + LASTS) != ps.iso(NOW + TOK["expires_in"]))
+check("NEGATIVE (#5026): a live cookie's record outlives the token's hour, and is pruned when the cookie dies",
+      rec and not ps.record_ended(rec, NOW + TOK["expires_in"] + 1, LASTS) and not ps.record_ended(rec, NOW + LASTS - 1, LASTS)
+      and ps.record_ended(rec, NOW + LASTS, LASTS))
+old_rec = {"row": {"name": "x"}, "exp": NOW}
+check("a name-only record from before #5026 is pruned once its login's exp plus the idle window has passed, not before",
+      ps.record_ended(old_rec, NOW + LASTS, LASTS) and not ps.record_ended(old_rec, NOW + LASTS - 1, LASTS)
+      and not ps.record_ended(old_rec, NOW + 1, LASTS))
+check("a record with no expiry at all, or no idle window given, is kept: never guess an end",
+      not ps.record_ended({"row": {"name": "x"}}, NOW + 10**9, LASTS) and not ps.record_ended(old_rec, NOW + 10**9))
+touch = lambda exp_at: ps.touch_session(dict(rec), NOW, exp_at, Door(post_status=200), "http://door", lambda t: None, logs.append)
+check("a renewal moves the record's expiresAt to the renewed cookie's exp",
+      rec and touch(NOW + LASTS + 600)["row"]["expiresAt"] == ps.iso(NOW + LASTS + 600))
+check("a renewal given no cookie exp leaves the record's expiresAt as it was",
+      rec and touch(None)["row"]["expiresAt"] == rec["row"]["expiresAt"])
 
 # NEGATIVE PROOF (Silas 01:34): no verified login, no row
 door_n, logs_n = Door(), []

@@ -55,7 +55,7 @@ pub fn cells(store: &dyn RowStore, class: &ClassDef, body: &Map<String, Value>, 
         if matches!(k.as_str(), "name" | "iri" | "ownedBy") {
             continue; // the key and the owner are the door's, not the caller's
         }
-        if k == "label" || k == "status" {
+        if k == "label" {
             let s = v.as_str().ok_or_else(|| refuse(422, "bad-value", format!("{k} must be text")))?;
             out.push((k.clone(), vec![Cell::Literal(s.to_string(), "string")]));
             continue;

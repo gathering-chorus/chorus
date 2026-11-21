@@ -2095,6 +2095,11 @@ chorus:eventAbout    rdfs:range [ owl:unionOf ( owl:Class chorus:ArtifactType ) 
 chorus:contains      rdfs:domain [ owl:unionOf ( chorus:ValueStream chorus:Domain ) ] ; rdfs:range owl:Thing .
 
 # --- DomainShape (supersedes DomainCoordinateShape; + purpose [the capability] + definesVocabulary [DDD mark] per ADR-045 + the capability ruling) ---
+# #5021 — a Domain row's written reason for an empty fold on its Athena page (policy domain-folds-filled).
+chorus:foldNote a owl:DatatypeProperty ; rdfs:label "fold note" ;
+    rdfs:comment "Why a fold on the domain's Athena page is empty: \"<Fold>: <why>\". The domain lint passes an empty fold only with one." ;
+    rdfs:domain chorus:Domain ; rdfs:range xsd:string .
+
 chorus:DomainShape a sh:NodeShape ;
     # #4081 — NO chorus:exposure here: exposure is per-shape opt-in, and one annotated field
     # turned DomainShape fail-closed, hiding every other Domain field on the detail read
@@ -2131,6 +2136,10 @@ chorus:DomainShape a sh:NodeShape ;
     sh:property [ sh:path chorus:atStep            ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:ValueStreamStep ] ;   # #4481 — its one parent
     sh:property [ sh:path chorus:status            ; sh:minCount 1 ; sh:in ( "exploring" "building" "operating" "retiring" ) ] ;
     sh:property [ sh:path chorus:gaps              ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    # #5021 — why a fold on /athena/domain.html is empty, "<Fold>: <why>", one per fold. The pattern
+    # names only folds the page has, so a note cannot cover a fold that does not exist.
+    sh:property [ sh:path chorus:foldNote ; sh:minCount 0 ; sh:datatype xsd:string ;
+                  sh:pattern "^(Services|Cards|Dependencies|API Contract|UI Pages|Code|Tests|Pipeline|Releases|Infrastructure|Decisions|Logs|Alerts): .+" ] ;
     sh:property [ sh:path chorus:hasDesignDoc      ; sh:minCount 1 ; sh:class chorus:Document ] ;
     sh:property [ sh:path chorus:platform ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ;   # #4702 — high-dependency flag; absent = undecided
     sh:property [ sh:path chorus:consumes ; sh:minCount 0 ; sh:or ( [ sh:class chorus:Domain ] [ sh:class chorus:Service ] ) ] ;   # #4702 — 49 Domain→Domain rows carried it with no shape

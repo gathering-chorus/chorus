@@ -1,0 +1,165 @@
+<https://jeffbridwell.com/chorus#hemenway-get-a-yield> <https://jeffbridwell.com/chorus#label> "Get a yield" <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-get-a-yield> <https://jeffbridwell.com/chorus#comment> "Grow for both immediate and long-term rewards. A designer's discipline as much as a system property — listed under Hemenway's 'Principles Based on Attitudes.'" <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-get-a-yield> <https://jeffbridwell.com/chorus#ownedBy> <https://jeffbridwell.com/chorus#principal-wren> <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-get-a-yield> <http://purl.org/dc/terms/creator> <https://jeffbridwell.com/chorus#principal-wren> <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-get-a-yield> <http://purl.org/dc/terms/modified> "2026-10-08T16:13:44Z" <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-get-a-yield> <http://www.w3.org/2000/01/rdf-schema#comment> "Grow for both immediate and long-term rewards. A designer's discipline as much as a system property — listed under Hemenway's 'Principles Based on Attitudes.'" <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-get-a-yield> <http://www.w3.org/2000/01/rdf-schema#label> "Get a yield" <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-get-a-yield> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://jeffbridwell.com/chorus#Principle> <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-get-a-yield> <http://purl.org/dc/terms/created> "2026-04-24T17:00:00Z" <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-collaborate-with-succession> <https://jeffbridwell.com/chorus#order> "9"^^<http://www.w3.org/2001/XMLSchema#integer> <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-collaborate-with-succession> <https://jeffbridwell.com/chorus#source> "Hemenway, T. Gaia's Garden, 2nd ed., p. 7." <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-collaborate-with-succession> <https://jeffbridwell.com/chorus#jeffReading> "Jeff rebrands things (Bridge → Clearing, multiple Werk generations, Chorus rewrites) without sentimental attachment. The name is less important than the fit." <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-collaborate-with-succession> <https://jeffbridwell.com/chorus#techReading> "Refactor, retire, rename. Protocol versions grow up. The 10-week zero-to-self-healing Chorus delta is this principle in action. Cards move through Next → WIP → Done; principles move from practice to rule to invariant." <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-collaborate-with-succession> <https://jeffbridwell.com/chorus#label> "Collaborate with succession" <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-collaborate-with-succession> <https://jeffbridwell.com/chorus#comment> "Living systems usually advance from immaturity to maturity, and if we accept this trend and align our designs with it instead of fighting it, we save work and energy. Mature ecosystems are more diverse and productive than young ones." <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-collaborate-with-succession> <https://jeffbridwell.com/chorus#ownedBy> <https://jeffbridwell.com/chorus#principal-wren> <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-collaborate-with-succession> <http://purl.org/dc/terms/creator> <https://jeffbridwell.com/chorus#principal-wren> <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-collaborate-with-succession> <http://purl.org/dc/terms/modified> "2026-10-08T16:13:38Z" <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-collaborate-with-succession> <http://www.w3.org/2000/01/rdf-schema#comment> "Living systems usually advance from immaturity to maturity, and if we accept this trend and align our designs with it instead of fighting it, we save work and energy. Mature ecosystems are more diverse and productive than young ones." <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-collaborate-with-succession> <http://www.w3.org/2000/01/rdf-schema#label> "Collaborate with succession" <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-collaborate-with-succession> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://jeffbridwell.com/chorus#Principle> <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-collaborate-with-succession> <http://purl.org/dc/terms/created> "2026-04-24T17:00:00Z" <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-turn-problems-into-solutions> <https://jeffbridwell.com/chorus#order> "11"^^<http://www.w3.org/2001/XMLSchema#integer> <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-turn-problems-into-solutions> <https://jeffbridwell.com/chorus#source> "Hemenway, T. Gaia's Garden, 2nd ed., p. 7." <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-turn-problems-into-solutions> <https://jeffbridwell.com/chorus#jeffReading> "Jeff's 'bugs not character' stance — treats recurring failures as design opportunities, not discipline problems. When tone drops, fix the routing; when a skill is fragile, fix the shape." <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-turn-problems-into-solutions> <https://jeffbridwell.com/chorus#techReading> "Every recurring failure becomes a gate or invariant. Today's push-bloat crisis → repo bloat card + gitignore rule + future filter-repo plan. Friction becomes structure. Creatively use and respond to change: refactor, retire, rename rather than fight decay." <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-turn-problems-into-solutions> <https://jeffbridwell.com/chorus#label> "Turn problems into solutions" <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-turn-problems-into-solutions> <https://jeffbridwell.com/chorus#comment> "Constraints can inspire creative design; problems usually carry not just the seeds of their own solution, but the inspiration for simultaneously solving other problems. 'You are confronted by formidable problems? Celebrate, for you have just encountered opportunities!'" <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-turn-problems-into-solutions> <https://jeffbridwell.com/chorus#ownedBy> <https://jeffbridwell.com/chorus#principal-wren> <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-turn-problems-into-solutions> <http://purl.org/dc/terms/creator> <https://jeffbridwell.com/chorus#principal-wren> <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-turn-problems-into-solutions> <http://purl.org/dc/terms/modified> "2026-10-08T16:13:49Z" <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-turn-problems-into-solutions> <http://www.w3.org/2000/01/rdf-schema#comment> "Constraints can inspire creative design; problems usually carry not just the seeds of their own solution, but the inspiration for simultaneously solving other problems. 'You are confronted by formidable problems? Celebrate, for you have just encountered opportunities!'" <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-turn-problems-into-solutions> <http://www.w3.org/2000/01/rdf-schema#label> "Turn problems into solutions" <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-turn-problems-into-solutions> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://jeffbridwell.com/chorus#Principle> <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-turn-problems-into-solutions> <http://purl.org/dc/terms/created> "2026-04-24T17:00:00Z" <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-creativity-is-the-limit> <https://jeffbridwell.com/chorus#order> "13"^^<http://www.w3.org/2001/XMLSchema#integer> <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-creativity-is-the-limit> <https://jeffbridwell.com/chorus#source> "Hemenway, T. Gaia's Garden, 2nd ed., p. 7." <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-creativity-is-the-limit> <https://jeffbridwell.com/chorus#jeffReading> "Jeff's friction with 'agent-shaped answers' — rejects solutions that pattern-match without imagining what a human would actually want." <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-creativity-is-the-limit> <https://jeffbridwell.com/chorus#techReading> "The hard constraint is rarely compute, lines of code, or token budget — it's the sharpness of the design question. Agent-shaped solutions fail the creativity test before they fail the engineering test." <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-creativity-is-the-limit> <https://jeffbridwell.com/chorus#label> "The biggest limit to abundance is creativity" <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-creativity-is-the-limit> <https://jeffbridwell.com/chorus#comment> "The designer's imagination and skill usually limit productivity and diversity before any physical limits are reached." <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-creativity-is-the-limit> <https://jeffbridwell.com/chorus#ownedBy> <https://jeffbridwell.com/chorus#principal-wren> <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-creativity-is-the-limit> <http://purl.org/dc/terms/creator> <https://jeffbridwell.com/chorus#principal-wren> <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-creativity-is-the-limit> <http://purl.org/dc/terms/modified> "2026-10-08T16:13:40Z" <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-creativity-is-the-limit> <http://www.w3.org/2000/01/rdf-schema#comment> "The designer's imagination and skill usually limit productivity and diversity before any physical limits are reached." <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-creativity-is-the-limit> <http://www.w3.org/2000/01/rdf-schema#label> "The biggest limit to abundance is creativity" <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-creativity-is-the-limit> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://jeffbridwell.com/chorus#Principle> <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#hemenway-creativity-is-the-limit> <http://purl.org/dc/terms/created> "2026-04-24T17:00:00Z" <urn:chorus:domains:principles> .
+<https://jeffbridwell.com/chorus#principles> <https://jeffbridwell.com/chorus#consumes> <https://jeffbridwell.com/chorus#time> <urn:chorus:domains:domains> .
+<https://jeffbridwell.com/chorus#principles> <https://jeffbridwell.com/chorus#consumes> <https://jeffbridwell.com/chorus#security> <urn:chorus:domains:domains> .
+<https://jeffbridwell.com/chorus#principles> <https://jeffbridwell.com/chorus#hasProperty> <https://jeffbridwell.com/chorus#property-principles-reads-public> <urn:chorus:domains:domains> .
+<https://jeffbridwell.com/chorus#principles> <https://jeffbridwell.com/chorus#hasProperty> <https://jeffbridwell.com/chorus#property-principles-store-graph-prefix> <urn:chorus:domains:domains> .
+<https://jeffbridwell.com/chorus#principles> <https://jeffbridwell.com/chorus#hasProperty> <https://jeffbridwell.com/chorus#property-principles-model-prefix> <urn:chorus:domains:domains> .
+<https://jeffbridwell.com/chorus#principles> <https://jeffbridwell.com/chorus#hasProperty> <https://jeffbridwell.com/chorus#property-principles-model-namespace> <urn:chorus:domains:domains> .
+<https://jeffbridwell.com/chorus#principles> <https://jeffbridwell.com/chorus#hasProperty> <https://jeffbridwell.com/chorus#property-principles-events-command> <urn:chorus:domains:domains> .
+<https://jeffbridwell.com/chorus#principles> <https://jeffbridwell.com/chorus#hasProperty> <https://jeffbridwell.com/chorus#property-principles-identity-graph-prefix> <urn:chorus:domains:domains> .
+<https://jeffbridwell.com/chorus#principles> <https://jeffbridwell.com/chorus#hasProperty> <https://jeffbridwell.com/chorus#property-principles-identity-issuer> <urn:chorus:domains:domains> .
+<https://jeffbridwell.com/chorus#principles> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://jeffbridwell.com/chorus#Domain> <urn:chorus:domains:domains> .
+<https://jeffbridwell.com/chorus#principles> <http://www.w3.org/2000/01/rdf-schema#label> "principles" <urn:chorus:domains:domains> .
+<https://jeffbridwell.com/chorus#principles> <http://www.w3.org/2000/01/rdf-schema#comment> "Shared values that explain why. Stable. Patterns derive from principles." <urn:chorus:domains:domains> .
+<https://jeffbridwell.com/chorus#principles> <https://jeffbridwell.com/chorus#ownedBy> <https://jeffbridwell.com/chorus#principal-wren> <urn:chorus:domains:domains> .
+<https://jeffbridwell.com/chorus#principles> <https://jeffbridwell.com/chorus#comment> "Values and constraints governing team decisions and priorities." <urn:chorus:domains:domains> .
+<https://jeffbridwell.com/chorus#principles> <https://jeffbridwell.com/chorus#atStep> <https://jeffbridwell.com/chorus#value-stream-step-shaping> <urn:chorus:domains:domains> .
+<https://jeffbridwell.com/chorus#principles> <https://jeffbridwell.com/chorus#definesVocabulary> <https://jeffbridwell.com/chorus#Principle> <urn:chorus:domains:domains> .
+<https://jeffbridwell.com/chorus#principles> <https://jeffbridwell.com/chorus#purpose> "Hold the values and constraints that govern how the team decides and prioritizes." <urn:chorus:domains:domains> .
+<https://jeffbridwell.com/chorus#principles> <https://jeffbridwell.com/chorus#repoTarget> "loom/principles" <urn:chorus:domains:domains> .
+<https://jeffbridwell.com/chorus#principles> <https://jeffbridwell.com/chorus#instancesGraph> "urn:chorus:domains:principles" <urn:chorus:domains:domains> .
+<https://jeffbridwell.com/chorus#principles> <https://jeffbridwell.com/chorus#hasProperty> <https://jeffbridwell.com/chorus#property-principles-server-bind> <urn:chorus:domains:domains> .
+<https://jeffbridwell.com/chorus#principles> <https://jeffbridwell.com/chorus#hasProperty> <https://jeffbridwell.com/chorus#property-principles-store-kind> <urn:chorus:domains:domains> .
+<https://jeffbridwell.com/chorus#principles> <https://jeffbridwell.com/chorus#hasProperty> <https://jeffbridwell.com/chorus#property-principles-store-endpoint> <urn:chorus:domains:domains> .
+<https://jeffbridwell.com/chorus#principles> <https://jeffbridwell.com/chorus#hasProperty> <https://jeffbridwell.com/chorus#property-principles-store-user-var> <urn:chorus:domains:domains> .
+<https://jeffbridwell.com/chorus#principles> <https://jeffbridwell.com/chorus#hasProperty> <https://jeffbridwell.com/chorus#property-principles-store-password-var> <urn:chorus:domains:domains> .
+<https://jeffbridwell.com/chorus#principles> <https://jeffbridwell.com/chorus#hasProperty> <https://jeffbridwell.com/chorus#property-principles-store-path> <urn:chorus:domains:domains> .
+<https://jeffbridwell.com/chorus#property-principles-reads-public> <https://jeffbridwell.com/chorus#propertyScope> "instance" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-reads-public> <https://jeffbridwell.com/chorus#propertyKey> "reads.public" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-reads-public> <https://jeffbridwell.com/chorus#propertyValue> "true" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-reads-public> <https://jeffbridwell.com/chorus#propertyValueType> "string" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-reads-public> <https://jeffbridwell.com/chorus#ownedBy> <https://jeffbridwell.com/chorus#principal-wren> <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-reads-public> <http://www.w3.org/2000/01/rdf-schema#label> "principles API: reads need no sign-in" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-reads-public> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://jeffbridwell.com/chorus#Property> <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-store-graph-prefix> <https://jeffbridwell.com/chorus#propertyScope> "instance" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-store-graph-prefix> <https://jeffbridwell.com/chorus#propertyKey> "store.graph_prefix" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-store-graph-prefix> <https://jeffbridwell.com/chorus#propertyValue> "urn:chorus:domains:" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-store-graph-prefix> <https://jeffbridwell.com/chorus#propertyValueType> "string" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-store-graph-prefix> <https://jeffbridwell.com/chorus#ownedBy> <https://jeffbridwell.com/chorus#principal-wren> <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-store-graph-prefix> <http://www.w3.org/2000/01/rdf-schema#label> "principles API: where its rows live" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-store-graph-prefix> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://jeffbridwell.com/chorus#Property> <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-model-prefix> <https://jeffbridwell.com/chorus#propertyScope> "instance" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-model-prefix> <https://jeffbridwell.com/chorus#propertyKey> "model.prefix" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-model-prefix> <https://jeffbridwell.com/chorus#propertyValue> "chorus" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-model-prefix> <https://jeffbridwell.com/chorus#propertyValueType> "string" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-model-prefix> <https://jeffbridwell.com/chorus#ownedBy> <https://jeffbridwell.com/chorus#principal-wren> <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-model-prefix> <http://www.w3.org/2000/01/rdf-schema#label> "principles API: the short prefix callers may write" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-model-prefix> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://jeffbridwell.com/chorus#Property> <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-model-namespace> <https://jeffbridwell.com/chorus#propertyScope> "instance" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-model-namespace> <https://jeffbridwell.com/chorus#propertyKey> "model.namespace" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-model-namespace> <https://jeffbridwell.com/chorus#propertyValue> "https://jeffbridwell.com/chorus#" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-model-namespace> <https://jeffbridwell.com/chorus#propertyValueType> "string" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-model-namespace> <https://jeffbridwell.com/chorus#ownedBy> <https://jeffbridwell.com/chorus#principal-wren> <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-model-namespace> <http://www.w3.org/2000/01/rdf-schema#label> "principles API: the namespace its classes are named in" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-model-namespace> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://jeffbridwell.com/chorus#Property> <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-events-command> <https://jeffbridwell.com/chorus#propertyScope> "instance" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-events-command> <https://jeffbridwell.com/chorus#propertyKey> "events.command" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-events-command> <https://jeffbridwell.com/chorus#propertyValue> "" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-events-command> <https://jeffbridwell.com/chorus#propertyValueType> "string" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-events-command> <https://jeffbridwell.com/chorus#ownedBy> <https://jeffbridwell.com/chorus#principal-wren> <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-events-command> <http://www.w3.org/2000/01/rdf-schema#label> "principles API: the logger that writes its events to the spine (empty = stderr)" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-events-command> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://jeffbridwell.com/chorus#Property> <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-identity-graph-prefix> <https://jeffbridwell.com/chorus#propertyScope> "instance" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-identity-graph-prefix> <https://jeffbridwell.com/chorus#propertyKey> "identity.graph_prefix" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-identity-graph-prefix> <https://jeffbridwell.com/chorus#propertyValue> "urn:chorus:" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-identity-graph-prefix> <https://jeffbridwell.com/chorus#propertyValueType> "string" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-identity-graph-prefix> <https://jeffbridwell.com/chorus#ownedBy> <https://jeffbridwell.com/chorus#principal-wren> <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-identity-graph-prefix> <http://www.w3.org/2000/01/rdf-schema#label> "principles API: where principals live" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-identity-graph-prefix> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://jeffbridwell.com/chorus#Property> <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-identity-issuer> <https://jeffbridwell.com/chorus#propertyScope> "instance" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-identity-issuer> <https://jeffbridwell.com/chorus#propertyKey> "identity.issuer" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-identity-issuer> <https://jeffbridwell.com/chorus#propertyValue> "https://id.lightlifeurbangardens.com/" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-identity-issuer> <https://jeffbridwell.com/chorus#propertyValueType> "string" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-identity-issuer> <https://jeffbridwell.com/chorus#ownedBy> <https://jeffbridwell.com/chorus#principal-wren> <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-identity-issuer> <http://www.w3.org/2000/01/rdf-schema#label> "principles API: the identity issuer whose tokens it accepts" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-identity-issuer> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://jeffbridwell.com/chorus#Property> <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-store-path> <https://jeffbridwell.com/chorus#propertyScope> "instance" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-store-path> <https://jeffbridwell.com/chorus#propertyKey> "store.path" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-store-path> <https://jeffbridwell.com/chorus#propertyValue> "/Users/jeffbridwell/.chorus/data/principles-api" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-store-path> <https://jeffbridwell.com/chorus#propertyValueType> "string" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-store-path> <https://jeffbridwell.com/chorus#ownedBy> <https://jeffbridwell.com/chorus#principal-wren> <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-store-path> <http://www.w3.org/2000/01/rdf-schema#label> "principles API: the embedded store's folder (used when store.kind is embedded)" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-store-path> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://jeffbridwell.com/chorus#Property> <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-store-password-var> <https://jeffbridwell.com/chorus#propertyScope> "instance" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-store-password-var> <https://jeffbridwell.com/chorus#propertyKey> "store.password_var" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-store-password-var> <https://jeffbridwell.com/chorus#propertyValue> "FUSEKI_ADMIN_PASSWORD" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-store-password-var> <https://jeffbridwell.com/chorus#propertyValueType> "string" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-store-password-var> <https://jeffbridwell.com/chorus#ownedBy> <https://jeffbridwell.com/chorus#principal-wren> <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-store-password-var> <http://www.w3.org/2000/01/rdf-schema#label> "principles API: NAME of the env var holding the store password" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-store-password-var> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://jeffbridwell.com/chorus#Property> <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-store-user-var> <https://jeffbridwell.com/chorus#propertyScope> "instance" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-store-user-var> <https://jeffbridwell.com/chorus#propertyKey> "store.user_var" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-store-user-var> <https://jeffbridwell.com/chorus#propertyValue> "FUSEKI_ADMIN_USER" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-store-user-var> <https://jeffbridwell.com/chorus#propertyValueType> "string" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-store-user-var> <https://jeffbridwell.com/chorus#ownedBy> <https://jeffbridwell.com/chorus#principal-wren> <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-store-user-var> <http://www.w3.org/2000/01/rdf-schema#label> "principles API: NAME of the env var holding the store user" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-store-user-var> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://jeffbridwell.com/chorus#Property> <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-store-endpoint> <https://jeffbridwell.com/chorus#propertyScope> "instance" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-store-endpoint> <https://jeffbridwell.com/chorus#propertyKey> "store.endpoint" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-store-endpoint> <https://jeffbridwell.com/chorus#propertyValue> "http://localhost:3030/pods" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-store-endpoint> <https://jeffbridwell.com/chorus#propertyValueType> "string" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-store-endpoint> <https://jeffbridwell.com/chorus#ownedBy> <https://jeffbridwell.com/chorus#principal-wren> <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-store-endpoint> <http://www.w3.org/2000/01/rdf-schema#label> "principles API: the SPARQL endpoint of the store row it uses" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-store-endpoint> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://jeffbridwell.com/chorus#Property> <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-store-kind> <https://jeffbridwell.com/chorus#propertyScope> "instance" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-store-kind> <https://jeffbridwell.com/chorus#propertyKey> "store.kind" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-store-kind> <https://jeffbridwell.com/chorus#propertyValue> "sparql" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-store-kind> <https://jeffbridwell.com/chorus#propertyValueType> "string" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-store-kind> <https://jeffbridwell.com/chorus#ownedBy> <https://jeffbridwell.com/chorus#principal-wren> <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-store-kind> <http://www.w3.org/2000/01/rdf-schema#label> "principles API: which store backend" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-store-kind> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://jeffbridwell.com/chorus#Property> <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-server-bind> <https://jeffbridwell.com/chorus#propertyScope> "instance" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-server-bind> <https://jeffbridwell.com/chorus#propertyKey> "server.bind" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-server-bind> <https://jeffbridwell.com/chorus#propertyValue> "127.0.0.1:3393" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-server-bind> <https://jeffbridwell.com/chorus#propertyValueType> "string" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-server-bind> <https://jeffbridwell.com/chorus#ownedBy> <https://jeffbridwell.com/chorus#principal-wren> <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-server-bind> <http://www.w3.org/2000/01/rdf-schema#label> "principles API: where it listens" <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#property-principles-server-bind> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://jeffbridwell.com/chorus#Property> <urn:chorus:domains:properties> .
+<https://jeffbridwell.com/chorus#document-loom-subproduct-design> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://jeffbridwell.com/chorus#Document> <urn:chorus:domains:linked> .

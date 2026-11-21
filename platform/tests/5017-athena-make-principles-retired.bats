@@ -91,3 +91,18 @@ wait_up() {
   run direct_readers "$t"
   [ "$output" = "platform/scripts/reader.sh" ]
 }
+
+# #5021 — athena-make also mounted a composed index for principles at its repoTarget
+# (/loom/principles), pointing at /principles/principles, a route it stopped serving in #5017.
+# A domain with its own door gets no composed surface either. Control: values, which has no
+# door of its own, keeps its /loom/values index.
+@test "#5021: the card's athena-make mounts no composed principles index; values keeps its own" {
+  local bin port
+  bin="$(card_make)" || { echo "athena-make not built"; false; }
+  port="$(free_port)"
+  "$bin" serve --port "$port" >"$BATS_TEST_TMPDIR/make.log" 2>&1 &
+  PID=$!
+  wait_up "http://127.0.0.1:$port" || { tail -20 "$BATS_TEST_TMPDIR/make.log"; false; }
+  [ "$(code "http://127.0.0.1:$port/loom/principles")" = 404 ] || { echo "principles index: $(code "http://127.0.0.1:$port/loom/principles")"; false; }
+  [ "$(code "http://127.0.0.1:$port/loom/values")" = 200 ] || { echo "values index: $(code "http://127.0.0.1:$port/loom/values")"; false; }
+}

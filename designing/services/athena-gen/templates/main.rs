@@ -69,7 +69,7 @@ fn where_of(class: &ClassDef, query: &str) -> Result<store::Where, (u16, Value)>
     for kv in query.split('&').filter(|kv| !kv.is_empty()) {
         let (k, v) = kv.split_once('=').unwrap_or((kv, ""));
         let (k, v) = (decode(k), decode(v));
-        let known = |f: &str| f == "label" || f == "status" || class.fields.iter().any(|d| d.name == f);
+        let known = |f: &str| f == "label" || class.fields.iter().any(|d| d.name == f);
         let unknown = |f: &str| error(400, "unknown-field", &format!("{} has no field '{f}'", class.name));
         if let Some((f, op)) = k.strip_suffix(".lt").map(|f| (f, "<")).or_else(|| k.strip_suffix(".gt").map(|f| (f, ">"))) {
             if !known(f) { return Err(unknown(f)); }
@@ -89,7 +89,7 @@ fn where_of(class: &ClassDef, query: &str) -> Result<store::Where, (u16, Value)>
                 w.sort = Some((f.to_string(), desc));
             }
             "q" => w.q = Some(v),
-            f if f == "label" || f == "status" || class.fields.iter().any(|d| d.name == f) => w.eq.push((k.clone(), v)),
+            f if f == "label" || class.fields.iter().any(|d| d.name == f) => w.eq.push((k.clone(), v)),
             f => return Err(error(400, "unknown-field", &format!("{} has no field '{f}'", class.name))),
         }
     }

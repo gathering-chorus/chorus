@@ -16,11 +16,14 @@
 # another door.
 #
 # Usage: practice-coverage.sh [--json]
+#
+# #5021: the principles come from their door (principles-api, through chorus-api's /owl
+# proxy), never from the principles store directly: the principles domain has one door.
 set -uo pipefail
 
 FUSEKI_QUERY="${FUSEKI_QUERY:-http://localhost:3030/pods/query}"
 PRACTICES_GRAPH="${PRACTICES_GRAPH:-urn:chorus:domains:practices}"
-PRINCIPLES_GRAPH="${PRINCIPLES_GRAPH:-urn:chorus:domains:principles}"
+PRINCIPLES_URL="${PRINCIPLES_URL:-http://localhost:3340/owl/v1/principles/principles}"
 JSON=0
 [ "${1:-}" = "--json" ] && JSON=1
 
@@ -30,9 +33,35 @@ ask() {
 
 P='PREFIX chorus: <https://jeffbridwell.com/chorus#>'
 
+# the principles, from the door: "chorus:<name> chorus:<name> ..." for a VALUES block. Every row,
+# one page (limit=1000); a door that holds more than it gave, or a name that cannot be a chorus
+# local name, is refused, never dropped (a dropped principle would read as dangling). A door that
+# answers with no principles is an empty list, not a silent door.
+BODY=$(curl -sf --max-time 15 -G "$PRINCIPLES_URL" --data-urlencode limit=1000 2>/dev/null) || {
+  echo "practice-coverage: the principles door did not answer ($PRINCIPLES_URL) — refusing to report a blind zero" >&2
+  exit 2
+}
+PRINCIPLES=$(printf '%s' "$BODY" | python3 -c '
+import json, re, sys
+d = json.load(sys.stdin)
+rows = d.get("data")
+if not isinstance(rows, list):
+    sys.exit("the door answered without a data list")
+if isinstance(d.get("count"), int) and d["count"] > len(rows):
+    sys.exit("the door holds %d principles and gave %d" % (d["count"], len(rows)))
+names = [r.get("name", "") for r in rows]
+bad = [n for n in names if not re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", n)]
+if bad:
+    sys.exit("names that cannot be read: " + ", ".join(map(repr, bad)))
+print("OK " + " ".join("chorus:" + n for n in names))') || {
+  echo "practice-coverage: the principles door's answer could not be used — refusing to report a blind zero" >&2
+  exit 2
+}
+PRINCIPLES=${PRINCIPLES#OK }
+
 # 1 — principles with no practice expressing them
 UNEXPRESSED=$(ask "$P SELECT ?p WHERE {
-  GRAPH <$PRINCIPLES_GRAPH> { ?p a chorus:Principle }
+  VALUES ?p { $PRINCIPLES }
   FILTER NOT EXISTS { GRAPH <$PRACTICES_GRAPH> { ?x chorus:expresses ?p } } } ORDER BY ?p")
 
 # 2 — practices nothing enacts
@@ -43,7 +72,7 @@ UNENFORCED=$(ask "$P SELECT ?x WHERE {
 # 3 — dangling expresses (a FAILURE, not a gap)
 DANGLING=$(ask "$P SELECT ?x ?t WHERE {
   GRAPH <$PRACTICES_GRAPH> { ?x chorus:expresses ?t }
-  FILTER NOT EXISTS { GRAPH <$PRINCIPLES_GRAPH> { ?t a chorus:Principle } } } ORDER BY ?x")
+  FILTER NOT EXISTS { VALUES ?t { $PRINCIPLES } } } ORDER BY ?x")
 
 rows() { printf '%s' "$1" | tail -n +2 | sed '/^$/d' | sed 's|https://jeffbridwell.com/chorus#||g'; }
 count() { rows "$1" | grep -c . | tr -d ' '; }
