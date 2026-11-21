@@ -20,7 +20,7 @@ serve() {
   port="$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1])')"
   python3 -m http.server "$port" --bind 127.0.0.1 --directory "$1" >/dev/null 2>&1 &
   PID=$!
-  for i in $(seq 1 40); do curl -sf "http://127.0.0.1:$port/owl/v1/domains/domains/y" >/dev/null && break; sleep 0.25; done
+  for i in $(seq 1 40); do curl -sf "http://127.0.0.1:$port/owl/v1/domains/domains/${2:-y}" >/dev/null && break; sleep 0.25; done
   export CHORUS_API="http://127.0.0.1:$port"
 }
 teardown() { [ -n "${PID:-}" ] && { kill "$PID" 2>/dev/null; wait "$PID" 2>/dev/null; }; true; }
@@ -91,4 +91,63 @@ PY
 import json; r=[x for x in json.load(open('$ROOT/designing/domains/policies/policy-checks-5021.json')) if x['name']=='domain-folds-filled']
 assert r and '{domain}' in r[0]['checkSpec'] and 'domain-folds-filled' in r[0]['checkSpec'], r; print('ok')"
   [ "$output" = ok ] || { echo "$output"; return 1; }
+}
+
+# principles' own page as the land leaves it: its Domain row built from this card's model file
+# (roles/wren/ontology/domains-wren-silas.ttl, the way the door serves it: literals in data, links in
+# links), the page's reads captured from prod on 11-21 (platform/tests/fixtures/5021/principles-page/,
+# code/pages/endpoints/logs cut to principles' rows), and the two things only the land adds: the
+# board's domain:principles cards (the After-the-land tag of 5017 and 5021) and 5017's land as a release.
+# The captured reads, each named so a change to one runs this suite:
+#   platform/tests/fixtures/5021/principles-page/api/chorus/domain/principles/alerts
+#   platform/tests/fixtures/5021/principles-page/api/chorus/domain/principles/cards
+#   platform/tests/fixtures/5021/principles-page/api/chorus/domain/principles/decisions
+#   platform/tests/fixtures/5021/principles-page/api/chorus/domain/principles/dependencies
+#   platform/tests/fixtures/5021/principles-page/api/chorus/domain/principles/infra
+#   platform/tests/fixtures/5021/principles-page/api/chorus/domain/principles/pipeline
+#   platform/tests/fixtures/5021/principles-page/api/chorus/domain/principles/releases
+#   platform/tests/fixtures/5021/principles-page/api/chorus/domain/principles/tests
+#   platform/tests/fixtures/5021/principles-page/owl/code/endpoints
+#   platform/tests/fixtures/5021/principles-page/owl/code/files
+#   platform/tests/fixtures/5021/principles-page/owl/code/pages
+#   platform/tests/fixtures/5021/principles-page/owl/logs/sources
+principles_page() {
+  local t="$BATS_TEST_TMPDIR/page"
+  cp -R "$ROOT/platform/tests/fixtures/5021/principles-page" "$t"
+  mkdir -p "$t/owl/v1/domains/domains"
+  riot --output=nt "$ROOT/roles/wren/ontology/domains-wren-silas.ttl" | python3 -c '
+import json, re, sys
+data, links = {}, {}
+for line in sys.stdin:
+    m = re.match(r"<https://jeffbridwell.com/chorus#principles> <([^>]+)> (.+) \.$", line.strip())
+    if not m:
+        continue
+    key = re.split(r"[#/]", m.group(1))[-1]
+    o = m.group(2)
+    if o.startswith("<"):
+        links.setdefault(key, []).append("chorus:" + re.split(r"[#/]", o[1:-1])[-1])
+    else:
+        data.setdefault(key, []).append(json.loads(re.match(r"(\".*\")", o).group(1)))
+json.dump({"data": data, "links": links}, sys.stdout)' > "$t/owl/v1/domains/domains/principles"
+  echo "$t"
+}
+
+@test "AC4: principles' page, as the land leaves it, has every fold filled or noted (0 reds)" {
+  serve "$(principles_page)" principles
+  run "$COUNT" domain-folds-filled principles
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ -z "$output" ] || { echo "$output"; return 1; }
+}
+
+@test "AC4 NEGATIVE: principles' page with its Decisions note taken away is red on Decisions" {
+  local t; t="$(principles_page)"
+  python3 - "$t/owl/v1/domains/domains/principles" <<'PY2'
+import json, sys
+r = json.load(open(sys.argv[1]))
+r["data"]["foldNote"] = [n for n in r["data"]["foldNote"] if not n.startswith("Decisions:")]
+json.dump(r, open(sys.argv[1], "w"))
+PY2
+  serve "$t" principles
+  run "$COUNT" domain-folds-filled principles
+  [ "$output" = "principles: Decisions is empty and the Domain row gives no foldNote for it" ] || { echo "$output"; return 1; }
 }

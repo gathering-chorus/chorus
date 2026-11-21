@@ -20,6 +20,7 @@ import { resolveDomainIdentity } from './domain-identity';
 export interface ReleasesBoardCard {
   id: string;
   tags: string;
+  title?: string;
 }
 
 type GitLogFn = () => string;
@@ -34,6 +35,9 @@ export interface ChorusDomainReleasesDeps {
 }
 
 const ACP_PATTERN = /^([a-f0-9]+)\|(.+?)\|(\w+): acp #(\d+)(?:.*?)— (.+)$/;
+// #5021 — a land since #4707 is the go step's squash merge, "#<card> (<role>) (#<PR>)"; the
+// old acp subject alone read none of them, so every domain's Releases fold stayed empty
+const LAND_PATTERN = /^([a-f0-9]+)\|(.+?)\|#(\d+) \(([\w-]+)\) \(#\d+\)$/;
 
 interface AcpEntry {
   commit: string;
@@ -53,6 +57,11 @@ interface ReleaseEntry extends AcpEntry {
 function parseAcpLog(gitLog: string): AcpEntry[] {
   const out: AcpEntry[] = [];
   for (const line of gitLog.split('\n')) {
+    const l = line.match(LAND_PATTERN);
+    if (l) {
+      out.push({ commit: l[1].slice(0, 8), timestamp: l[2], role: l[4], cardId: l[3], title: '' });
+      continue;
+    }
     const m = line.match(ACP_PATTERN);
     if (m) {
       out.push({
@@ -108,10 +117,11 @@ export function fetchChorusDomainReleases(
   try {
     const allAcps = parseAcpLog(deps.gitLog());
     const cardsDomainIndex = indexCardsByDomain(deps.getCards());
+    const titles = new Map(deps.getCards().map((c) => [c.id, c.title ?? '']));
     const releases: ReleaseEntry[] = [];
     for (const acp of allAcps) {
       const r = matchAcpToDomain(acp, cardsDomainIndex.get(acp.cardId), searchTerms);
-      if (r) releases.push(r);
+      if (r) releases.push(r.title ? r : { ...r, title: titles.get(r.cardId) || `#${r.cardId}` });
     }
     return {
       status: 200,
