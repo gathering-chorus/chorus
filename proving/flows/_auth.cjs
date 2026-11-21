@@ -15,6 +15,13 @@ const USER = process.env.FLOW_USER;
 const PASS = process.env.FLOW_PASS;
 const haveCreds = Boolean(USER && PASS);
 
+// #5026 AC2 — every walk ends the way a person's does: signed out. Since #5015
+// each probe sign-in opens a Session row at the door, and a walk that never
+// signed out left it open (50 open rows by 11-21, failing the open-session
+// rule). signIn remembers the page; the `test` exported below signs it out when
+// the test ends, pass or fail, so no spec has to remember to.
+const signedIn = new WeakSet();
+
 /** A page is a login page if a person would see one: a password field. */
 async function looksLikeLogin(page) {
   return (await page.locator('input[type="password"]').count()) > 0;
@@ -38,6 +45,7 @@ async function signIn(page) {
   await page.locator('button[type="submit"], input[type="submit"]').first().click();
   await page.waitForURL((u) => u.toString() !== loginUrl, { timeout: 30000 });
   await page.waitForLoadState('networkidle');
+  signedIn.add(page);
 }
 
 /**
@@ -74,4 +82,37 @@ async function gotoSignedIn(page, url) {
   }
 }
 
-module.exports = { haveCreds, looksLikeLogin, signIn, passConsent, gotoSignedIn };
+/** The guard's sign-out, in the visitor's frame: <base>/chorus/_auth/logout. */
+function logoutUrl(base) {
+  return `${String(base).replace(/\/+$/, '')}/chorus/_auth/logout`;
+}
+
+/** Sign `page` out if this walk signed it in; returns whether it did. */
+async function signOutIfSignedIn(page, base) {
+  if (!signedIn.has(page)) return false;
+  signedIn.delete(page);
+  await page.goto(logoutUrl(base), { waitUntil: 'domcontentloaded' });
+  return true;
+}
+
+// Playwright's test plus one automatic fixture: after each test, a page this
+// walk signed in is signed out. Loaded on first use so the helpers above run
+// (and are tested) without the playwright package.
+let extended;
+function signedOutTest() {
+  if (!extended) {
+    extended = require('@playwright/test').test.extend({
+      signOutAfter: [async ({ page, baseURL }, use) => {
+        await use();
+        await signOutIfSignedIn(page, process.env.FLOW_BASE || baseURL);
+      }, { auto: true }],
+    });
+  }
+  return extended;
+}
+
+module.exports = {
+  haveCreds, looksLikeLogin, signIn, passConsent, gotoSignedIn,
+  signedIn, logoutUrl, signOutIfSignedIn,
+  get test() { return signedOutTest(); },
+};

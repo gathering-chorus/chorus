@@ -35,70 +35,15 @@
  *   green because it could not log in is the exact failure this file exists to
  *   end (learned twice today: a probe that cannot ask must not answer).
  */
-const { test, expect } = require('@playwright/test');
+const { expect } = require('@playwright/test');
+// #5026 — one sign-in, from _auth: its signIn marks the page, and its test signs
+// the walk out when each test ends. This spec kept its own copies of these
+// helpers, which is how a walk could sign in and never be signed out.
+const { test, haveCreds, looksLikeLogin, signIn, passConsent, logoutUrl } = require('./_auth.cjs');
 
 const BASE = process.env.FLOW_BASE || 'https://lightlifeurbangardens.com';
 const PUBLIC_ROOT = process.env.FLOW_PUBLIC_ROOT || BASE;
 const CHORUS = `${BASE}/chorus`;
-const USER = process.env.FLOW_USER;
-const PASS = process.env.FLOW_PASS;
-const haveCreds = Boolean(USER && PASS);
-
-/** A page is a login page if a person would see one: a password field. */
-async function looksLikeLogin(page) {
-  return (await page.locator('input[type="password"]').count()) > 0;
-}
-
-/**
- * The provider asks for consent the first time an identity authorises the app.
- * A person clicks through it, so the flow does too — otherwise the journey stops
- * one screen short of the thing it exists to prove. Idempotent: after the first
- * grant the screen does not appear and this is a no-op.
- */
-/**
- * Fill and submit the provider's password form.
- *
- * The submit is wired by the page's own script, so clicking before that script
- * has attached does nothing at all — no request leaves the browser and the form
- * just sits there. That cost half an hour of chasing a login I had been told was
- * working, and it WAS working; the click was early. So: wait for the page to
- * settle, then wait for the URL to actually leave the login screen rather than
- * for a network to go quiet, because "quiet" is also what a dead click looks like.
- */
-async function signIn(page) {
-  await page.waitForLoadState('networkidle');
-  const password = page.locator('input[type="password"]').first();
-  await password.waitFor({ state: 'visible' });
-  await page.locator('input[type="email"], input[name="email"], input[name="username"]').first().fill(USER);
-  await password.fill(PASS);
-  const loginUrl = page.url();
-  await page.locator('button[type="submit"], input[type="submit"]').first().click();
-  await page.waitForURL((u) => u.toString() !== loginUrl, { timeout: 30000 });
-  await page.waitForLoadState('networkidle');
-}
-
-async function passConsent(page) {
-  // Wait for the control, not for a URL. The provider gets to the consent screen
-  // through a chain of client-side redirects, so a URL test taken the instant
-  // after submit reads the previous page and skips the click — which is exactly
-  // how this stopped one screen short the first time it ran.
-  const authorize = page.getByRole('button', { name: /^authori[sz]e$/i });
-  try {
-    await authorize.waitFor({ state: 'visible', timeout: 20000 });
-  } catch {
-    // Nothing to consent to — but if we are SITTING on the consent screen and
-    // could not find the control, say so. Returning quietly here is how the
-    // journey reported "signed in" while stopped one screen short.
-    if (/\/consent/.test(page.url())) {
-      throw new Error(`on the consent screen with no Authorize control: ${page.url()}`);
-    }
-    return;
-  }
-  const before = page.url();
-  await authorize.click();
-  await page.waitForURL((u) => u.toString() !== before, { timeout: 30000 });
-  await page.waitForLoadState('networkidle');
-}
 
 test.describe('anonymous — what a stranger sees', () => {
   test.use({ storageState: { cookies: [], origins: [] } });
@@ -261,14 +206,21 @@ test.describe('the journey — one sign-in, land where you asked', () => {
   });
 
   test('sign out ends the session everywhere on the host', async ({ page }) => {
+    // #5026 — this scenario starts with an empty jar, so it used to find no
+    // sign-out control and skip: the probe never once signed out. Sign in first,
+    // then sign out through the visible control, the way a person does.
     await page.goto(CHORUS, { waitUntil: 'domcontentloaded' });
+    await page.locator('a, button').filter({ hasText: /sign in/i }).first().click();
+    await signIn(page);
+    await passConsent(page);
     const out = page.getByRole('link', { name: /sign out/i }).or(page.getByRole('button', { name: /sign out/i }));
     if (await out.count()) {
       await out.first().click();
-      await page.goto(`${BASE}/chorus/domains`, { waitUntil: 'domcontentloaded' });
-      await expect(page.locator('body')).toContainText(/sign in/i);
     } else {
-      test.skip(true, 'no sign-out control found — reporting rather than asserting');
+      await page.goto(logoutUrl(BASE), { waitUntil: 'domcontentloaded' });
     }
+    await page.goto(`${BASE}/chorus/domains`, { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('body')).toContainText(/sign in/i);
   });
+
 });
