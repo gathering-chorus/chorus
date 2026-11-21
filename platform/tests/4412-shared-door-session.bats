@@ -29,7 +29,7 @@ setup() {
   # #4517 AC6 — SessionShape requires hostAccount; identity-login's plan_login sets it from
   # the Principal row (tested there), and the browser asks with the channel alone
   run python3 "$ROOT/platform/tests/fixtures/person-session-4412.py"
-  grep -qF "PASS it names only the channel: owner, token id and expiry are the door's" <<<"$output" || return 1
+  grep -qF "PASS it names only the channel and his role: owner, token id and expiry are the door's" <<<"$output" || return 1
   grep -qF "PASS NEGATIVE: no hostAccount -> no row, said in the log" <<<"$output" || return 1
   grep -qF "PASS NEGATIVE: no login -> nothing asked, no row" <<<"$output" || return 1
 }

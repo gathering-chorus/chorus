@@ -757,8 +757,7 @@ def open_person_session(webid, tok):
     try:
         with SESSIONS_LOCK:
             recs = load_state(SESSIONS_FILE)
-            ended = {k: r for k, r in recs.items()
-                     if (r.get("row") or {}).get("expiresAt", "") and r["row"]["expiresAt"] <= person_session.iso(now)}
+            ended = {k: r for k, r in recs.items() if person_session.record_ended(r, now)}
             for key in ended:
                 recs.pop(key)
             save_state(SESSIONS_FILE, recs)
