@@ -10,7 +10,8 @@
 setup() {
   ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
   BIN="$(workspace_bin "$ROOT" debug werk-test)"
-  [ -x "$BIN" ] || (cd "$ROOT/platform/services/werk-test" && cargo build -q)
+  # a cold build lands where cargo puts it, so ask again after building (Silas 11:07)
+  [ -x "$BIN" ] || { (cd "$ROOT/platform/services/werk-test" && cargo build -q) && BIN="$(workspace_bin "$ROOT" debug werk-test)"; }
   T="$(mktemp -d "${BATS_TMPDIR:-/tmp}/wt4915.XXXXXX")"
   mkdir -p "$T/door/v1/domains" "$T/werk/platform/tests"
   printf '{"data":[{"name":"cicd"},{"name":"tests"}]}' > "$T/door/v1/domains/domains"

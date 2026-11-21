@@ -120,6 +120,7 @@ setup() {
   SHIM_BIN="$(workspace_bin "$ROOT" debug chorus-hook-shim)"  # #4555: the workspace target
   if [ ! -x "$SHIM_BIN" ]; then
     (cd "$ROOT/platform/services/chorus-hooks" && cargo build --offline --frozen --bin chorus-hook-shim)
+    SHIM_BIN="$(workspace_bin "$ROOT" debug chorus-hook-shim)"  # ask again: where the build just put it (Silas 11:07)
   fi
   export CHORUS_HOOK_SHIM="$SHIM_BIN"
 
