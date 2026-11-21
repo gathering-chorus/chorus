@@ -22,7 +22,7 @@ rows = json.load(open(sys.argv[1] + "/designing/domains/policies/policy-checks-5
 live = json.load(open(sys.argv[2]))
 live["policies"] = [{k: r[k] for k in ("name", "label", "comment", "gate", "status", "baseline", "checkKind", "checkSpec", "violationFixture")} for r in rows]
 json.dump(live, open(sys.argv[3], "w"))' "$ROOT" "$T/probe.json" "$T/live.json"
-  LAND_LIVE_JSON="$T/live.json" run python3 "$S"
+  LAND_LIVE_JSON="$T/live.json" run python3 "$S" --probe
 }
 
 @test "dry run on a door without the probe's rows: 2 adds, roles before teammates, nothing written" {
@@ -47,10 +47,19 @@ json.dump(live, open(sys.argv[3], "w"))' "$ROOT" "$T/probe.json" "$T/live.json"
   [[ "$output" == *"CHANGE teammates/flow-probe"*'"servesAs": "flow-probe"'* ]] || return 1
 }
 
-@test "zero grants: the plan writes no Permission row, only policies and the probe's two classes" {
+@test "zero grants: the plan writes no Permission row, only the probe's two classes" {
+  run python3 -c "
+import importlib.machinery, importlib.util
+l = importlib.machinery.SourceFileLoader('l', '$S'); s = importlib.util.spec_from_loader('l', l); m = importlib.util.module_from_spec(s); l.exec_module(m)
+print(sorted({c for c, _, _ in m.plan({})}))" --probe
+  [ "$output" = "['roles', 'teammates']" ]
+}
+
+# NEGATIVE PROOF: the land's own run (no --probe) must never write the probe rows as its caller
+@test "NEGATIVE: without --probe the plan names no roles or teammates row" {
   run python3 -c "
 import importlib.machinery, importlib.util
 l = importlib.machinery.SourceFileLoader('l', '$S'); s = importlib.util.spec_from_loader('l', l); m = importlib.util.module_from_spec(s); l.exec_module(m)
 print(sorted({c for c, _, _ in m.plan({})}))"
-  [ "$output" = "['policies', 'roles', 'teammates']" ]
+  [ "$output" = "['policies']" ]
 }
