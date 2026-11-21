@@ -38,3 +38,14 @@ PY
 lint() {
   POLICY_DATA="$T/$1.nq" SHACL_DATA="$T/$1.nq" "$PV" --domain principles
 }
+
+# run a crate's own status tests and require each to run and pass (a name that exists but never
+# runs, or runs and fails, is red): the store, write and filter cases athena-gen generates
+status_tests_pass() {
+  local out
+  out=$(cd "$ROOT/$1" && nice cargo test --release -- --test-threads=1 status 2>&1) || { echo "$out"; return 1; }
+  for t in a_row_serves_status_only_when_its_shape_declares_one a_write_of_status_to_a_class_without_one_is_refused_off_model \
+           a_status_filter_on_a_class_without_one_is_refused_by_name; do
+    echo "$out" | grep -q "embedded_tests::$t \.\.\. ok" || { echo "not run or not ok: $t"; echo "$out"; return 1; }
+  done
+}

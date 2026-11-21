@@ -33,16 +33,31 @@ ask() {
 
 P='PREFIX chorus: <https://jeffbridwell.com/chorus#>'
 
-# the principles, from the door: "chorus:<name> chorus:<name> ..." for a VALUES block
-PRINCIPLES=$(curl -sf --max-time 15 "$PRINCIPLES_URL" 2>/dev/null | python3 -c '
-import json, re, sys
-names = [r.get("name", "") for r in json.load(sys.stdin).get("data") or []]
-names = [n for n in names if re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", n)]
-print(" ".join("chorus:" + n for n in names))' 2>/dev/null)
-if [ -z "$PRINCIPLES" ]; then
+# the principles, from the door: "chorus:<name> chorus:<name> ..." for a VALUES block. Every row,
+# one page (limit=1000); a door that holds more than it gave, or a name that cannot be a chorus
+# local name, is refused, never dropped (a dropped principle would read as dangling). A door that
+# answers with no principles is an empty list, not a silent door.
+BODY=$(curl -sf --max-time 15 -G "$PRINCIPLES_URL" --data-urlencode limit=1000 2>/dev/null) || {
   echo "practice-coverage: the principles door did not answer ($PRINCIPLES_URL) — refusing to report a blind zero" >&2
   exit 2
-fi
+}
+PRINCIPLES=$(printf '%s' "$BODY" | python3 -c '
+import json, re, sys
+d = json.load(sys.stdin)
+rows = d.get("data")
+if not isinstance(rows, list):
+    sys.exit("the door answered without a data list")
+if isinstance(d.get("count"), int) and d["count"] > len(rows):
+    sys.exit("the door holds %d principles and gave %d" % (d["count"], len(rows)))
+names = [r.get("name", "") for r in rows]
+bad = [n for n in names if not re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", n)]
+if bad:
+    sys.exit("names that cannot be read: " + ", ".join(map(repr, bad)))
+print("OK " + " ".join("chorus:" + n for n in names))') || {
+  echo "practice-coverage: the principles door's answer could not be used — refusing to report a blind zero" >&2
+  exit 2
+}
+PRINCIPLES=${PRINCIPLES#OK }
 
 # 1 — principles with no practice expressing them
 UNEXPRESSED=$(ask "$P SELECT ?p WHERE {

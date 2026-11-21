@@ -13,6 +13,8 @@
 # a_write_of_status_to_a_class_without_one_is_refused_off_model) prove it on rows.
 
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
+# Shared setup (status_tests_pass), named so a change to it runs this suite: platform/tests/5021-helpers.bash
+load 5021-helpers
 PV="$ROOT/platform/scripts/policy-validate"
 
 setup() {
@@ -45,7 +47,6 @@ PY
   ! grep -q 'k == "status"' "$t/rules.rs" || return 1
   ! grep -q 'f == "status"' "$t/main.rs" || return 1
   for crate in shaping/domains/principles/api directing/products/pulse/api; do
-    grep -q 'fn a_row_serves_status_only_when_its_shape_declares_one' "$ROOT/$crate/src/embedded_tests.rs"
-    grep -q 'fn a_write_of_status_to_a_class_without_one_is_refused_off_model' "$ROOT/$crate/src/embedded_tests.rs"
+    status_tests_pass "$crate" || return 1
   done
 }

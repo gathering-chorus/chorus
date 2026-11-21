@@ -45,6 +45,5 @@ REPO=https://jeffbridwell.com/chorus#repoTarget
   ! grep -q 'row.insert("status"' "$ROOT/shaping/domains/principles/api/src/store.rs" || return 1
   ! grep -q 'row.insert("status"' "$ROOT/designing/services/athena-gen/templates/store.rs" || return 1
   # and its own tests prove it on rows: a row serves status only when declared, a status write is off-model
-  grep -q 'fn a_row_serves_status_only_when_its_shape_declares_one' "$ROOT/shaping/domains/principles/api/src/embedded_tests.rs"
-  grep -q 'fn a_write_of_status_to_a_class_without_one_is_refused_off_model' "$ROOT/shaping/domains/principles/api/src/embedded_tests.rs"
+  status_tests_pass shaping/domains/principles/api
 }
