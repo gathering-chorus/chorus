@@ -9,7 +9,8 @@
 
 . "$BATS_TEST_DIRNAME/../scripts/lib/workspace-bin.sh"  # #4915: where a workspace build puts a binary
 setup() {
-  SHIM="$(workspace_bin "${BATS_TEST_DIRNAME}/../.." debug chorus-hook-shim)"
+  # #4915 slice 3: the newest shim build in either profile, built once if none exists (a fresh werk has none)
+  SHIM="$(workspace_bin_built "${BATS_TEST_DIRNAME}/../.." chorus-hook-shim chorus-hooks)"
   TMP="$(mktemp -d)"
   # a regular file where a directory is needed -> create_dir_all + open both fail
   touch "$TMP/blocker"

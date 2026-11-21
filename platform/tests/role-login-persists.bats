@@ -11,8 +11,8 @@
 . "$BATS_TEST_DIRNAME/../scripts/lib/workspace-bin.sh"  # #4915: where a workspace build puts a binary
 setup() {
   REPO="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
-  PRINCIPAL_BIN="${CHORUS_PRINCIPAL_TEST_BIN:-$(workspace_bin "$REPO" debug chorus-principal)}"
-  [ -x "$PRINCIPAL_BIN" ] || PRINCIPAL_BIN="$REPO/target/$(id -un)/release/chorus-principal"
+  # #4915 slice 3: the newest build in either profile, built once if none exists (a fresh werk has none)
+  PRINCIPAL_BIN="${CHORUS_PRINCIPAL_TEST_BIN:-$(workspace_bin_built "$REPO" chorus-principal chorus-principal)}"
   [ -x "$PRINCIPAL_BIN" ] || { echo "FAIL: chorus-principal not built at $PRINCIPAL_BIN" >&2; return 1; }
   T="$BATS_TEST_TMPDIR"
 }
