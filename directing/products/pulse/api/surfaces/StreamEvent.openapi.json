@@ -7,7 +7,7 @@
   },
   "components": { "schemas": {
     "EdgeRef": { "type": "object", "properties": { "name": { "type": "string" }, "label": { "type": "string" } } },
-    "StreamEvent": { "type": "object", "properties": { "name": { "type": "string" }, "ownedBy": { "$ref": "#/components/schemas/EdgeRef" }, "status": { "type": "string" }, "streamPhase": { "type": "string" }, "streamRole": { "type": "string" }, "streamTool": { "type": "string" }, "streamTs": { "type": "string" } }, "required": ["streamPhase", "streamRole", "streamTool", "streamTs"] },
+    "StreamEvent": { "type": "object", "properties": { "name": { "type": "string" }, "ownedBy": { "$ref": "#/components/schemas/EdgeRef" }, "streamPhase": { "type": "string" }, "streamRole": { "type": "string" }, "streamTool": { "type": "string" }, "streamTs": { "type": "string" } }, "required": ["streamPhase", "streamRole", "streamTool", "streamTs"] },
     "StreamEventCreate": { "type": "object", "additionalProperties": false, "properties": { "name": { "type": "string" }, "streamPhase": { "type": "string" }, "streamRole": { "type": "string" }, "streamTool": { "type": "string" }, "streamTs": { "type": "string" } }, "required": ["name", "streamPhase", "streamRole", "streamTool", "streamTs"] },
     "StreamEventReplace": { "type": "object", "additionalProperties": false, "properties": { "streamPhase": { "type": "string" }, "streamRole": { "type": "string" }, "streamTool": { "type": "string" }, "streamTs": { "type": "string" } }, "required": ["streamPhase", "streamRole", "streamTool", "streamTs"] },
     "List": { "type": "object", "properties": { "count": { "type": "integer" }, "data": { "type": "array", "items": { "$ref": "#/components/schemas/StreamEvent" } } } }

@@ -50,3 +50,17 @@ PY
     status_tests_pass "$crate" || return 1
   done
 }
+
+# the published contract says what is served: a class whose shape has no status carries none in
+# its OpenAPI read schema; one that declares it (pulse's cards row) keeps it
+@test "AC8: the generated OpenAPI read schema lists status only where the shape declares it" {
+  python3 - "$ROOT" <<'PY' || return 1
+import json, sys
+r = sys.argv[1]
+def props(f):
+    d = json.load(open(r + f))
+    return {n: s.get("properties", {}) for n, s in d["components"]["schemas"].items()}
+p = props("/shaping/domains/principles/api/surfaces/Principle.openapi.json")
+assert not any("status" in v for v in p.values()), "Principle's contract still lists status"
+PY
+}

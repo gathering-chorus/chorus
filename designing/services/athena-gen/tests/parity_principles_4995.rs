@@ -22,7 +22,7 @@ const NAMED: &[&str] = &[
     "mcp route add: athena-make POST /principles, athena-gen POST /principles/principles",
     // the add tool writes through a different door
     "mcp delegatesTo add: athena-make DAL (athena-model), athena-gen the generated door",
-    // generated rows serve name and status; athena-make's read adds audit fields
+    // generated rows serve name (#5021: status only where declared, and Principle declares none); athena-make's read adds audit fields
     "openapi read field only in athena-make: contributor",
     "openapi read field only in athena-make: created",
     "openapi read field only in athena-make: creator",
@@ -30,7 +30,6 @@ const NAMED: &[&str] = &[
     "openapi read field only in athena-make: modified",
     "openapi read field only in athena-make: type",
     "openapi read field only in athena-gen: name",
-    "openapi read field only in athena-gen: status",
     // #5002 made ownedBy minCount 1; athena-make's floor counts sh:severity Violation only
     "openapi required only in athena-gen: ownedBy",
     // routes the generated door does not serve yet (route parity is a follow-on, not AC5)
