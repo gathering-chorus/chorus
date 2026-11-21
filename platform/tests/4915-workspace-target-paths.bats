@@ -61,3 +61,17 @@ fixed_root_paths() {  # repo root → each "file:line" reading a binary at a fix
   [ "$(CARGO_TARGET_DIR= workspace_bin "$r" release x)" = "$r/target/$(id -un)/release/x" ]
   [ "$(CARGO_TARGET_DIR= workspace_bin "$r" release nope)" = "$r/target/$(id -un)/release/nope" ]
 }
+
+# the two scripts this card moved to the lookup, and the hooks LaunchAgent copy Silas asked for
+@test "#4915: athena-model-gate.sh and post-cargo-build.sh find their binary through workspace_bin" {
+  for f in platform/scripts/athena-model-gate.sh proving/scripts/post-cargo-build.sh; do
+    grep -q 'workspace-bin.sh' "$ROOT/$f" || { echo "$f does not source the lookup"; return 1; }
+    grep -q 'workspace_bin "' "$ROOT/$f" || { echo "$f does not ask workspace_bin"; return 1; }
+  done
+}
+
+@test "#4915: the hooks LaunchAgent copy runs the installed binary, like live and launchagents-canonical" {
+  local p="$ROOT/proving/config/launchagents/com.chorus.hooks.plist"
+  grep -qE '<string>/Users/[^/]+/\.chorus/bin/chorus-hooks</string>' "$p" || return 1
+  ! grep -q '/target/' "$p" || { grep -n '/target/' "$p"; return 1; }
+}
