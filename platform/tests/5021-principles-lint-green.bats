@@ -10,6 +10,7 @@
 # doors gone from the tree). The fixture names: platform/tests/fixtures/5021/after.py,
 # platform/tests/fixtures/5021/principles-2026-11-20.nq.
 
+# Shared setup, named so a change to it runs this suite: platform/tests/5021-helpers.bash
 load 5021-helpers
 
 setup() { build_5021; }

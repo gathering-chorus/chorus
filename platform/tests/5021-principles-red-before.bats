@@ -8,6 +8,7 @@
 # AC3 NEGATIVE PROOF: the same check, on today's rows (platform/tests/fixtures/5021/principles-2026-11-20.nq),
 # is red: 14 dangling XP links and 3 missing Domain fields.
 
+# Shared setup, named so a change to it runs this suite: platform/tests/5021-helpers.bash
 load 5021-helpers
 
 setup() { build_5021; }
