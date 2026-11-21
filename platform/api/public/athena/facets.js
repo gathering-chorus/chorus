@@ -62,10 +62,17 @@ async function renderFacetTables(el, fid, opts) {
   const CHOSEN = opts.only ? opts.only.map(t => FACETS.find(f => f.t === t)).filter(Boolean)
     : opts.except ? FACETS.filter(f => !opts.except.includes(f.t)) : FACETS;
   const bodies = await Promise.all(CHOSEN.map(f =>
-    fetch(f.u).then(r => r.ok ? r.json() : null).catch(() => null)));
+    // #5021 — a read that fails is kept as a failure (status + message), never turned into an empty fold
+    fetch(f.u).then(async r => r.ok ? r.json() : { _failed: 'HTTP ' + r.status, _body: await r.json().catch(() => null) })
+      .catch(e => ({ _failed: 'no answer (' + (e && e.message || 'network') + ')' }))));
   el.innerHTML = CHOSEN.map((f, i) => {
     const b = bodies[i];
     let inner, count;
+    if (b && b._failed) {
+      const why = b._body && ((b._body.data && b._body.data.error) || b._body.error);
+      const heading = opts.heading ? opts.heading(f.t) : f.t;
+      return `<details class="fold" open><summary>${esc(heading)} (?) <span class="src">could not read</span></summary><div class="body"><div class="bad">could not read ${esc(f.t)}: ${esc(b._failed)}${why ? ' &middot; ' + esc(why) : ''}</div></div></details>`;
+    }
     if (f.k === '_deps') {
       const dd = (b && b.data) || {};
       const dir = dd.direct || { consumes: [], consumedBy: [] };

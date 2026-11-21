@@ -2890,7 +2890,8 @@ function policyCountsDeps(): PolicyCountsDeps {
       execFile(path.join(policyTreeRoot, 'platform', 'scripts', 'policy-validate'), args, {
         cwd: policyTreeRoot, timeout: 300_000, maxBuffer: 4 * 1024 * 1024,
         // launchd's PATH has no node; the board CLI a counter runs needs the one running us (#4964)
-        env: { ...process.env, PATH: `${path.dirname(process.execPath)}:${process.env.PATH ?? ''}`, POLICIES_JSON: tmp, CHORUS_HOME: policyTreeRoot },
+        // a counter that reads the page's API reads THIS server (a werk's or prod's), never a fixed port (#5021)
+        env: { ...process.env, PATH: `${path.dirname(process.execPath)}:${process.env.PATH ?? ''}`, POLICIES_JSON: tmp, CHORUS_HOME: policyTreeRoot, CHORUS_API: `http://127.0.0.1:${PORT}` },
       }, (_err, stdout) => { fs.rmSync(tmp, { force: true }); resolve(stdout); });
     }),
   };

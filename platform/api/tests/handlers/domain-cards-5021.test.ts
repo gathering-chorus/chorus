@@ -101,3 +101,34 @@ describe('#5021 Decisions fold', () => {
     expect(seen).toContain('SAMPLE(?ti) AS ?title');
   });
 });
+
+// --- on the page: a fold whose read fails says so, never shows as empty (code review, #5021) ---
+
+import * as fs from 'fs';
+import * as path from 'path';
+import * as vm from 'vm';
+
+async function renderFolds(answer: (url: string) => { status: number; body: unknown }): Promise<string> {
+  const src = fs.readFileSync(path.join(__dirname, '..', '..', 'public', 'athena', 'facets.js'), 'utf8');
+  const el = { innerHTML: '' };
+  const esc = (s: unknown) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] as string));
+  const fetch = async (u: string) => { const a = answer(u); return { ok: a.status < 400, status: a.status, json: async () => a.body }; };
+  const ctx = vm.createContext({ window: {}, fetch, esc, el });
+  vm.runInContext(src + '\nthis.__run = () => renderFacetTables(el, "principles", { only: ["Decisions"], notes: { Decisions: "Decisions: 0 because none carries hasDomain" } });', ctx);
+  await (ctx as unknown as { __run: () => Promise<void> }).__run();
+  return el.innerHTML;
+}
+
+test('NEGATIVE: a Decisions read that fails (502) shows "could not read", not an empty fold with its note', async () => {
+  const html = await renderFolds(() => ({ status: 502, body: { data: { error: 'the decisions query failed: down' } } }));
+  expect(html).toContain('could not read Decisions: HTTP 502');
+  expect(html).toContain('the decisions query failed: down');
+  expect(html).not.toContain('Why empty');
+  expect(html).not.toContain('no decisions for this domain');
+});
+
+test('control: a read that answers no rows is an empty fold with its written reason', async () => {
+  const html = await renderFolds(() => ({ status: 200, body: { data: { decisions: [] } } }));
+  expect(html).toContain('Why empty');
+  expect(html).toContain('no decisions for this domain');
+});

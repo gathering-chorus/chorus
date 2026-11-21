@@ -63,3 +63,14 @@ l = importlib.machinery.SourceFileLoader('l', '$S'); s = importlib.util.spec_fro
 print(sorted({c for c, _, _ in m.plan({})}))"
   [ "$output" = "['policies']" ]
 }
+
+# NEGATIVE PROOF (code review): the link-prefix stripping reaches only served links, only for the
+# probe's rows; a policy row whose text starts "role-" is compared as written, so a change shows
+@test "NEGATIVE: a policy value starting role- is never stripped into looking the same" {
+  run python3 -c "
+import importlib.machinery, importlib.util, sys
+sys.argv = ['x']
+l = importlib.machinery.SourceFileLoader('l', '$S'); s = importlib.util.spec_from_loader('l', l); m = importlib.util.module_from_spec(s); l.exec_module(m)
+print(m.land.same('role-x', 'x'), m.bare('chorus:role-x'), m.bare('role-x'), m.bare('chorus:principal-x'))"
+  [ "$output" = "False x role-x x" ] || { echo "$output"; return 1; }
+}

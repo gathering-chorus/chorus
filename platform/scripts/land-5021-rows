@@ -35,20 +35,27 @@ land.DOOR_CLASS = {**land.DOOR_CLASS,
                    "roles": ("/v1/roles/roles", "roles", "roles"),
                    "teammates": ("/v1/roles/teammates", "roles", "teammates")}
 
+PROBE = "--probe" in sys.argv[1:]
+
 # the door serves a link as chorus:role-<x> / chorus:principal-<x>; the plan writes the bare
-# name (the DAL mints the kind prefix, a prefixed one is refused as a double prefix, #4343)
+# name (the DAL mints the kind prefix, a prefixed one is refused as a double prefix, #4343).
+# Only a served link (it starts chorus:) loses its kind prefix, and only for the probe's rows:
+# a policy's text that happens to start role- or principal- is compared as it is.
 _bare = land.bare
 
 
 def bare(v):
     v = _bare(v)
-    for p in ("chorus:", "role-", "principal-"):
-        if v.startswith(p):
-            v = v[len(p):]
+    if v.startswith("chorus:"):
+        v = v[len("chorus:"):]
+        for p in ("role-", "principal-"):
+            if v.startswith(p):
+                return v[len(p):]
     return v
 
 
-land.bare = bare
+if PROBE:
+    land.bare = bare
 
 PROBE_ROWS = [
     ("roles", "flow-probe", {"label": "flow-probe (browser-flow test identity)",
@@ -63,9 +70,6 @@ FIELDS = ("label", "comment", "gate", "status", "baseline", "checkKind", "checkS
 
 def policy_rows():
     return [("policies", r["name"], {k: r[k] for k in FIELDS}) for r in json.load(open(PLAN))]
-
-
-PROBE = "--probe" in sys.argv[1:]
 
 
 def plan(_live):

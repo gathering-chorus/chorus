@@ -733,7 +733,8 @@ CHORUS_API = os.environ.get("CHORUS_API", "http://localhost:3340")
 
 def api_json(path):
     cache = os.environ.get("POLICY_RUN_DIR")
-    key = os.path.join(cache, "api-" + re.sub(r"[^A-Za-z0-9]+", "_", path)) if cache else None
+    # keyed by origin and path, so a werk's chorus-api and prod's never share an answer
+    key = os.path.join(cache, "api-" + re.sub(r"[^A-Za-z0-9]+", "_", CHORUS_API + path)) if cache else None
     if key and os.path.exists(key):
         with open(key) as f:
             return json.load(f)
@@ -742,9 +743,11 @@ def api_json(path):
             body = json.load(r)
     except (OSError, ValueError) as e:
         raise Broken(f"{path}: {e}")
-    if key:
-        with open(key, "w") as f:
+    if key:  # written whole or not at all: a parallel counter never reads half a file
+        tmp = f"{key}.{os.getpid()}.tmp"
+        with open(tmp, "w") as f:
             json.dump(body, f)
+        os.replace(tmp, key)
     return body
 
 
