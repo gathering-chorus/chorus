@@ -62,8 +62,11 @@ rec = ps.open_session(JEFF, TOK, NOW, 12 * 3600, sparql_for("jeff"), door, "http
 posts = [c for c in door.calls if c[0] == "POST"]
 check("sign-in asks the door once, at the logins route", len(posts) == 1 and posts[0][1] == "http://door/v1/identity/logins")
 check("it asks with HIS token as the bearer, never a service credential", posts and posts[0][2] == TOK["id_token"])
-check("it names only the channel: owner, token id and expiry are the door's",
-      posts and posts[0][3] == {"channel": "browser"})
+check("it names only the channel and his role: owner, token id and expiry are the door's",
+      posts and posts[0][3] == {"channel": "browser", "actsAs": "role-jeff"})
+# #5026 NEGATIVE PROOF: a sign-in that names no role leaves an open row OpenSessionActsAsARole fails
+check("NEGATIVE (#5026): the ask always names the role it acts as, never the channel alone",
+      posts and posts[0][3] != {"channel": "browser"} and posts[0][3].get("actsAs") == "role-jeff")
 check("NEGATIVE: it never writes a Session row itself", not [c for c in door.calls if c[0] in ("PUT", "PATCH") or c[1].endswith("/v1/identity/sessions")])
 check("the record keeps the name the door chose, and what sign-out needs",
       rec and rec["row"]["name"] == "jeff-9f2c" and rec["refresh_token"] == "rt-1")
