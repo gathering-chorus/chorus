@@ -6522,16 +6522,25 @@ pub fn resolve_surface(path: &str, surfaces: &[DomainSurface]) -> Option<Surface
     None
 }
 
+/// #5021 — the composed-surface query, own-door domains left out (testable without a store).
+pub fn domain_surfaces_query() -> String {
+    format!(
+        "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?d chorus:repoTarget ?mount ; chorus:definesVocabulary ?c BIND(CONCAT(REPLACE(STR(?d), '.*[#/]', ''), '|', STR(?mount), '|', REPLACE(STR(?c), '.*[#/]', '')) AS ?v) }} {own} }} ORDER BY ?v",
+        ns = NS, g = DOMAINS_GRAPH, own = OWN_DOOR_FILTER
+    )
+}
+
 /// #3494 — read the composed domain surfaces from the model: every domain with a
 /// `chorus:repoTarget` (the mount) AND `chorus:definesVocabulary` edges (the
 /// classes). One SPARQL; grouped per domain. Empty → no composed routes.
+/// #5021 — a domain with its own door (a server.bind Property, OWN_DOOR_FILTER) gets no
+/// surface here either: athena-make serves none of its classes (#5017), so an index at its
+/// repoTarget would only point at routes this door no longer has.
 pub fn read_domain_surfaces() -> R<Vec<DomainSurface>> {
     // CONCAT dom|mount|cls into ?v (the single-var pattern select_v reads, as
     // generate() does for field|kind) — one row per (domain, class) pair.
-    let q = format!(
-        "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?d chorus:repoTarget ?mount ; chorus:definesVocabulary ?c BIND(CONCAT(REPLACE(STR(?d), '.*[#/]', ''), '|', STR(?mount), '|', REPLACE(STR(?c), '.*[#/]', '')) AS ?v) }} }} ORDER BY ?v",
-        ns = NS, g = DOMAINS_GRAPH
-    );
+    let q = domain_surfaces_query();
+
     let body = sparql_json(&q)?;
     let mut by_mount: std::collections::BTreeMap<(String, String), Vec<String>> = std::collections::BTreeMap::new();
     for row in select_v(&body) {

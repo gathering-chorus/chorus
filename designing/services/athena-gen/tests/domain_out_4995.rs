@@ -78,8 +78,9 @@ fn a_domain_at_two_steps_is_refused_by_name() {
     assert!(e.contains("principles declares 2 atStep values"), "{e}");
 }
 
-/// AC6's other clauses (Borg Queen 18:46): repoTarget, athena-make's live route mount,
-/// is untouched, and no existing crate moved.
+/// AC6's other clauses (Borg Queen 18:46): athena-gen leaves repoTarget as the model says it
+/// (#5021 moved principles' to where its code lives since #5017, and athena-make no longer mounts
+/// a surface for a domain with its own door), and no existing crate moved.
 #[test]
 fn repo_target_and_existing_crates_are_untouched() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
@@ -90,7 +91,8 @@ fn repo_target_and_existing_crates_are_untouched() {
         oxigraph::sparql::QueryResults::Solutions(s) => s.map(|x| x.unwrap().get("v").unwrap().to_string()).collect(),
         _ => panic!("not a select"),
     };
-    assert_eq!(vals, vec!["\"loom/principles\"".to_string()]);
+    assert_eq!(vals, vec!["\"shaping/domains/principles\"".to_string()]);
+    assert!(root.join("shaping/domains/principles/api/Cargo.toml").is_file(), "principles' crate is where repoTarget says");
     assert!(root.join("directing/products/pulse/api/Cargo.toml").is_file(), "pulse's crate did not move");
 }
 

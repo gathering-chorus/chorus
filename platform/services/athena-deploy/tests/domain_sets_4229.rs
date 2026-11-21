@@ -42,7 +42,10 @@ fn the_real_manifest_holds_every_set_the_deploy_stages() {
     // agent_runtimes.json from the file, and the door would mint different IRIs
     // (agentruntime-<name>, not runtime-<name>), breaking the Principal links. They
     // leave once athena-gen reads the rows from the store (follow-on card).
-    let expected = ["security", "identity"];
+    // #4995 (Wren 11-19 18:21) — principles' generated API reads its settings rows (server.bind,
+    // store.kind, ...) from urn:chorus:domains:properties; they ship as a set from the file until
+    // athena-gen reads them from the store (#5021 adds this line: #4995 added the set, not the test).
+    let expected = ["security", "identity", "properties"];
     for want in expected {
         assert!(names.contains(&want), "{want} missing from {names:?}");
     }
@@ -50,7 +53,7 @@ fn the_real_manifest_holds_every_set_the_deploy_stages() {
         assert!(expected.contains(got), "{got} is in the manifest and not in this test");
     }
     let files: usize = sets.iter().map(|s| s.files.len()).sum();
-    assert_eq!(files, 3, "principals, permissions and the agent runtimes only (#4432, #4572)");
+    assert_eq!(files, 4, "principals, permissions, the agent runtimes (#4432, #4572) and principles' settings (#4995)");
 }
 
 #[test]

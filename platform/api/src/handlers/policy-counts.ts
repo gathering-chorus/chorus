@@ -13,6 +13,8 @@
  * plan changes nothing. A door that does not answer is a 503, never a file (#4508).
  */
 
+import { isDomainName } from './domain-cards';
+
 export interface PolicyRow {
   name: string;
   label?: string;
@@ -82,24 +84,24 @@ export function overlay(
 const LINE = /^(PASS|FAIL) (\S+) (\d+) (?:<=|>) (\d+)/;
 const BROKEN = /^BROKEN (\S+): (.*)$/;
 
-/** policy-validate's lines → one measurement per policy. */
+/** One PASS/FAIL or BROKEN line → its measurement; anything else → null. */
+function measuredLine(line: string): Measured | null {
+  const m = LINE.exec(line);
+  if (m) return { name: m[2], verdict: m[1] === 'PASS' ? 'pass' : 'fail', count: Number(m[3]), baseline: Number(m[4]) };
+  const b = BROKEN.exec(line);
+  return b ? { name: b[1], verdict: 'broken', count: null, baseline: null, reason: b[2] } : null;
+}
+
+/** policy-validate's lines → one measurement per policy. A domain lint lists a red's
+ *  violations under it as "  - <violation>" (#5020); they ride on that red. */
 export function parseValidate(stdout: string): Measured[] {
   const out: Measured[] = [];
   for (const line of stdout.split('\n')) {
-    const m = LINE.exec(line);
-    if (m) {
-      out.push({ name: m[2], verdict: m[1] === 'PASS' ? 'pass' : 'fail', count: Number(m[3]), baseline: Number(m[4]) });
-      continue;
-    }
-    const b = BROKEN.exec(line);
-    if (b) {
-      out.push({ name: b[1], verdict: 'broken', count: null, baseline: null, reason: b[2] });
-      continue;
-    }
-    // a domain lint lists a red's violations under it as "  - <violation>" (#5020)
-    const v = /^  - (.*)$/.exec(line);
-    const last = out[out.length - 1];
-    if (v && last && last.verdict === 'fail') (last.violations ??= []).push(v[1]);
+    const m = measuredLine(line);
+    if (m) { out.push(m); continue; }
+    const v = /^ {2}- (.*)$/.exec(line);
+    const last = out.length ? out[out.length - 1] : undefined;
+    if (v && last?.verdict === 'fail') (last.violations ??= []).push(v[1]);
   }
   return out;
 }
@@ -139,8 +141,6 @@ export async function fetchPolicyCounts(gate: string, deps: PolicyCountsDeps): P
   return { status: 200, body };
 }
 
-const DOMAIN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
-
 /** The domain names a row is scoped to (chorus:x, its IRI, or x); none = every domain. */
 export function appliesTo(row: PolicyRow): string[] {
   const a = row.appliesTo ?? [];
@@ -155,7 +155,7 @@ export function appliesTo(row: PolicyRow): string[] {
  * domain), cached ten minutes, with the time it ran. A door that does not answer is a 503.
  */
 export async function fetchDomainConformance(domain: string, deps: PolicyCountsDeps): Promise<{ status: number; body: unknown }> {
-  if (!DOMAIN.test(domain)) return { status: 400, body: { error: 'domain must be a domain name, e.g. principles' } };
+  if (!isDomainName(domain)) return { status: 400, body: { error: 'domain must be a domain name, e.g. principles' } };
   const now = (deps.now ?? Date.now)();
   const key = `domain:${domain}`;
   const hit = cache.get(key);
