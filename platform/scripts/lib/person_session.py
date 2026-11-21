@@ -58,9 +58,13 @@ def open_session(webid, tok, now, lasts, sparql, http, api, log):
         log(f"person-session: {principal} has no verified login; no Session row asked for")
         return None
     # #4517 AC6 — the door writes his Session row from his own verified login (Jeff 11-18
-    # 00:17); this asks, naming only the channel. Owner, start and expiry are the door's.
+    # 00:17); this asks, naming the channel and the role he acts as. Owner, start and expiry
+    # are the door's. #5026 — actsAs is his: an open session must say which role it acts as
+    # (OpenSessionActsAsARole); #4517 dropped it and 52 open rows failed the rule. The door
+    # checks his Teammate serves the role (teammate-jeff servesAs role-jeff).
     try:
-        status, reply = http("POST", f"{api}/v1/identity/logins", id_token, {"channel": "browser"})
+        status, reply = http("POST", f"{api}/v1/identity/logins", id_token,
+                             {"channel": "browser", "actsAs": f"role-{principal}"})
     except Exception as e:
         log(f"person-session: {principal} sign-in row NOT written: {e}")
         return None
