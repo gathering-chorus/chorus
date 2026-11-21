@@ -8,8 +8,15 @@
 # kade 6/30). PASS: for every role, responses = requests over the window (default 1 h).
 set -uo pipefail
 LOKI="${LOKI_URL:-http://localhost:3102}"; WINDOW="${WINDOW:-1h}"
+# #4915 round 5 — the window ends at the newest prompt at the source, not at now: at 04:00 nobody
+# prompts, and "nothing in the last hour" is not a lost prompt. No prompt in 24h is UNMEASURED (2).
+ANCHOR_LINE=$(python3 "$(dirname "$0")/lib/live_anchor.py" newest '{job="platform-chorus", component="context-inject"} | json | event="context.inject.request"') \
+  || { echo "UNMEASURED: no context.inject.request at the source (Loki) in 24h"; exit 2; }
+ANCHOR="${ANCHOR_LINE%%$'\t'*}"
+# the newest request's response takes a moment: end the window a minute after it
+AT=$(python3 -c "import sys; print(int(float(sys.argv[1])) + 60)" "$ANCHOR")
 q="sum by (role, event) (count_over_time({job=\"platform-chorus\", component=\"context-inject\"} | json | event=~\"context.inject.(request|response)\" [$WINDOW]))"
-body=$(curl -s -m 20 -G "$LOKI/loki/api/v1/query" --data-urlencode "query=$q") || { echo "FAIL: Loki unreachable at $LOKI"; exit 1; }
+body=$(curl -s -m 20 -G "$LOKI/loki/api/v1/query" --data-urlencode "query=$q" --data-urlencode "time=$AT") || { echo "FAIL: Loki unreachable at $LOKI"; exit 1; }
 python3 - "$body" <<'EOF'
 import json, sys
 try:

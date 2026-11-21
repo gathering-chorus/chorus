@@ -14,11 +14,24 @@
 ROUTE="${STREAMS_ROUTE:-http://127.0.0.1:3392/pulse/streams/events}"
 V2="${CLEARING_V2_STREAMS:-http://127.0.0.1:3472/clearing-v2/api/streams}"
 
-# reads a route body on stdin; exit 0 when it holds a call from the last hour with a role.
+# reads a route body on stdin; exit 0 when it holds a call with a role from the hour before the
+# newest tool call at the SOURCE (ANCHOR, epoch s; #4915 round 5: not now, so a quiet night is not
+# red), and the route is not frozen: its newest row is within LAG of the source's newest call.
 RECENT='
-import json, sys, datetime
+import json, os, sys, datetime
 rows = json.load(sys.stdin).get("data") or []
-now = datetime.datetime.now(datetime.timezone.utc)
+now = datetime.datetime.fromtimestamp(float(os.environ["ANCHOR"]), datetime.timezone.utc)
+lag = float(os.environ.get("LAG", "600"))
+def ts(r):
+    try:
+        t = datetime.datetime.fromisoformat(str(r.get("streamTs", "")).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return t if t.tzinfo else t.replace(tzinfo=datetime.timezone.utc)
+newest = max((t for t in map(ts, rows) if t), default=None)
+if newest is None or (now - newest).total_seconds() > lag:
+    print(f"frozen surface: the source has a call at {now.isoformat()}, the route newest {newest}")
+    sys.exit(1)
 def recent(r):
     try:
         t = datetime.datetime.fromisoformat(str(r.get("streamTs", "")).replace("Z", "+00:00"))
@@ -60,8 +73,10 @@ roles_ok = len(route_roles) < 2 or len(v2_roles) > 1
 sys.exit(0 if d.get("ok") and in_order and roles_ok else 1)'
 
 @test "AC5: the generated streams route serves recent tool calls with their roles" {
+  line=$(python3 "$BATS_TEST_DIRNAME/lib/live_anchor.py" newest '{job="platform-chorus"} | json | event="agent.action"') \
+    || skip "UNMEASURED: no tool call at the source (Loki) in 24h"
   body=$(curl -sf --max-time 10 "$ROUTE?limit=200")
-  echo "$body" | python3 -c "$RECENT"
+  echo "$body" | ANCHOR="${line%%$'\t'*}" python3 -c "$RECENT"
 }
 
 # The v2 lines must be the route's calls: a line that matches no route label came from somewhere
@@ -91,11 +106,21 @@ sys.exit(0 if d.get("ok") and in_order and roles_ok else 1)'
   [ "$status" -eq 0 ]
 }
 
-@test "AC5 NEGATIVE PROOF: an empty or stale route body fails the check" {
-  run python3 -c "$RECENT" <<< '{"data":[]}'
+@test "AC5 NEGATIVE PROOF: an empty, stale or frozen route body fails the check; a quiet night does not" {
+  local now night
+  now=$(date -u +%s); night=$((now - 5 * 3600))
+  iso() { python3 -c "import sys,datetime; print(datetime.datetime.fromtimestamp(int(sys.argv[1]), datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'))" "$1"; }
+  run env ANCHOR="$now" python3 -c "$RECENT" <<< '{"data":[]}'
   [ "$status" -ne 0 ]
-  run python3 -c "$RECENT" <<< '{"data":[{"streamRole":"wren","streamTs":"2020-01-01T00:00:00Z"}]}'
+  run env ANCHOR="$now" python3 -c "$RECENT" <<< '{"data":[{"streamRole":"wren","streamTs":"2020-01-01T00:00:00Z"}]}'
   [ "$status" -ne 0 ]
-  run python3 -c "$RECENT" <<< "{\"data\":[{\"streamRole\":\"wren\",\"streamTs\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}]}"
+  # frozen: the source holds a call now, the route stopped 20 minutes ago
+  run env ANCHOR="$now" python3 -c "$RECENT" <<< "{\"data\":[{\"streamRole\":\"wren\",\"streamTs\":\"$(iso $((now - 1200)))\"}]}"
+  [ "$status" -ne 0 ] || return 1
+  [[ "$output" == *"frozen surface"* ]] || return 1
+  run env ANCHOR="$now" python3 -c "$RECENT" <<< "{\"data\":[{\"streamRole\":\"wren\",\"streamTs\":\"$(iso "$now")\"}]}"
+  [ "$status" -eq 0 ]
+  # a quiet night: the source's newest call was 5 hours ago and the route shows it, so green
+  run env ANCHOR="$night" python3 -c "$RECENT" <<< "{\"data\":[{\"streamRole\":\"wren\",\"streamTs\":\"$(iso "$night")\"}]}"
   [ "$status" -eq 0 ]
 }
