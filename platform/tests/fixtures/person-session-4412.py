@@ -71,6 +71,16 @@ check("NEGATIVE: it never writes a Session row itself", not [c for c in door.cal
 check("the record keeps the name the door chose, and what sign-out needs",
       rec and rec["row"]["name"] == "jeff-9f2c" and rec["refresh_token"] == "rt-1")
 
+# #5026 — the record keeps the row's expiry, so the guard can drop an ended record and #4966's
+# close-at-sign-in stops treating every old sid as live (4517 kept only the name: 50 rows stayed open)
+check("the record keeps the row's expiresAt, the login's own expiry",
+      rec and rec["row"].get("expiresAt") == ps.iso(NOW + TOK["expires_in"]))
+ended = lambda r, now: bool((r.get("row") or {}).get("expiresAt", "")) and r["row"]["expiresAt"] <= ps.iso(now)
+check("NEGATIVE (#5026): a record past its expiry is pruned; the old name-only record never was",
+      rec and ended(rec, NOW + TOK["expires_in"]) and not ended({"row": {"name": "x"}}, NOW + 10**6))
+touched = ps.touch_session(dict(rec, exp=NOW + 7200), NOW, None, Door(post_status=200), "http://door", lambda t: None, logs.append) if rec else None
+check("a renewal moves the record's expiresAt with the row's", touched and touched["row"]["expiresAt"] == ps.iso(NOW + 7200))
+
 # NEGATIVE PROOF (Silas 01:34): no verified login, no row
 door_n, logs_n = Door(), []
 nolog = ps.open_session(JEFF, dict(TOK, id_token=""), NOW, 3600, sparql_for("jeff"), door_n, "http://door", logs_n.append)
