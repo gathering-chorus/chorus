@@ -7,6 +7,9 @@
 # principal-jeff on 2026-10-10. The door that signs him in now writes the row,
 # as him, and closes it at sign-out.
 #
+# #5021 AC 9 (folded from card 5026): Jeff's browser sign-in names the role he acts as. #4517
+# dropped actsAs from the ask on 11-18; every browser row since failed OpenSessionActsAsARole.
+#
 # Covers: platform/scripts/lib/person_session.py
 # Covers: platform/tests/fixtures/person-session-4412.py
 # Covers: platform/scripts/chorus-share-guard.py
@@ -71,4 +74,11 @@ unwired() { # src files... → names each file that builds a verifier without th
   sed -i '' 's/\.with_person_clients(/.dropped(/' "$BATS_TEST_TMPDIR/lib.rs"
   out="$(unwired "$BATS_TEST_TMPDIR/lib.rs")"
   [ "$out" = "$BATS_TEST_TMPDIR/lib.rs" ] || return 1
+}
+
+# #5021 AC 9 — the sign-in asks the door with {channel: browser, actsAs: role-<principal>}
+@test "#5021 AC 9: Jeff's browser sign-in names the role he acts as; NEGATIVE: the channel-only ask fails" {
+  run python3 "$ROOT/platform/tests/fixtures/person-session-4412.py"
+  printf '%s\n' "$output" | grep -qxF "PASS it names only the channel and his role: owner, token id and expiry are the door's" || { echo "$output"; return 1; }
+  printf '%s\n' "$output" | grep -qxF "PASS NEGATIVE (#5026): the ask always names the role it acts as, never the channel alone" || { echo "$output"; return 1; }
 }

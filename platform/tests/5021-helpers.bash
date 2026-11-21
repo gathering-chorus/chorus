@@ -3,12 +3,18 @@
 # the shapes the werk deploys, and the complete-domain policy rows as the land leaves them.
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 FX="$ROOT/platform/tests/fixtures/5021"
-SNAP="$FX/principles-2026-11-20.nq"
+# today's snapshot, in four parts so each stays under the reviewers' read limit:
+# principles-2026-11-20.part-aa.nq principles-2026-11-20.part-ab.nq
+# principles-2026-11-20.part-ac.nq principles-2026-11-20.part-ad.nq
+SNAP_PARTS=("$FX/principles-2026-11-20.part-aa.nq" "$FX/principles-2026-11-20.part-ab.nq"
+            "$FX/principles-2026-11-20.part-ac.nq" "$FX/principles-2026-11-20.part-ad.nq")
 PV="$ROOT/platform/scripts/policy-validate"
 COUNT="$ROOT/platform/scripts/policy-count"
 
 build_5021() {
   T="$BATS_TEST_TMPDIR"
+  SNAP="$T/snapshot.nq"
+  cat "${SNAP_PARTS[@]}" > "$SNAP"
   python3 "$FX/after.py" "$ROOT" "$SNAP" "$T/after.nq"
   python3 "$FX/after.py" --before "$ROOT" "$SNAP" "$T/before.nq"
   for f in roles/silas/ontology/chorus.ttl roles/silas/ontology/core-shape-4576.ttl \

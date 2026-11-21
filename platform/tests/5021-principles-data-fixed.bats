@@ -8,7 +8,7 @@
 # AC2: repoTarget is no longer "loom/principles"; the row has one comment (the store's second,
 # a v1 leftover, leaves when the row is redeployed whole); no principle row serves status, because
 # the generated door serves status only where a shape declares it. NEGATIVE: today's snapshot
-# shows all three faults (platform/tests/fixtures/5021/principles-2026-11-20.nq).
+# shows all three faults (platform/tests/fixtures/5021/principles-2026-11-20.part-a{a..d}.nq).
 
 # Shared setup, named so a change to it runs this suite: platform/tests/5021-helpers.bash
 load 5021-helpers

@@ -8,7 +8,7 @@
 # AC1: every complete-domain rule passes for principles once this card's changes are applied to
 # what the store held today (the dangling links retired, the Domain row redeployed whole, the side
 # doors gone from the tree). The fixture names: platform/tests/fixtures/5021/after.py,
-# platform/tests/fixtures/5021/principles-2026-11-20.nq.
+# platform/tests/fixtures/5021/principles-2026-11-20.part-a{a..d}.nq.
 
 # Shared setup, named so a change to it runs this suite: platform/tests/5021-helpers.bash
 load 5021-helpers

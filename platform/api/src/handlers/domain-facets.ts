@@ -13,6 +13,7 @@
 import type { FetchResult } from './sessions';
 import type { SparqlResult } from './athena-health';
 import { resolveDomainIdentity } from './domain-identity';
+import { isDomainName } from './util';
 import { getQualityByDomain } from '../quality-summary';
 
 export interface DomainFacetDeps {
@@ -485,7 +486,8 @@ export async function fetchDomainInfra(
  * Approval rows in urn:chorus:domains:decisions, joined to a domain by chorus:hasDomain (the
  * Domain row's IRI, or the old <name>-domain alias). It read urn:chorus:decisions for
  * chorus:Decision rows, which are gone, so every domain showed 0; and it answered 0 on a failed
- * query too. A query that fails is now a 502, never an empty fold.
+ * query too. A query that fails is now a 502, never an empty fold. A name that is not a domain
+ * name is a 400 before any query; one row per decision (the OPTIONALs are sampled, never multiplied).
  */
 export async function fetchDomainDecisions(
   deps: DomainFacetDeps,
@@ -493,10 +495,11 @@ export async function fetchDomainDecisions(
 ): Promise<FetchResult> {
   const now = deps.now ?? Date.now;
   const start = now();
+  if (!isDomainName(domainName)) return { status: 400, body: { error: 'domain must be a domain name, e.g. principles' } };
   const identity = resolveDomainIdentity(domainName);
   const names = [identity.primary, ...identity.aliases];
   const targets = names.flatMap((n) => [`<https://jeffbridwell.com/chorus#${n}>`, `<https://jeffbridwell.com/chorus#${n}-domain>`]).join(', ');
-  const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX dcterms: <http://purl.org/dc/terms/> SELECT ?s ?t ?title ?date ?status WHERE { GRAPH <urn:chorus:domains:decisions> { VALUES ?t { chorus:ADR chorus:Approval } ?s a ?t ; chorus:hasDomain ?dom . FILTER(?dom IN (${targets})) OPTIONAL { ?s rdfs:label ?title } OPTIONAL { ?s chorus:status ?status } OPTIONAL { ?s dcterms:created ?date } } } ORDER BY ?t ?s`;
+  const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX dcterms: <http://purl.org/dc/terms/> SELECT ?s ?t (SAMPLE(?ti) AS ?title) (MIN(?d) AS ?date) (SAMPLE(?st) AS ?status) WHERE { GRAPH <urn:chorus:domains:decisions> { VALUES ?t { chorus:ADR chorus:Approval } ?s a ?t ; chorus:hasDomain ?dom . FILTER(?dom IN (${targets})) OPTIONAL { ?s rdfs:label ?ti } OPTIONAL { ?s chorus:status ?st } OPTIONAL { ?s dcterms:created ?d } } } GROUP BY ?s ?t ORDER BY ?t ?s`;
   let result;
   try {
     result = await deps.sparql(query);
@@ -509,12 +512,10 @@ export async function fetchDomainDecisions(
     title: b.title?.value || '',
     date: b.date?.value || '',
     status: b.status?.value || '',
-    enforcement: '',
     type: tail(b.t?.value || ''),
   }));
-  const byEnforcement: Record<string, number> = {};
   return {
     status: 200,
-    body: deps.envelope('domain-decisions', { domain: domainName, decisions, byEnforcement }, now() - start, { count: decisions.length }),
+    body: deps.envelope('domain-decisions', { domain: domainName, decisions }, now() - start, { count: decisions.length }),
   };
 }

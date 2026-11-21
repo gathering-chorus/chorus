@@ -88,3 +88,27 @@ test('the page draws the fold from that route, for any ?d=, and shows when it ra
   expect(page).toContain('measured ${esc(b.measuredAt');
   expect(page).not.toMatch(/renderConformance\('principles'\)/);
 });
+
+test('one lint run per domain at a time: two views while it runs share the run', async () => {
+  clearPolicyCountsCache();
+  let runs = 0;
+  let release: (v: string) => void = () => {};
+  const d = { ...deps(RED), runValidate: () => { runs++; return new Promise<string>((r) => { release = r; }); } };
+  const a = fetchDomainConformance('principles', d);
+  const b = fetchDomainConformance('principles', d);
+  await new Promise((r) => setImmediate(r));
+  release(RED);
+  const [ra, rb] = await Promise.all([a, b]);
+  expect(runs).toBe(1);
+  expect(rb.body).toEqual(ra.body);
+});
+
+test('NEGATIVE: a run that measured nothing is shown but not cached; the next view runs again', async () => {
+  clearPolicyCountsCache();
+  let runs = 0;
+  const d = { ...deps(''), runValidate: async () => { runs++; return ''; } };
+  const r = await fetchDomainConformance('principles', d);
+  expect((r.body as { policies: Array<{ verdict: string }> }).policies.every((p) => p.verdict === 'broken')).toBe(true);
+  await fetchDomainConformance('principles', d);
+  expect(runs).toBe(2);
+});

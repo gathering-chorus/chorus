@@ -206,35 +206,7 @@ describe('fetchDomainServices', () => {
 // --- fetchDomainDecisions ---
 
 describe('fetchDomainDecisions', () => {
-  // #5021 — the fold reads the decisions domain's ADR and Approval rows, joined by hasDomain
-  test('shapes ADR and Approval rows from the decisions domain graph', async () => {
-    const C = 'https://jeffbridwell.com/chorus#';
-    const result: SparqlResult = {
-      results: {
-        bindings: [
-          { s: { value: `${C}adr-051` }, t: { value: `${C}ADR` }, title: { value: 'ADR-051 domains graphs' }, status: { value: 'accepted' } },
-          { s: { value: `${C}approval-17` }, t: { value: `${C}Approval` }, title: { value: 'a yes' }, date: { value: '2026-11-18' } },
-        ],
-      },
-    };
-    let seen = '';
-    const d = deps({ sparql: async (q) => { seen = q; return result; } });
-    const r = await fetchDomainDecisions(d, 'principles');
-    expect(r.status).toBe(200);
-    const body = r.body as { data: { decisions: Array<{ id: string; type: string; title: string }> } };
-    expect(body.data.decisions.map((x) => [x.id, x.type])).toEqual([['adr-051', 'ADR'], ['approval-17', 'Approval']]);
-    expect(seen).toContain('GRAPH <urn:chorus:domains:decisions>');
-    expect(seen).toContain('<https://jeffbridwell.com/chorus#principles>');
-  });
-
-  test('NEGATIVE: it never reads the retired urn:chorus:decisions graph or chorus:Decision', async () => {
-    let seen = '';
-    const d = deps({ sparql: async (q) => { seen = q; return emptyResult(); } });
-    await fetchDomainDecisions(d, 'principles');
-    expect(seen).not.toContain('<urn:chorus:decisions>');
-    expect(seen).not.toContain('chorus:Decision ');
-  });
-
+  // #5021's own Decisions cases live in domain-cards-5021.test.ts (AC 7's check)
   test('alias mapping: tests → quality also queried', async () => {
     let seenQuery = '';
     const d = deps({ sparql: async (q) => { seenQuery = q; return emptyResult(); } });
@@ -243,11 +215,6 @@ describe('fetchDomainDecisions', () => {
     expect(seenQuery).toContain('quality-domain');
   });
 
-  test('NEGATIVE: a failed query is a 502, never an empty fold', async () => {
-    const d = deps({ sparql: async () => { throw new Error('oops'); } });
-    const r = await fetchDomainDecisions(d, 'awareness');
-    expect(r.status).toBe(502);
-  });
 });
 
 // --- fetchDomainAlerts ---

@@ -7,6 +7,8 @@
  */
 // @domain: cards
 
+import { isDomainName } from './util';
+
 export interface BoardCard {
   id: string;
   title: string;
@@ -16,10 +18,6 @@ export interface BoardCard {
   tags: string;
 }
 
-/** a domain name: lowercase letters, digits and single inner hyphens (no regex backtracking) */
-export function isDomainName(n: string): boolean {
-  return /^[a-z0-9-]+$/.test(n) && !n.startsWith('-') && !n.endsWith('-') && !n.includes('--');
-}
 const CLOSED = new Set(['Done', "Won't Do"]);
 
 export function fetchDomainCards(getCards: () => BoardCard[], name: string): { status: number; body: unknown } {
