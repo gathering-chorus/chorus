@@ -18,6 +18,9 @@ setup() {
 }
 
 @test "AC1: chorus-principal emits Silas pinned launchctl asuser command line" {
+  # these cases prove establish refuses an account other than silas's; run AS chorus-silas the
+  # establish is allowed, so there is nothing to refuse (Silas 11-21 13:40, like 6-7's runner skip)
+  if [ "$(id -un)" = "chorus-silas" ]; then skip "runs as chorus-silas: establish is allowed, nothing to refuse"; fi
   source "$REPO/platform/tests/lib/login-harness.bash"
   login_harness
   printf '{"data":{"principalKind":"agent","hostAccount":"chorus-silas"}}\n200\n' > "$T/principal-silas.json"
@@ -43,6 +46,9 @@ setup() {
 }
 
 @test "AC1: asuser pre-flight probe matches repo sudoers pinned rule" {
+  # these cases prove establish refuses an account other than silas's; run AS chorus-silas the
+  # establish is allowed, so there is nothing to refuse (Silas 11-21 13:40, like 6-7's runner skip)
+  if [ "$(id -un)" = "chorus-silas" ]; then skip "runs as chorus-silas: establish is allowed, nothing to refuse"; fi
   source "$REPO/platform/tests/lib/login-harness.bash"
   login_harness
   printf '{"data":{"principalKind":"agent","hostAccount":"chorus-silas"}}\n200\n' > "$T/principal-silas.json"
