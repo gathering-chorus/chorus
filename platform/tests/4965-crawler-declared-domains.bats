@@ -17,16 +17,19 @@ CRAWL_BIN="${CRAWL_BIN_4965:-$(command -v chorus-crawl)}"   # a role account's H
 # died UNMEASURED saying nothing. Now a stall is red, naming the last lines and when they came.
 validate_lines() { # validate_lines <crawler> <tree>: the run's output, or "STALLED ..." on the deadline
   python3 - "$1" "$2" "${VALIDATE_DEADLINE_4965:-300}" <<'PY'
-import os, subprocess, sys, threading, time
+import os, signal, subprocess, sys, threading, time
 crawler, tree, deadline = sys.argv[1], sys.argv[2], float(sys.argv[3])
 env = dict(os.environ, CHORUS_ROOT=tree, CHORUS_ROLE="kade")
-p = subprocess.Popen([crawler, "--validate"], cwd=tree, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+# its own process group, so the deadline ends the crawler AND its children (#4915 review)
+p = subprocess.Popen([crawler, "--validate"], cwd=tree, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True)
 t0, seen = time.time(), []
 def read():
     for line in p.stdout: seen.append((time.time() - t0, line.rstrip()))
 r = threading.Thread(target=read, daemon=True); r.start(); r.join(deadline)
 if r.is_alive():
-    p.terminate()
+    os.killpg(p.pid, signal.SIGTERM)
+    try: p.wait(5)
+    except subprocess.TimeoutExpired: os.killpg(p.pid, signal.SIGKILL)
     tail = " · ".join(f"+{t:.0f}s {l[:120]}" for t, l in seen[-3:]) or "no output at all"
     print(f"STALLED: {crawler} --validate still running after {deadline:.0f} s; last lines: {tail}")
 else:
@@ -57,8 +60,12 @@ declared_gap() {
   printf '#!/bin/sh\necho "VALIDATE|code|CodeFile|tree=1|graph=1|missing=0|stale=0|measured"\n' > "$fake"
   [[ "$(declared_gap "$fake" "$BATS_TEST_TMPDIR")" == *"no 'Test (declared domain)' line"* ]] || return 1
   # a crawler that never finishes is red by name, never a timeout that says nothing
-  printf '#!/bin/sh\necho "chorus-crawl: pass start"\nsleep 30\n' > "$fake"
+  # ... and its children go with it: a stalled crawler's worker left running is the leak
+  printf '#!/bin/sh\nsleep 30 &\necho $! > "%s/child.pid"\necho "chorus-crawl: pass start"\nwait\n' "$BATS_TEST_TMPDIR" > "$fake"
   [[ "$(VALIDATE_DEADLINE_4965=2 declared_gap "$fake" "$BATS_TEST_TMPDIR")" == "STALLED:"*"pass start"* ]] || return 1
+  child="$(cat "$BATS_TEST_TMPDIR/child.pid")"; [ -n "$child" ] || { echo "the fake wrote no child pid"; return 1; }
+  sleep 1
+  ! ps -p "$child" >/dev/null || { echo "the stalled crawler's child $child outlived the deadline"; return 1; }
   # control: the measured zero passes
   printf '#!/bin/sh\necho "VALIDATE|tests|Test (declared domain)|tree=9|graph=9|missing=0|stale=0|measured"\n' > "$fake"
   [ -z "$(declared_gap "$fake" "$BATS_TEST_TMPDIR")" ]

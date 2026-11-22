@@ -384,11 +384,16 @@ def _same(have, want):
     # its local name. Same value, shorter spelling: compare the last segment.
     tail=lambda x: x.rsplit("#",1)[-1].rsplit("/",1)[-1]
     # #4915 — an xsd:decimal comes back in the canonical form the store keeps (#4717): sent
-    # "922119", read "922119.0". Same number; 922119 vs 922120 still differ.
-    from decimal import Decimal, InvalidOperation
-    try:
-        if Decimal(h)==Decimal(w): return True
-    except (InvalidOperation, ValueError): pass
+    # "922119", read "922119.0". Only that spelling counts as the same value (review: a
+    # numeric-looking string, "007" read as "7", is still a lost field); 922119 vs 922120
+    # still differ.
+    import re
+    from decimal import Decimal
+    def canon(x):
+        if not re.fullmatch(r"[+-]?(\d+(\.\d*)?|\.\d+)", x): return None
+        t=format(Decimal(x).normalize() if "." in x else Decimal(x), "f")
+        return t if "." in t else t+".0"
+    if canon(w) is not None and h==canon(w): return True
     return h==w or h.endswith("-"+w) or w.endswith("-"+h) or tail(h)==tail(w)
 bad=[]
 for k,v in sent.items():

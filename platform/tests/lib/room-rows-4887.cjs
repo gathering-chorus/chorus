@@ -60,6 +60,8 @@ async function roomRecord(page) {
   });
   const p = await b.newPage();
   let code = 2;
+  let verdict = null;
+  let signOut = 'not signed in';
   try {
     const errs = [];
     if (!process.env.ROOM_RECORD_FILE) {
@@ -86,13 +88,19 @@ async function roomRecord(page) {
     // absent AND older than the page's oldest row: the page scrolled past it — unmeasured
     const scrolled = absent.filter((w) => w.ts && Date.parse(w.ts) < oldest);
     const missing = absent.filter((w) => !scrolled.includes(w));
-    console.log(JSON.stringify({ url, rows: rows.length, want, missing, scrolled, errs }));
+    verdict = { url, rows: rows.length, want, missing, scrolled, errs };
     code = missing.length || errs.length ? 1 : scrolled.length ? 3 : 0;
   } finally {
     // #5026 — a probe that signed in signs out, or its Session row stays open. The verdict
     // exits AFTER this (#4915 review: an exit inside the try skipped the sign-out)
-    await auth.signOutIfSignedIn(p, new URL(url).origin).catch((e) => console.error(`sign-out failed: ${e.message}`));
+    // A failed sign-out does not change the verdict (the _auth.cjs rule: the door ends the
+    // row at the next sign-in, #4966), but it is printed in the verdict line, never only on
+    // stderr (#4915 review: a leak nobody sees)
+    signOut = await auth.signOutIfSignedIn(p, new URL(url).origin)
+      .then((did) => (did ? 'signed out' : 'not signed in'), (e) => `FAILED: ${e.message}`);
+    if (signOut.startsWith('FAILED')) console.error(`sign-out ${signOut} — the Session row stays open until the next sign-in`);
     await b.close();
   }
+  if (verdict) console.log(JSON.stringify({ ...verdict, signOut }));
   process.exit(code);
 })().catch((e) => { console.error(`could not measure: ${e.message}`); process.exit(2); });

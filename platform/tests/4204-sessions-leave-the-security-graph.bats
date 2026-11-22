@@ -133,12 +133,38 @@ patch_session() { # patch_session <caller> <row name> → HTTP code
   [ "$code" = "403" ] || { echo "wren editing a login row got $code, want 403"; false; }
 }
 
-@test "#4332 no probe Session row from this suite is in the store" {
-  # 48 probe rows had built up by 2026-09-26; since #4517 no probe can be written,
-  # so any left is an old one that teardown never removed
+# #4915 review — the probe rows the door let through: issued at or after #4517 landed
+# (2026-11-18 14:42Z), when a role's Session write became a 403. A probe row from before
+# is old history that no role can delete any more (a role's DELETE is refused too): it is
+# named, never red. Reads a sessions listing on stdin; prints the post-door rows.
+probes_written_since_the_door() {
+  python3 -c '
+import json, sys
+since = "2026-11-18T14:42:00Z"
+rows = json.load(sys.stdin).get("data")
+if rows is None: sys.exit("no data list in the sessions listing")
+probes = [r for r in rows if "-4204probe-" in r.get("name", "")]
+for r in probes:
+    if r.get("issuedAt", "") >= since: print(r["name"], r.get("issuedAt"))
+    else: print("old, before the door:", r["name"], file=sys.stderr)
+'
+}
+
+@test "#4332 no probe Session row was written since the door took Session writes" {
+  # 48 probe rows had built up by 2026-09-26; since #4517 a probe write is refused, so a
+  # probe row issued after the land means the door let a role write one
   listing="$(curl -sf --max-time 10 "$API/v1/identity/sessions?limit=5000")" || { echo "sessions listing unreadable"; return 1; }
-  left="$(printf '%s' "$listing" | tr -d ' \n' | grep -o '"[a-z-]*-4204probe-[0-9]*"' | head -3)"
-  [ -z "$left" ] || { echo "probe rows left: $left"; return 1; }
+  left="$(printf '%s' "$listing" | probes_written_since_the_door)" || { echo "listing unreadable: $left"; return 1; }
+  [ -z "$left" ] || { echo "probe rows written since the door: $left"; return 1; }
+}
+
+@test "#4332 negative proof — a probe row issued after the land is caught; an old one is not" {
+  run probes_written_since_the_door <<< '{"data":[{"name":"wren-4204probe-77","issuedAt":"2026-11-20T01:00:00Z"},{"name":"kade-4204probe-12","issuedAt":"2026-09-26T01:00:00Z"},{"name":"wren-abc","issuedAt":"2026-11-21T01:00:00Z"}]}'
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"wren-4204probe-77 2026-11-20T01:00:00Z"* ]] || { echo "post-land probe not caught: $output"; false; }
+  [[ "$output" == *"old, before the door: kade-4204probe-12"* ]] || { echo "old probe not named: $output"; false; }
+  run probes_written_since_the_door <<< '{"data":[{"name":"kade-4204probe-12","issuedAt":"2026-09-26T01:00:00Z"}]}'
+  [[ "$output" != *"kade-4204probe-12 2026"* ]] || { echo "an old probe counted as written since the door: $output"; false; }
 }
 
 @test "NEGATIVE PROOF — no Session row is left in the security graph" {
