@@ -10,6 +10,7 @@
  * Pointing it at the live room is refused: nobody opts back into prod by accident.
  */
 const fs = require('fs');
+const http = require('http');
 const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
@@ -18,6 +19,10 @@ const { startSecurityGraphStub } = require('../../../directing/clearing/tests/li
 const { testEvent } = require('../../../platform/tests/lib/test-events.cjs');
 
 const CLEARING_SRC = path.resolve(__dirname, '..', '..', '..', 'directing', 'clearing');
+const DERIVE_DIST = path.resolve(__dirname, '..', '..', '..', 'platform', 'api', 'dist', 'derive-role-state.js');
+const DERIVE_SRC = path.resolve(__dirname, '..', '..', '..', 'platform', 'api', 'src', 'derive-role-state.ts');
+const TSX_API = path.resolve(__dirname, '..', '..', '..', 'platform', 'api', 'node_modules', 'tsx', 'dist', 'cjs', 'api', 'index.cjs');
+const STALE_THRESHOLD_MS = 15 * 60_000;
 
 /** The live room, by any address it answers on. */
 function isLiveClearing(url) {
@@ -29,8 +34,82 @@ function isLiveClearing(url) {
   return port === '3470' || port === '3471';
 }
 
-/** opts.spine: lines written to the own Clearing's spine log before it starts.
+function loadStateFromStreams() {
+  if (fs.existsSync(DERIVE_DIST)) return require(DERIVE_DIST).stateFromStreams;
+  return require(TSX_API).require(DERIVE_SRC, __filename).stateFromStreams;
+}
+
+function readSpineEvents(spineFile) {
+  try {
+    return fs.readFileSync(spineFile, 'utf-8')
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => { try { return JSON.parse(line); } catch { return null; } })
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+/** #4925 — stand-in for chorus-api's /api/chorus/context/roles and board routes.
+ *  Without CHORUS_API_BASE, ownClearing's TilePoller polled live :3340 — so tiles
+ *  showed live actor quiet times (600s/660s) against the spec's seeded spine (35s).
+ *  Derives each role's row from the world's own CHORUS_LOG_FILE via production
+ *  stateFromStreams, so tiles and /api/stream read the same fixture spine. */
+function startChorusApiStub({ spineFile, stateFromStreams = loadStateFromStreams(), roles = ['jeff', 'wren', 'silas', 'kade'], wipCards = [], swatCards = [] } = {}) {
+  let rolesHits = 0;
+  const server = http.createServer((req, res) => {
+    const u = req.url || '';
+    res.setHeader('Content-Type', 'application/json');
+    if (u.startsWith('/api/chorus/context/roles')) {
+      rolesHits += 1;
+      const now = Date.now();
+      const events = spineFile ? readSpineEvents(spineFile) : [];
+      const rows = roles.map((role) => {
+        const d = stateFromStreams({ role, events, wipCards, now });
+        const stale = d.lastActivity === null || now - Date.parse(d.lastActivity) > STALE_THRESHOLD_MS;
+        return {
+          name: role,
+          role,
+          state: d.state,
+          card: d.card,
+          gemba: d.gemba,
+          detail: d.detail ?? null,
+          lastActivity: d.lastActivity,
+          lastEvent: d.lastEvent,
+          stale,
+          source: 'streams',
+          derived_state: { state: d.state, card: d.card, wip_count: d.wip_count, recent_commit_count: null },
+          drift_state: { divergent: false, inferred_stale: false, card_declared: null, card_inferred: d.card },
+          sessions: [],
+        };
+      });
+      res.end(JSON.stringify({ data: { roles: rows } }));
+      return;
+    }
+    if (u.startsWith('/api/chorus/context/board/wip')) {
+      res.end(JSON.stringify({ data: { total: wipCards.length, cards: wipCards } }));
+      return;
+    }
+    if (u.startsWith('/api/chorus/context/board/swat')) {
+      res.end(JSON.stringify({ data: { total: swatCards.length, cards: swatCards } }));
+      return;
+    }
+    res.statusCode = 404;
+    res.end('{}');
+  });
+  return new Promise((resolve) => server.listen(0, '127.0.0.1', () => {
+    resolve({
+      url: `http://127.0.0.1:${server.address().port}`,
+      hits: () => rolesHits,
+      close: () => new Promise((r) => server.close(r)),
+    });
+  }));
+}
+
+/** opts.spine: lines (or () => lines) written to the own Clearing's spine log before it starts.
  *  opts.signedInAs: a WebID; the result's .session() is then the door's chorus_share_session cookie for it (#4412).
+ *  opts.roles / opts.wipCards / opts.swatCards: fixture inputs for the chorus-api stand-in (#4925).
  *  opts.env: extra env for the Clearing (e.g. a stub's address). */
 function ownClearing(test, opts = {}) {
   const given = process.env.CLEARING_URL;
@@ -44,6 +123,7 @@ function ownClearing(test, opts = {}) {
   let dir = '';
   let sessionCookie = '';
   let graph = null;
+  let apiStub = null;
 
   test.beforeAll(async () => {
     if (given) return;
@@ -55,12 +135,21 @@ function ownClearing(test, opts = {}) {
     }
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'own-clearing-'));
     const env = testClearingEnv(dir, port, token);
-    // the security graph: jeff is the person; the signed-in WebID (if any) is jeff
-    graph = await startSecurityGraphStub({ persons: ['jeff'], principals: opts.signedInAs ? { [opts.signedInAs]: 'principal-jeff' } : {} });
-    env.CHORUS_FUSEKI_QUERY = graph.url;
-    // #4925 — a spine may be a function, so its timestamps are taken when the server starts
+    // #4925 — write the spine BEFORE starting the chorus-api stand-in and Clearing so the
+    // very first /api/chorus/context/roles poll derives state from the seeded events.
     const spineLines = typeof opts.spine === 'function' ? opts.spine() : opts.spine;
     if (spineLines && spineLines.length) fs.writeFileSync(env.CHORUS_LOG_FILE, spineLines.join('\n') + '\n');
+    // the security graph: jeff is the person; the signed-in WebID (if any) is jeff
+    graph = await startSecurityGraphStub({ persons: ['jeff'], principals: opts.signedInAs ? { [opts.signedInAs]: 'principal-jeff' } : {} });
+    apiStub = await startChorusApiStub({
+      spineFile: env.CHORUS_LOG_FILE,
+      roles: opts.roles,
+      wipCards: opts.wipCards,
+      swatCards: opts.swatCards,
+    });
+    env.CHORUS_FUSEKI_QUERY = graph.url;
+    env.CHORUS_API_BASE = apiStub.url;
+    env.CHORUS_API_URL = apiStub.url;
     if (opts.signedInAs) sessionCookie = doorSession(dir, opts.signedInAs);
     child = spawn(process.execPath, [entry], {
       cwd: CLEARING_SRC,
@@ -81,7 +170,12 @@ function ownClearing(test, opts = {}) {
     };
     const deadline = Date.now() + 30000;
     for (;;) {
-      if (await fetch(`${url}/health`).then((r) => r.ok).catch(() => false)) {
+      const ok = await fetch(`${url}/health`).then((r) => r.ok).catch(() => false);
+      const tilesReady = ok && apiStub.hits() > 0 && await fetch(`${url}/api/tiles`)
+        .then((r) => r.ok ? r.json() : [])
+        .then((t) => Array.isArray(t) && t.length > 1)
+        .catch(() => false);
+      if (tilesReady) {
         testEvent('test.fixture.ready', { ...fixture, ready_ms: Date.now() - started, message: `own Clearing ready on ${url}` });
         return;
       }
@@ -92,6 +186,7 @@ function ownClearing(test, opts = {}) {
   });
 
   test.afterAll(async () => {
+    if (apiStub) await apiStub.close();
     if (graph) await graph.close();
     if (child) testEvent('test.fixture.stopped', { fixture: 'own-clearing', port, pid: child.pid, exit: child.exitCode ?? 'running',
       message: `own Clearing on ${url} stopping` });
@@ -102,4 +197,4 @@ function ownClearing(test, opts = {}) {
   return { url, token, auth: { Authorization: `Bearer ${token}` }, own: !given, session: () => sessionCookie };
 }
 
-module.exports = { ownClearing, isLiveClearing };
+module.exports = { ownClearing, isLiveClearing, startChorusApiStub };

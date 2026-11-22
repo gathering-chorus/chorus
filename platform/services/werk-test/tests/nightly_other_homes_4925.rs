@@ -56,3 +56,14 @@ fn negative_proof_a_path_in_no_crate_is_no_crate() {
     assert_eq!(crate_name_in_tree(&t, "designing/services/ghost/tests/a.rs").as_deref(), Some("ghost-crate"));
     let _ = std::fs::remove_dir_all(&t);
 }
+
+/// #4925 round 2 — suite rows and typed binaries name a crate by its real home.
+/// NEGATIVE: the old prefix would have named athena-gen under platform/services.
+#[test]
+fn a_crate_is_named_by_its_real_home() {
+    set_repo_root(&repo());
+    assert_eq!(werk_test::crate_home("athena-gen"), "designing/services/athena-gen");
+    assert_eq!(werk_test::crate_home("pulse-api"), "directing/products/pulse/api");
+    assert_eq!(werk_test::crate_home("werk-test"), "platform/services/werk-test");
+    assert_ne!(werk_test::crate_home("athena-gen"), "platform/services/athena-gen");
+}

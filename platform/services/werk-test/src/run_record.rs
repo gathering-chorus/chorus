@@ -247,7 +247,7 @@ pub fn fold_unit_line(
     if unit.is_empty() {
         return None;
     }
-    let path = if kind == "cargo" { format!("platform/services/{}", unit) } else { unit.to_string() };
+    let path = if kind == "cargo" { crate::crate_home(unit) } else { unit.to_string() };
     // #4168 — the registry named a file that is no longer in the repo. That is
     // bookkeeping, not breakage: report it as its own state so the red list
     // means what Jeff needs it to mean. Only kinds whose UNIT IS a repo path

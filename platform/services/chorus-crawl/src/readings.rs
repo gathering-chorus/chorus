@@ -553,6 +553,9 @@ pub fn plan_readings(desired: Vec<ReadingRow>, stored: &BTreeMap<String, String>
             // rotation the live log no longer holds older days; fill_zero_days gave
             // them 0 and this UPDATED events 11-20, 11-10, 10-15 and 08-01 to 0. A
             // day with no source lines is a gap, not a zero: the stored count stays.
+            // (Review, round 2: "a real drop to 0 is never written". The pass recounts every
+            // day from all its sources each time, so a stored count can only fall to 0 when
+            // its source lines are gone — the rotation case this guards. Kept for counts only.)
             Some(v) if is_count && value.parse::<f64>().ok() == Some(0.0)
                 && v.parse::<f64>().ok().is_some_and(|s| s > 0.0) => unchanged += 1,
             // an age is a heartbeat: rewrite it every pass so its run (the alert's

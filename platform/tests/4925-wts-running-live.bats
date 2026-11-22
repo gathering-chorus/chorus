@@ -1,31 +1,36 @@
 #!/usr/bin/env bats
-# @test-type: unit — chorus-werk-test-state's running block over planted case events; no Loki
+# @test-type: unit — chorus-werk-test-state's running block over planted counts and failures; no Loki
 # @domain: tests
 # @card: #4925 · owner: kade
 # Jeff 11-22 08:32: /wts on a running nightly said "29 suites, 0 red so far" while 3 cases had
-# already failed. The running block now reads the run's own case events and names each failure.
+# already failed. The running block counts the run's own case events and names each failure.
+# Round 2 (review): counts come from Loki's metric query (never a 5,000-line page), and an
+# unreadable answer reads UNMEASURED, never a crash.
 
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 
-block() { # stdin: a JSON list of events -> the running block
+wts() { # wts <python expr over module m>
   python3 -c '
 import importlib.machinery, importlib.util, json, sys
 l = importlib.machinery.SourceFileLoader("wts", sys.argv[1])
 m = importlib.util.module_from_spec(importlib.util.spec_from_loader("wts", l)); l.exec_module(m)
-print("\n".join(m.running_block(json.load(sys.stdin))))' "$ROOT/platform/scripts/chorus-werk-test-state"
+print(eval(sys.argv[2]))' "$ROOT/platform/scripts/chorus-werk-test-state" "$1"
 }
 
 @test "NEGATIVE PROOF: a planted failed case shows by file, case and reason, never as 0 failed" {
-  run block <<< '[{"event":"test.case.started","file":"a.bats","case":"x"},
-    {"event":"test.case.passed","file":"a.bats","case":"x"},
-    {"event":"test.case.failed","file":"platform/scripts/test-role-state-spine.sh","case":"test-role-state-spine.sh","reason":"a role-state write still lands"},
-    {"event":"test.case.skipped","file":"b.bats","case":"y"}]'
-  [[ "$output" == *"1 passed · 1 failed · 1 skipped"* ]] || { echo "$output"; return 1; }
+  run wts '"\n".join(m.running_block({"passed": 14000, "failed": 1, "skipped": 2}, [{"file":"platform/scripts/test-role-state-spine.sh","case":"t","reason":"a role-state write still lands"}]))'
+  [[ "$output" == *"14,000 passed · 1 failed · 2 skipped"* ]] || { echo "$output"; return 1; }
   [[ "$output" == *"✗ platform/scripts/test-role-state-spine.sh   1 failed"* ]] || { echo "$output"; return 1; }
   [[ "$output" == *"a role-state write still lands"* ]] || { echo "$output"; return 1; }
 }
 
-@test "a case that failed then passed on retry counts once, by its last word" {
-  run block <<< '[{"event":"test.case.failed","file":"a.bats","case":"x","reason":"r"},{"event":"test.case.passed","file":"a.bats","case":"x"}]'
-  [[ "$output" == *"1 passed · 0 failed · 0 skipped"* ]] || { echo "$output"; return 1; }
+@test "a case reported failed twice (a retry) is listed once" {
+  run wts '"\n".join(m.running_block({"failed": 2}, [{"file":"a.bats","case":"x","reason":"r"},{"file":"a.bats","case":"x","reason":"r"}]))'
+  [[ "$output" == *"a.bats   1 failed"* ]] || { echo "$output"; return 1; }
+}
+
+@test "NEGATIVE PROOF: an unreachable or unreadable Loki is UNMEASURED (None), never a crash or 0" {
+  run env LOKI_URL=http://127.0.0.1:9 bash -c "$(declare -f wts); ROOT='$ROOT'; wts 'm.live_events(\"2026-11-22T07:24:00\")'"
+  [ "$status" -eq 0 ] || { echo "crashed: $output"; return 1; }
+  [ "$output" = "None" ] || { echo "$output"; return 1; }
 }

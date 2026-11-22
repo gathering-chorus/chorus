@@ -12,6 +12,14 @@ const BIN: &str = "/Users/jeffbridwell/.local/bin/claude";
 
 fn args(v: &[&str]) -> Vec<String> { v.iter().map(|s| s.to_string()).collect() }
 
+/// #4925 — CHORUS_REVIEWER is process-wide and role_hop reads it for a non-Claude role;
+/// tests run in parallel, so one test setting it changed another's answer (a different one
+/// of the pair failed in each of two runs, 11-22). Every test that reads or sets it holds this.
+static REVIEWER_ENV: std::sync::Mutex<()> = std::sync::Mutex::new(());
+fn reviewer_env() -> std::sync::MutexGuard<'static, ()> {
+    REVIEWER_ENV.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 #[test]
 fn from_the_runner_the_gate_hops_to_the_role_account() {
     let (prog, a, who) = role_hop("jeffbridwell", "kade", BIN, &args(&["-p", "it's the prompt"]), Some("/w/kade-1"));
@@ -30,6 +38,7 @@ fn from_the_runner_the_gate_hops_to_the_role_account() {
 
 #[test]
 fn negative_proof_the_runner_never_runs_claude_bare() {
+    let _g = reviewer_env();
     for role in ["kade", "silas", "wren", "abby-normal"] {
         let (prog, a, _) = role_hop("jeffbridwell", role, BIN, &args(&["-p", "x"]), None);
         assert_ne!(prog, BIN, "{role}: claude would run as the runner");
@@ -58,6 +67,7 @@ fn a_refused_hop_is_named_never_a_silent_fall_back() {
 
 #[test]
 fn non_claude_role_hops_to_reviewer() {
+    let _g = reviewer_env();
     std::env::remove_var("CHORUS_REVIEWER");
     let (prog, a, who) = role_hop("jeffbridwell", "borg-queen", BIN, &args(&["-p", "prompt"]), None);
     assert_eq!(prog, "sudo");
@@ -67,6 +77,7 @@ fn non_claude_role_hops_to_reviewer() {
 
 #[test]
 fn non_claude_role_hops_to_reviewer_override() {
+    let _g = reviewer_env();
     std::env::set_var("CHORUS_REVIEWER", "silas");
     let (prog, a, who) = role_hop("jeffbridwell", "borg-queen", BIN, &args(&["-p", "prompt"]), None);
     std::env::remove_var("CHORUS_REVIEWER");
@@ -79,6 +90,8 @@ fn non_claude_role_hops_to_reviewer_override() {
 fn negative_proof_non_claude_role_never_hops_to_own_account() {
     // NEGATIVE PROOF (#3734): non-Claude roles (borg-queen, abby-normal) must never hop
     // to their own account (which lacks a Claude login and crashes the demo).
+    let _g = reviewer_env();
+    std::env::remove_var("CHORUS_REVIEWER");
     for role in ["borg-queen", "abby-normal"] {
         let (_, a, who) = role_hop("jeffbridwell", role, BIN, &args(&["-p", "x"]), None);
         assert_ne!(who, format!("claude as chorus-{role}"), "{role} must not hop to own account");

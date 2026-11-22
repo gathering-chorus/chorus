@@ -52,6 +52,10 @@ function testClearingEnv(dir, port, token) {
     // the room's AI chat (participants.ts) calls the Anthropic API; a test Clearing never does.
     ANTHROPIC_BASE_URL: 'http://127.0.0.1:1',
     ANTHROPIC_API_KEY: 'test-no-key',
+    // #4925 — TilePoller (CHORUS_API_BASE) and server/word-cap (CHORUS_API_URL) default
+    // to live :3340; dead-port both so any caller without a fixture stub fails closed.
+    CHORUS_API_BASE: 'http://127.0.0.1:1',
+    CHORUS_API_URL: 'http://127.0.0.1:1',
   };
 }
 

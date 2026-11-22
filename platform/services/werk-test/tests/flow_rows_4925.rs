@@ -59,3 +59,14 @@ fn an_empty_unclassified_stage_is_a_measured_zero_and_others_stay_absent() {
     let s = werk_test::nightly_stage_absent_line("security");
     assert!(s.contains("|skip|") && s.contains("ABSENT"), "{s}");
 }
+
+/// #4925 round 2 — a build the box refused reads UNMEASURED with its reason; a compile
+/// error is not a box refusal and stays red. NEGATIVE: the compile error gives None.
+#[test]
+fn a_box_refused_build_is_named_and_a_compile_error_is_not() {
+    let refused = "error: Permission denied (os error 13) at path \"/Users/j/chorus/target/chorus-kadefNeNiC\"\nerror: command `cargo test --no-run` exited with code 101";
+    let why = werk_test::cargo_box_refusal(refused).expect("a permission refusal was not named");
+    assert!(why.contains("Permission denied (os error 13)"), "{why}");
+    let compile = "error[E0425]: cannot find value `x` in this scope\nerror: could not compile `werk-test`";
+    assert_eq!(werk_test::cargo_box_refusal(compile), None, "a compile error was excused as the box");
+}
