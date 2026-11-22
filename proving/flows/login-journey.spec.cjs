@@ -143,7 +143,9 @@ test.describe('the journey — one sign-in, land where you asked', () => {
     // model serves, not an empty frame. Asserted on the live product cards.
     const products = page.locator('.product');
     await expect(products.first(), 'the entrance rendered no product cards').toBeVisible();
-    expect(await products.count(), 'the entrance rendered too few products to be the hub')
+    // #4915 — polled, same bar: the cards render after the first one is visible, and the
+    // sign-in now waits for 'load' (a live stream never goes idle), so one count raced them
+    await expect.poll(() => products.count(), { message: 'the entrance rendered too few products to be the hub' })
       .toBeGreaterThanOrEqual(4);
     await expect(page.locator('body'), 'the entrance is missing a known product')
       .toContainText(/athena/i);
