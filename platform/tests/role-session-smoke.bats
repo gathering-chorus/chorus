@@ -113,7 +113,10 @@ hop_and_judge() {
   local q="'" inner
   # a clean env: the outer bats' BATS_* variables broke the inner one (run 3: "bats_readlinkf:
   # command not found"), so only what the case needs crosses the hop
-  inner="cd ${q}$ROOT${q} && exec env -i HOME=/Users/chorus-kade USER=chorus-kade PATH=${q}$PATH${q} CHORUS_HEADLESS=1 CHORUS_ROLE=kade CHORUS_TOOL_CLAUDE=${q}${CHORUS_TOOL_CLAUDE:-}${q} GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0=${q}$ROOT${q} bats -f ${q}$NEG_CASE${q} ${q}$BATS_TEST_FILENAME${q}"
+  # bats puts its own libexec first on PATH: there `bats` is the inner script, not the
+  # wrapper that defines bats_readlinkf (run 4: "bats_readlinkf: command not found")
+  local path; path="$(printf '%s' "$PATH" | tr ':' '\n' | grep -v 'libexec/bats-core' | paste -sd: -)"
+  inner="cd ${q}$ROOT${q} && exec env -i HOME=/Users/chorus-kade USER=chorus-kade PATH=${q}$path${q} CHORUS_HEADLESS=1 CHORUS_ROLE=kade CHORUS_TOOL_CLAUDE=${q}${CHORUS_TOOL_CLAUDE:-}${q} GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0=${q}$ROOT${q} bats -f ${q}$NEG_CASE${q} ${q}$BATS_TEST_FILENAME${q}"
   local out rc
   rc=0; out="$("${SMOKE_SUDO:-sudo}" -n -u chorus-kade -H bash -c "$inner" 2>&1)" || rc=$?
   echo "$out"
