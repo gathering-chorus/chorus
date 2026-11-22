@@ -111,9 +111,11 @@ smoke_one() {
 NEG_CASE="negative proof: a role whose settings block its tool call turns the smoke red"
 hop_and_judge() {
   local q="'" inner
-  inner="cd ${q}$ROOT${q} && export CHORUS_HEADLESS=1 CHORUS_ROLE=kade CHORUS_TOOL_CLAUDE=${q}${CHORUS_TOOL_CLAUDE:-}${q} PATH=${q}$PATH${q} GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0=${q}$ROOT${q} && exec bats -f ${q}$NEG_CASE${q} ${q}$BATS_TEST_FILENAME${q}"
+  # a clean env: the outer bats' BATS_* variables broke the inner one (run 3: "bats_readlinkf:
+  # command not found"), so only what the case needs crosses the hop
+  inner="cd ${q}$ROOT${q} && exec env -i HOME=/Users/chorus-kade USER=chorus-kade PATH=${q}$PATH${q} CHORUS_HEADLESS=1 CHORUS_ROLE=kade CHORUS_TOOL_CLAUDE=${q}${CHORUS_TOOL_CLAUDE:-}${q} GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0=${q}$ROOT${q} bats -f ${q}$NEG_CASE${q} ${q}$BATS_TEST_FILENAME${q}"
   local out rc
-  out="$("${SMOKE_SUDO:-sudo}" -n -u chorus-kade -H bash -c "$inner" 2>&1)"; rc=$?
+  rc=0; out="$("${SMOKE_SUDO:-sudo}" -n -u chorus-kade -H bash -c "$inner" 2>&1)" || rc=$?
   echo "$out"
   [ "$rc" -eq 0 ] || { echo "RED: the hop to chorus-kade failed (exit $rc) — the case did not run as a role"; return 1; }
   [[ "$out" == *"ok 1 $NEG_CASE"* && "$out" != *"# skip"* ]] || { echo "RED: the hop ran but the case did not pass as chorus-kade"; return 1; }
@@ -121,8 +123,9 @@ hop_and_judge() {
 
 @test "NEGATIVE PROOF (#4925): a refused hop to chorus-kade is red with its reason, never a skip" {
   printf '#!/bin/sh\necho "sudo: a password is required" >&2\nexit 1\n' > "$BATS_TEST_TMPDIR/sudo"; chmod +x "$BATS_TEST_TMPDIR/sudo"
-  SMOKE_SUDO="$BATS_TEST_TMPDIR/sudo" run hop_and_judge
-  [ "$status" -ne 0 ] || { echo "$output"; return 1; }
+  # as the case calls it, with errexit on (run 3: under `run` this proof hid a lost reason)
+  out="$(SMOKE_SUDO="$BATS_TEST_TMPDIR/sudo" bash -ec "$(declare -f hop_and_judge); ROOT='$ROOT' NEG_CASE='x' BATS_TEST_FILENAME=f hop_and_judge" 2>&1)" && { echo "a refused hop passed: $out"; return 1; }
+  output="$out"
   [[ "$output" == *"a password is required"* && "$output" == *"RED: the hop to chorus-kade failed"* ]] || { echo "$output"; return 1; }
 }
 

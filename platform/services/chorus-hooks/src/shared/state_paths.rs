@@ -261,14 +261,6 @@ pub fn role_checkpoint_in(dir: &str, role: &str) -> String {
     format!("{}/role-checkpoint-{}.json", dir, role)
 }
 
-#[cfg(test)]
-mod role_checkpoint_4925 {
-    #[test]
-    fn the_checkpoint_lives_in_the_session_tmp_dir() {
-        assert_eq!(super::role_checkpoint_in("/x/stmp", "silas"), "/x/stmp/role-checkpoint-silas.json");
-        assert_eq!(super::role_checkpoint_in("/tmp", "silas"), "/tmp/role-checkpoint-silas.json");
-    }
-}
 
 /// Chat directory
 pub const CHAT_DIR: &str = "/tmp/chorus-chat";
@@ -308,4 +300,13 @@ pub fn board_snapshot_path(ext: &str) -> String {
     });
     let dir = pulse.parent().map(|d| d.to_path_buf()).unwrap_or_default();
     dir.join(format!("board-wip-snapshot.{ext}")).to_string_lossy().into_owned()
+}
+
+#[cfg(test)]
+mod role_checkpoint_4925 {
+    #[test]
+    fn the_checkpoint_lives_in_the_session_tmp_dir() {
+        assert_eq!(super::role_checkpoint_in("/x/stmp", "silas"), "/x/stmp/role-checkpoint-silas.json");
+        assert_eq!(super::role_checkpoint_in("/tmp", "silas"), "/tmp/role-checkpoint-silas.json");
+    }
 }
