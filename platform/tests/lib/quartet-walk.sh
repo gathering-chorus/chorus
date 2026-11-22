@@ -383,7 +383,7 @@ def _same(have, want):
     # #4282 — a value that is an IRI (Permission.mode: acl#Append) is served by
     # its local name. Same value, shorter spelling: compare the last segment.
     tail=lambda x: x.rsplit("#",1)[-1].rsplit("/",1)[-1]
-    # #4915 — an xsd:decimal comes back in the store's canonical form (#4717): sent
+    # #4915 — an xsd:decimal comes back in the canonical form the store keeps (#4717): sent
     # "922119", read "922119.0". Same number; 922119 vs 922120 still differ.
     from decimal import Decimal, InvalidOperation
     try:

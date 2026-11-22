@@ -63,7 +63,9 @@ async function roomRecord(page) {
     const errs = [];
     p.on('pageerror', (e) => errs.push(e.message));
     if (!process.env.ROOM_RECORD_FILE) {
-      if (!auth.haveCreds) throw new Error('no flow creds on this account (~/.chorus/flow-creds.env): the room needs a sign-in');
+      // no creds on this account (a role's card run): unmeasured (3), the _auth.cjs rule —
+      // never a pass and never a red; the nightly runs as the account that holds them
+      if (!auth.haveCreds) { console.log('unmeasured: no flow creds on this account (~/.chorus/flow-creds.env); the room needs a sign-in'); await b.close(); process.exit(3); }
       await auth.gotoSignedIn(p, url);
     }
     await p.goto(url, { waitUntil: 'load', timeout: 20000 });
