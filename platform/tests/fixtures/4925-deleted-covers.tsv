@@ -1,0 +1,12 @@
+# #4925 AC3 — every test deleted in this round, and the test that still covers what it covered.
+# deleted<TAB>covered by (a test path in the tree), or "none: <why nothing needs to>"
+directing/clearing/tests/buzz-live.integration.test.ts	platform/tests/4887-agy-replies-reach-clearing.bats
+roles/silas/docs/attention-architecture.test.ts	none: it asserted the wording of one design doc (a formula, two anti-patterns, a checklist status); nothing gates on that doc
+platform/api/tests/handlers/athena-subproduct-write.test.ts	none: the two functions it tested were stubs that throw "parked" (#2851, parked 05-09); nothing was ever built to cover
+platform/tests/nudge-health.bats :: health check succeeds when role sessions are running	platform/tests/4895-every-role-reachable.bats
+platform/tests/nudge-health.bats :: health check reports all roles reachable	platform/tests/4895-every-role-reachable.bats
+platform/tests/2436-cors-coverage.bats :: live (opt-in): the named system refuses a stranger and serves our own pages	platform/tests/2436-cors-live.bats
+platform/tests/3707-value-stream-surface.bats :: product layer serves at each step (pending: ProductShape instancesGraph decl — Wren follow-on)	none: an unconditional skip with no assertion; the ProductShape follow-on (Wren) brings its own test
+platform/tests/context-inject-envelope-spec.bats :: runtime: envelope contains populated Athena section when role has WIP card	platform/tests/context-inject-envelope-spec.bats
+platform/tests/4040-pipelines-model.bats :: AC4047 (live) a valid PipelineRun POSTs and reads back with its metrics	platform/tests/4145-runner-owns-the-run.bats
+platform/tests/4965-attention-architecture-doc.bats	none: it only ran roles/silas/docs/attention-architecture.test.ts (deleted with it, Silas row 6): the wording of one design doc, nothing gates on it

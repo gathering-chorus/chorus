@@ -11,7 +11,7 @@
 #   POST_SETTINGS_SOURCE settings.json in git       (default: unset = settings check FAILs as unmeasured)
 #   POST_PRINCIPALS_CMD  prints the principals JSON (default: curl the roles door)
 #   POST_REACH_CMD       exits 0 when reachable     (default: curl pulse health)
-#   POST_STATE_DIR       where the refusal marker lives (default: $HOME/.chorus/post)
+#   POST_STATE_DIR       where the refusal marker lives (default: ${POST_HOME:-$HOME}/.chorus/post)
 #
 # Modes (wired in the role's settings.json):
 #   role-post          SessionStart: run the checks; on fail write <state>/<role>.failed
@@ -41,7 +41,10 @@ role="${POST_ROLE:-${CHORUS_ROLE:-}}"
 if [ -n "${1:-}" ] && [ "${1:0:2}" != "--" ]; then
   role="$1"
 fi
-state_dir="${POST_STATE_DIR:-$HOME/.chorus/post}"
+# #4925 (Silas) — the state follows POST_HOME: a test that sets POST_HOME=$tmp but not
+# POST_STATE_DIR wrote its result into the REAL ~/.chorus/post (role-login-persists test 4,
+# 11-21 13:41, overwrote silas's live self-test result).
+state_dir="${POST_STATE_DIR:-${POST_HOME:-$HOME}/.chorus/post}"
 
 if [ "${1:-}" = "--gate" ]; then
   marker="$state_dir/$role.failed"

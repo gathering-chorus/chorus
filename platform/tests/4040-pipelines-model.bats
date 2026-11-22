@@ -173,40 +173,10 @@ sq() {
   [[ "$output" == *"yes"* || "$output" == *"true"* ]]
 }
 
-# ── #4047: the POSITIVE write path. #4040 proved only refusals, which is how a
-# door that rejects EVERY run row shipped looking green. This test writes a real
-# row and reads it back; it is the check that would have caught it.
-@test "AC4047 (live) a valid PipelineRun POSTs and reads back with its metrics" {
-  [ "${RUN_INTEGRATION:-}" = "true" ] || skip "integration (live owl-api serve) — RUN_INTEGRATION=true to run"
-  # #4175 — this test WRITES, so it must never point at canonical. It had been
-  # POSTing probe rows into the live store: 90 of the 122 rows on :3360 on
-  # 2026-09-14 were probe-4047-*, written by this line over weeks. A write test
-  # whose default target is production is the membrane class (#3615), and the
-  # default here was :3360. It refuses rather than picking a target for you.
-  case "$OWL_URL" in
-    *:3360*) skip "refuses to write to the canonical store — point OWL_URL at a variant" ;;
-  esac
-  curl -sf --max-time 5 "$OWL_URL/health" >/dev/null || skip "owl-api absent (#3528)"
-  source "$BATS_TEST_DIRNAME/lib/test-store.sh"
-  variant_shares_prod "$OWL_URL" && skip "UNMEASURED — the variant at $OWL_URL writes the production store (#4334)"
-  [ "$(curl -s --max-time 5 -o /dev/null -w '%{http_code}' "$OWL_URL/pipelineruns")" = "200" ] \
-    || skip "route not deployed yet"
-  TOK="$("$REPO/platform/scripts/chorus-identity-token" kade 2>/dev/null)"
-  [ -n "$TOK" ]
-  NAME="probe-4047-$$"
-  run curl -s --max-time 15 -o /dev/null -w '%{http_code}' -X POST "$OWL_URL/pipelineruns" \
-    -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
-    -d "{\"name\":\"$NAME\",\"forPipeline\":\"pipeline-cicd\",\"traceId\":\"probe-4047\",\"runOutcome\":\"green\",\"runDurationMs\":\"1000\",\"testsRun\":\"3\",\"testsFailed\":\"0\",\"testsStored\":\"3\"}"
-  [ "$output" = "201" ]
-  # Read the ROW back, not a page of the collection. Scanning the list made this
-  # go red the moment the collection passed the default page size of 100 — the
-  # new row sorts last and falls off, so the check reported the product broken
-  # when the only thing that had changed was how many rows existed. Asking for
-  # the row by name cannot drift with the row count.
-  run curl -sf --max-time 10 "$OWL_URL/pipelineruns/$NAME"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"$NAME"* ]] || return 1
-}
+# #4925 — the AC4047 live POST case was deleted: it refused prod (rightly) and no lane ran a
+# variant, so it skipped every night. The positive write path is measured nightly by
+# platform/tests/4145-runner-owns-the-run.bats: the run writes its own PipelineRun and the
+# test reads it back carrying the dag run's id.
 
 @test "AC4047 nightly emit authenticates and reports the real refusal" {
   NS="$REPO/platform/services/werk-test/src/all_scope.rs"   # #4145

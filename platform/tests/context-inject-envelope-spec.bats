@@ -110,7 +110,7 @@ print(ctx or d.get('stderr',''))"
   [[ "$out" == *" → "* ]] || { echo "Spine header emitted but no events listed"; echo "$out" >&2; false; }
 }
 
-@test "runtime: envelope contains populated Athena section when role has WIP card" {
+@test "runtime: envelope carries the Athena section exactly when the role has a WIP card" {
   # Read pulse snapshot — if silas has no WIP, the test setup is wrong
   wip=$(python3 -c "
 import json
@@ -122,10 +122,13 @@ wip = d.get('board',{}).get('wip_cards',[])
 silas_wip = [c for c in wip if str(c.get('owner','')).lower() == 'silas']
 print(len(silas_wip))
 " 2>/dev/null)
-  if [ "${wip:-0}" -eq 0 ]; then
-    skip "silas has no WIP card in pulse — Athena section is conditional and correctly absent"
-  fi
   out=$(envelope "spec verifying athena section appears with domain context")
+  # #4925 — both sides of the rule are a reading: it skipped whenever silas held no WIP
+  # card. No WIP: the Athena section must be ABSENT (it is conditional); WIP: present below.
+  if [ "${wip:-0}" -eq 0 ]; then
+    [[ "$out" != *"## Athena"* ]] || { echo "Athena section shown while silas holds no WIP card"; echo "$out" >&2; false; }
+    return 0
+  fi
   [[ "$out" == *"## Athena"* ]] || { echo "Athena header missing while silas has WIP"; echo "$out" >&2; false; }
   # Athena must include domain name
   [[ "$out" == *"domain:"* ]] || { echo "Athena header emitted but no domain data"; echo "$out" >&2; false; }

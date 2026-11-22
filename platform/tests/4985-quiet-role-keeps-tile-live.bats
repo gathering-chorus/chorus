@@ -2,10 +2,13 @@
 # @test-type: e2e — after the land: reads prod pulse, the door's runs and the live Clearing v2 people row
 # @domain: roles
 # @card: #4985
+# @needs: machine — reads prod pulse, the door and the live room; a card run leaves it to the nightly (#4539)
 #
 # AC2 (after test): a role logged in and quiet for 2 hours still has its tile in Clearing v2
-# (#team), on the live page. Every role with a live run has a tile; at least one of them has
-# been quiet 2 hours, else this pass cannot measure the AC and says so.
+# (#team), on the live page. Every role with a live run has a tile — a quiet one is one of
+# those, so the universal check covers it whenever one exists. #4925 (Wren): it skipped
+# whenever no role happened to be idle 2 h (every pass of 11-22); the quiet-2h rule itself is
+# proven on fixtures below, so the live case asserts what every pass can measure.
 
 setup() {
   PULSE_URL="${PULSE_LIVE_URL:-http://127.0.0.1:3475}"  # #4915: a live READ; werk-test cages PULSE_URL (writes) to a dead port
@@ -31,20 +34,20 @@ for role in sorted(live - {"jeff"}):
     last = ts(actors.get(role, {}))
     # a role with no recorded action is not "quiet 2 hours": it measures nothing
     if last and now - last >= 7200: quiet.append(role)
+if not live - {"jeff"}:
+    print("FAIL no live role run on the door: nothing to measure the tiles against"); sys.exit(1)
 if not quiet:
-    print("UNMEASURED no logged-in role has been quiet 2 hours this pass"); sys.exit(2)
+    print(f"ok all {len(live - {'jeff'})} live roles have a tile (none quiet 2 h this pass)"); sys.exit(0)
 print("ok quiet 2h with a tile: " + ", ".join(quiet))
 PY
 }
 
 @test "every logged-in role has a tile, including one quiet 2 hours (live page)" {
-  case "${BATS_TEST_DIRNAME}" in */chorus-werk/*) skip "after-land check: a card's werk has not landed (#4985 AC2)";; esac
   st=$(curl -sf --max-time 10 "$PULSE_URL/api/actor-state")
   runs=$(curl -sf --max-time 10 "$DOOR/v1/identity/sessionruns?runEndedAt.absent=true&limit=5000")
   html=$(curl -sf --max-time 10 "$V2_URL/api/rooms/team/people")
   run check "$st" "$runs" "$html" "$(date +%s)"
   echo "$output"
-  [ "$status" -ne 2 ] || skip "$output"
   [ "$status" -eq 0 ]
 }
 
@@ -62,5 +65,17 @@ PY
 
 @test "NEGATIVE PROOF: a role with no recorded action is not counted as quiet 2 hours" {
   run check '{"actors":[{"aboutPrincipal":"principal-kade","sessions":[]}]}' '{"data":[{"name":"kade-run-x"}]}' '<a class="actor-tile actor-tile-kade">' "$(date +%s)"
-  [ "$status" -eq 2 ]
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [[ "$output" != *"quiet 2h with a tile: kade"* ]] || { echo "$output"; return 1; }
+}
+
+@test "a role quiet 3 hours with a tile is named as quiet and passes" {
+  now=$(date +%s); three=$(python3 -c "import datetime,sys; print(datetime.datetime.fromtimestamp(int(sys.argv[1])-10800, datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'))" "$now")
+  run check "{\"actors\":[{\"aboutPrincipal\":\"principal-kade\",\"sessions\":[{\"lastActionAt\":\"$three\"}]}]}" '{"data":[{"name":"kade-run-x"}]}' '<a class="actor-tile actor-tile-kade">' "$now"
+  [ "$status" -eq 0 ] && [[ "$output" == *"ok quiet 2h with a tile: kade"* ]] || { echo "$output"; return 1; }
+}
+
+@test "NEGATIVE PROOF (#4925): no live role run at all is red, never a vacuous pass" {
+  run check '{"actors":[]}' '{"data":[]}' '' "$(date +%s)"
+  [ "$status" -eq 1 ] || { echo "$output"; return 1; }
 }

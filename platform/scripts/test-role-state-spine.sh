@@ -5,21 +5,23 @@
 # Was (#1945): every transition emits role.state.changed. Now: the only thing a
 # role says is `blocked`, as a JSON spine event with a detail; every other
 # state is derived on read by chorus-api and the CLI writes NOTHING for it.
-# Brings its own world (#3528): CHORUS_LOG_FILE points at a temp spine unless
-# the caller set one (the nightly does, #4065).
+# Brings its own world (#3528): CHORUS_LOG_FILE is ALWAYS a temp spine of its own.
+# #4925 (Wren) — it used the caller's log when one was set (the nightly sets one, #4065),
+# and Tests 1 and 2 count every new line in it: another suite writing to the same log in
+# that window failed them (2 of 8 nightly runs; "lines 28993→28994"). It measures only
+# role-state's own lines now.
 set -uo pipefail
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 PASS=0
 FAIL=0
 
-if [ -z "${CHORUS_LOG_FILE:-}" ]; then
-  _tmp=$(mktemp -d "${TMPDIR:-/tmp}/role-state-spine.XXXXXX")
-  export CHORUS_LOG_FILE="$_tmp/chorus.log"
-  trap 'rm -rf "$_tmp"' EXIT
-fi
+_tmp=$(mktemp -d "${TMPDIR:-/tmp}/role-state-spine.XXXXXX")
+export CHORUS_LOG_FILE="$_tmp/chorus.log"
+trap 'rm -rf "$_tmp"' EXIT
 CHORUS_LOG="$CHORUS_LOG_FILE"
 touch "$CHORUS_LOG" 2>/dev/null || true
-ROLE_STATE="${CHORUS_ROOT}/platform/scripts/role-state"
+# ROLE_STATE_BIN: the negative proof's seam (4925-role-state-spine-own-log.bats)
+ROLE_STATE="${ROLE_STATE_BIN:-${CHORUS_ROOT}/platform/scripts/role-state}"
 
 echo "=== role-state (#4028 — derived, blocked-as-event) ==="
 echo ""

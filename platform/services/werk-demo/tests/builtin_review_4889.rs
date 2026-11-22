@@ -90,3 +90,18 @@ fn each_review_loads_user_settings_only_and_read_only_tools() {
         }
     }
 }
+
+/// #4925 (Silas row 7) — a clean dependency-cruiser run leaves a trace in the arch record.
+/// Its pass was "no findings", which apply_ledger drops, so 166 arch records since #4889
+/// read as if it never ran. NEGATIVE: the record keeps a dependency-cruiser part naming
+/// what it cruised, and that part is a note, never a fail.
+#[test]
+fn a_clean_depcruise_run_survives_the_ledger_as_a_note() {
+    let (r, f) = depcruise_verdict("✔ no dependency violations found (909 modules, 2104 dependencies cruised)", Some(0));
+    assert_eq!(r, "pass");
+    let (res, findings) = werk_demo::combine_verdicts(
+        &[("pass".to_string(), "gate-arch: no findings".to_string()), (r, format!("dependency-cruiser: {f}"))], &[]);
+    let (verdict, kept) = werk_demo::apply_ledger(&res, &findings, None, None);
+    assert_eq!(verdict, "pass", "a clean run turned the review red: {kept}");
+    assert!(kept.contains("dependency-cruiser: note: ran clean") && kept.contains("909 modules"), "the pass left no trace: {kept}");
+}

@@ -58,7 +58,9 @@ function ownClearing(test, opts = {}) {
     // the security graph: jeff is the person; the signed-in WebID (if any) is jeff
     graph = await startSecurityGraphStub({ persons: ['jeff'], principals: opts.signedInAs ? { [opts.signedInAs]: 'principal-jeff' } : {} });
     env.CHORUS_FUSEKI_QUERY = graph.url;
-    if (opts.spine && opts.spine.length) fs.writeFileSync(env.CHORUS_LOG_FILE, opts.spine.join('\n') + '\n');
+    // #4925 — a spine may be a function, so its timestamps are taken when the server starts
+    const spineLines = typeof opts.spine === 'function' ? opts.spine() : opts.spine;
+    if (spineLines && spineLines.length) fs.writeFileSync(env.CHORUS_LOG_FILE, spineLines.join('\n') + '\n');
     if (opts.signedInAs) sessionCookie = doorSession(dir, opts.signedInAs);
     child = spawn(process.execPath, [entry], {
       cwd: CLEARING_SRC,

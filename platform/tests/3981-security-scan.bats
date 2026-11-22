@@ -10,8 +10,25 @@ SCRIPT="${BATS_TEST_DIRNAME}/../scripts/test-security-scan.sh"
 # Covers: platform/scripts/test-security-scan.sh  (literal path for the #3917 linker)
 FIX="${BATS_TEST_DIRNAME}/../security/semgrep/fixtures"
 
+# #4925 (Silas) — semgrep lives in ~/.local/bin, which launchd's PATH (the nightly's)
+# does not carry, so all three cases skipped every night. Find it there too, put its
+# directory on PATH for the scan script, and under the nightly a missing semgrep is RED
+# (named), never a skip. Off the nightly a box without semgrep still skips.
+SEMGREP="${SEMGREP:-$(command -v semgrep 2>/dev/null || echo "$HOME/.local/bin/semgrep")}"
+
 setup() {
-  command -v semgrep >/dev/null 2>&1 || skip "semgrep not installed"
+  if [ ! -x "$SEMGREP" ]; then
+    [ "${WERK_TEST_NIGHTLY:-}" = 1 ] && { echo "semgrep not found at $SEMGREP"; return 1; }
+    skip "semgrep not installed"
+  fi
+  PATH="$(dirname "$SEMGREP"):$PATH"
+}
+
+@test "NEGATIVE PROOF (#4925): under the nightly a missing semgrep is red, not a skip" {
+  run env SEMGREP=/nonexistent/semgrep WERK_TEST_NIGHTLY=1 bats -f "PASSES the scan" "$BATS_TEST_FILENAME"
+  [ "$status" -ne 0 ] || { echo "$output"; return 1; }
+  [[ "$output" == *"semgrep not found at /nonexistent/semgrep"* ]] || { echo "$output"; return 1; }
+  [[ "$output" != *"# skip"* ]] || { echo "skipped: $output"; return 1; }
 }
 
 @test "NEGATIVE PROOF: the seeded #3980-pattern fixture FAILS the scan" {

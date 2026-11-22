@@ -59,8 +59,11 @@ PY
 }
 
 @test "NEGATIVE PROOF: --apply from a werk is refused before anything is read" {
-  case "$SEED" in */chorus-werk/*) ;; *) skip "this copy of the script is not in a werk" ;; esac
-  run "$SEED" nightly-1-2 --apply
+  # #4925 — run a copy that sits under a chorus-werk path: the nightly runs canonical's copy,
+  # so the refusal was never reached there and this case skipped every night
+  w="$BATS_TEST_TMPDIR/chorus-werk/kade-0/platform/scripts"; mkdir -p "$w"
+  cp "$SEED" "$w/test-latest-seed"; chmod +x "$w/test-latest-seed"
+  run "$w/test-latest-seed" nightly-1-2 --apply
   [ "$status" -eq 3 ]
   [[ "$output" == *"a werk never writes prod's Test rows"* ]] || return 1
 }

@@ -2619,7 +2619,13 @@ fn depcruise_review(werk: &str, cfg: &Path) -> (String, String) {
 pub fn depcruise_verdict(out: &str, code: Option<i32>) -> (String, String) {
     let errs: Vec<String> = out.lines().map(str::trim).filter(|l| l.starts_with("error ")).map(|l| l[6..].to_string()).collect();
     if !errs.is_empty() { return ("fail".to_string(), errs.join(" | ")); }
-    if code == Some(0) && out.contains("no dependency violations found") { return ("pass".to_string(), "no findings".to_string()); }
+    // #4925 (Silas) — a clean run says what it cruised, as a note. "no findings" was dropped
+    // by apply_ledger, so 166 arch records since #4889 showed no trace that it ran at all.
+    if code == Some(0) && out.contains("no dependency violations found") {
+        let summary = out.lines().map(str::trim).find(|l| l.contains("no dependency violations found"))
+            .map(|l| l.trim_start_matches(|c: char| !c.is_ascii_alphanumeric()).to_string()).unwrap_or_default();
+        return ("pass".to_string(), format!("note: ran clean — {summary}"));
+    }
     ("error".to_string(), format!("no dependency-cruiser report (exit {:?}): {}", code, out.trim().chars().take(160).collect::<String>()))
 }
 

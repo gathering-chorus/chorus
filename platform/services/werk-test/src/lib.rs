@@ -107,11 +107,24 @@ pub fn ts_packages() -> Vec<String> {
 }
 
 fn ts_packages_uncached() -> Vec<String> {
+    repo_root().map(|r| discover_ts_packages(&r)).unwrap_or_default()
+}
+
+/// The tree under test: the root main named, else CHORUS_ROOT/CHORUS_HOME, else
+/// the repo found by walking up from the cwd.
+fn repo_root() -> Option<std::path::PathBuf> {
     let env_root = std::env::var("CHORUS_ROOT").or_else(|_| std::env::var("CHORUS_HOME")).ok();
     let cwd = std::env::current_dir().unwrap_or_default();
     resolve_repo_root(REPO_ROOT.get().cloned(), env_root, &cwd)
-        .map(|r| discover_ts_packages(&r))
-        .unwrap_or_default()
+}
+
+/// #4925 — the Cargo package name of the crate `path` sits in, outside
+/// platform/services, when that crate's Cargo.toml is in `root`. None when the
+/// path is in no crate.
+pub fn crate_name_in_tree(root: &std::path::Path, path: &str) -> Option<String> {
+    let dir = crate_dir_of_path(path, &|d: &str| root.join(d).join("Cargo.toml").is_file())?;
+    let manifest = std::fs::read_to_string(root.join(&dir).join("Cargo.toml")).ok()?;
+    Some(cargo_package_name(&manifest).unwrap_or_else(|| dir.rsplit('/').next().unwrap_or(&dir).to_string()))
 }
 
 /// #4440 reopen — which of a crate's test binaries a card runs. A change under
@@ -1144,6 +1157,13 @@ pub fn unit_of_path(path: &str) -> Option<TestUnit> {
             }
         }
     }
+    // #4925 — a crate in any other home (designing/services/athena-gen,
+    // directing/products/pulse/api, shaping/domains/principles/api). The card
+    // path finds them since #4491 (main.rs crate_of); the nightly plan did not,
+    // so 200 registered tests in those three crates never ran: "no result" every night.
+    if let Some(name) = repo_root().and_then(|r| crate_name_in_tree(&r, path)) {
+        return Some(TestUnit::RustCrate(name));
+    }
     // #3974 — script suites resolve BEFORE the package loop: platform/tests
     // holds both bats suites (script units) and the cucumber package; a .bats
     // path must never collapse into the package unit.
@@ -1829,6 +1849,42 @@ pub fn forwardable_test_events(text: &str) -> Vec<String> {
         })
         .map(String::from)
         .collect()
+}
+
+/// #4925 — the browser flows' results, one per spec FILE, from the case events the
+/// playwright reporter wrote (`test.case.<passed|failed|skipped>\ttests\tfile=…\tcase=…\treason=…`).
+/// The registry holds one row per spec file (testName = the file's name), and the
+/// nightly's ui stage stored nothing, so all 15 read "no result" every night. A file
+/// with any failed case fails, carrying that case's reason; one with a pass and no
+/// failure passes; one with only skips is a skip. Order: first appearance.
+pub fn flow_file_results(events: &str) -> Vec<(CaseResult, String)> {
+    let mut order: Vec<String> = Vec::new();
+    let mut state: std::collections::HashMap<String, (bool, bool, String)> = std::collections::HashMap::new();
+    for line in events.lines() {
+        let mut f = line.split('\t');
+        let ev = f.next().unwrap_or("");
+        let status = match ev { "test.case.passed" => 0, "test.case.failed" => 1, "test.case.skipped" => 2, _ => continue };
+        let kv: std::collections::HashMap<&str, &str> = f.filter_map(|p| p.split_once('=')).collect();
+        let file = match kv.get("file") { Some(x) if !x.is_empty() => x.to_string(), _ => continue };
+        if !state.contains_key(&file) { order.push(file.clone()); }
+        let e = state.entry(file).or_insert((false, false, String::new()));
+        match status {
+            0 => e.0 = true,
+            1 => {
+                if !e.1 {
+                    e.2 = format!("{}: {}", kv.get("case").unwrap_or(&""), kv.get("reason").unwrap_or(&""));
+                }
+                e.1 = true;
+            }
+            _ => {}
+        }
+    }
+    order.into_iter().map(|file| {
+        let (passed, failed, reason) = state.remove(&file).unwrap_or_default();
+        let result = if failed { "fail" } else if passed { "pass" } else { "skip" };
+        let name = file.rsplit('/').next().unwrap_or(&file).to_string();
+        (CaseResult { file_path: file, test_name: name, result: result.into() }, if failed { reason } else { String::new() })
+    }).collect()
 }
 
 pub fn parse_case_tsv(tsv: &str) -> Vec<CaseResult> {
@@ -3427,6 +3483,13 @@ pub fn plan_stages(
 /// #4160 — a runner stage with nothing registered, said out loud: never a
 /// green row, never silence (AC5).
 pub fn nightly_stage_absent_line(stage: &str) -> String {
+    // #4925 — `unclassified` is the one stage whose emptiness is the goal: no
+    // registered test is missing its type. That is a measured zero, not an absence,
+    // and as a skip it held every clean run at "1 skipped suite". Every other empty
+    // stage still says ABSENT.
+    if stage == "unclassified" {
+        return "nightly-unit|unclassified|stage:unclassified|pass|0 pass, 0 fail (none unclassified — every registered test has a type)".to_string();
+    }
     format!(
         "nightly-unit|{}|stage:{}|skip|0 pass, 0 fail (ABSENT — no registered {} tests this run)",
         stage, stage, stage

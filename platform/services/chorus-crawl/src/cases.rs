@@ -549,7 +549,43 @@ fn string_literal(s: &str) -> Option<&str> {
 /// concurrent))?\s*\(\s*` then a same-quote-delimited literal. A name built by
 /// interpolation is a template, not a name, and is dropped.
 pub fn jest_case_names(source: &str) -> Vec<String> {
-    qualify_repeated_jest_names(source, jest_cases_at(source))
+    // #4925 — comments are not code: child-cards-4669.test.ts's header says
+    // `it ("patient 0", Jeff 2026-10-20)` in prose, and that registered a case no
+    // runner emits ("no result" every night).
+    let code = blank_js_comments(source);
+    qualify_repeated_jest_names(&code, jest_cases_at(&code))
+}
+
+/// #4925 — `source` with every `//` and `/* */` comment replaced by spaces
+/// (newlines kept), so byte offsets and line numbers are unchanged. A `//` or
+/// `/*` inside a '…', "…" or `…` literal is text, not a comment.
+pub fn blank_js_comments(source: &str) -> String {
+    let b = source.as_bytes();
+    let mut out = b.to_vec();
+    let mut i = 0;
+    let mut quote: Option<u8> = None;
+    while i < b.len() {
+        let c = b[i];
+        if let Some(q) = quote {
+            if c == b'\\' { i += 2; continue; }
+            if c == q { quote = None; }
+            i += 1;
+            continue;
+        }
+        if c == b'\'' || c == b'"' || c == b'`' {
+            quote = Some(c);
+            i += 1;
+        } else if c == b'/' && b.get(i + 1) == Some(&b'/') {
+            while i < b.len() && b[i] != b'\n' { out[i] = b' '; i += 1; }
+        } else if c == b'/' && b.get(i + 1) == Some(&b'*') {
+            let end = source[i + 2..].find("*/").map(|e| i + 2 + e + 2).unwrap_or(b.len());
+            while i < end { if b[i] != b'\n' { out[i] = b' '; } i += 1; }
+        } else {
+            i += 1;
+        }
+    }
+    // every replaced byte became an ASCII space, so the result is valid UTF-8
+    String::from_utf8(out).unwrap_or_else(|_| source.to_string())
 }
 
 /// Every `it()` / `test()` literal name with the byte offset of its keyword.

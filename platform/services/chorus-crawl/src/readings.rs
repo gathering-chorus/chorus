@@ -302,6 +302,22 @@ pub fn backup_readings(day: &str, store_bytes: Option<u64>, copy: Option<(u64, u
 /// `*` (messages.db's mirror, or a test's CHORUS_BACKUP_COPY) is stat'ed as is.
 pub const SPINE_SLICES: &str = "/Users/jeffbridwell/Backups/chorus-memory/*/spine-*.jsonl.gz";
 
+/// #4925 — where com.chorus.log-archive puts each rotated chorus.log, under $HOME.
+/// The events pass read only the live log and the July archive, so every rotation
+/// (10-25, 11-06, 11-22) took the older days out of its sight.
+pub const SPINE_ARCHIVE_DIR: &str = ".chorus/log-archive/chorus-log";
+
+/// #4925 — the events pass's default sources, oldest first: the July archive, then
+/// every rotated `chorus.log.<stamp>.gz` in SPINE_ARCHIVE_DIR (names sort by stamp).
+/// `names` is that directory's listing; anything else in it is ignored.
+pub fn spine_archives(home: &str, names: &[String]) -> Vec<String> {
+    let mut rotated: Vec<&String> = names.iter().filter(|n| n.starts_with("chorus.log.") && n.ends_with(".gz")).collect();
+    rotated.sort();
+    std::iter::once(format!("{home}/.chorus/chorus.log.archived-20260723.gz"))
+        .chain(rotated.into_iter().map(|n| format!("{home}/{SPINE_ARCHIVE_DIR}/{n}")))
+        .collect()
+}
+
 /// The shell line that reads a copy's size and mtime: the newest match when
 /// `copy` is a glob, the file itself when it is not.
 pub fn copy_stat_cmd(copy: &str) -> String {
@@ -530,8 +546,15 @@ pub fn plan_readings(desired: Vec<ReadingRow>, stored: &BTreeMap<String, String>
     let (mut create, mut update, mut unchanged) = (vec![], vec![], 0);
     for (name, fields) in desired {
         let value = fields.iter().find(|(k, _)| k == "readingValue").map(|(_, v)| v.clone()).unwrap_or_default();
+        let is_count = fields.iter().any(|(k, v)| k == "readingUnit" && v == "count");
         match stored.get(&name) {
             None => create.push((name, fields)),
+            // #4925 — a zero-filled day never lowers a stored count. After a log
+            // rotation the live log no longer holds older days; fill_zero_days gave
+            // them 0 and this UPDATED events 11-20, 11-10, 10-15 and 08-01 to 0. A
+            // day with no source lines is a gap, not a zero: the stored count stays.
+            Some(v) if is_count && value.parse::<f64>().ok() == Some(0.0)
+                && v.parse::<f64>().ok().is_some_and(|s| s > 0.0) => unchanged += 1,
             // an age is a heartbeat: rewrite it every pass so its run (the alert's
             // freshness stamp) moves even when the age itself reads 0.00 again —
             // left unchanged, spine-not-growing aged a live sensor as stopped (#4634)

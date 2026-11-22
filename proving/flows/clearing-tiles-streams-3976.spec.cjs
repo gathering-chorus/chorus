@@ -70,7 +70,9 @@ const ROLES = ['wren', 'silas', 'kade'];
 // the shape a role's work takes on the live spine (#4231).
 const nowIso = () => new Date().toISOString();
 const CLEARING_TARGET = ownClearing(test, {
-  spine: ['wren', 'silas', 'kade'].map((role, i) => JSON.stringify({
+  // #4925 — seeded at server start, not at module load: a spec that starts >120 s into
+  // the ui run would otherwise read its seeded roles as idle (SPINE_ACTIVE_WINDOW_SECS)
+  spine: () => ['wren', 'silas', 'kade'].map((role, i) => JSON.stringify({
     appName: 'chorus-events', level: 'info', timestamp: nowIso(), event: 'agent.action',
     role, phase: 'started', tool: 'Bash', call_id: `toolu_seed_${i}`, digest: `Run the suite · bash: bash ${i + 1}s`,
   })),
@@ -202,13 +204,10 @@ test.describe('#3976 the streams pane renders the beats', () => {
 });
 
 test.describe('#3976 reconciliation — tiles and streams must agree', () => {
-  // #4073 — TEST WRONG by the 2026-09-02 rule: the Clearing this spec boots is
-  // its own, but the tiles and the pane it compares are fed by the LIVE roles'
-  // state and the live spine, so the assertion measures what the team happens
-  // to be doing at that second (it blocked #4073's land at 16:52 on "a role the
-  // tile calls active has ZERO lines"). Held until the tile/pane world is a
-  // fixture; a held test is counted and printed, never green.
-  test.skip('a role the tile calls active has recent lines in the pane', async ({ page, request }) => {
+  // #4073 / #4417 / #4925 — the Clearing this spec boots reads its own seeded spine
+  // (ownClearing, seeded at start), so tiles and pane share one fixture world: the
+  // hold is lifted.
+  test('a role the tile calls active has recent lines in the pane', async ({ page, request }) => {
     await assertClearingTarget(request);
     await page.goto(CLEARING, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#tiles .tile', { timeout: 20000 });
@@ -256,6 +255,10 @@ test.describe('#3976 reconciliation — tiles and streams must agree', () => {
       // that lands ahead of now belongs to yesterday.
       const DAY_MS = 86400000;
       const stamp = (r) => {
+        // #4925 — /api/stream serves an ISO ts; read as `${today} ${ts}` it was NaN,
+        // and a NaN pane was skipped below: the check could never go red
+        const iso = Date.parse(r.ts);
+        if (!Number.isNaN(iso) && /T/.test(String(r.ts))) return iso;
         const t = Date.parse(`${today} ${r.ts}`);
         return Number.isNaN(t) ? NaN : t > Date.now() ? t - DAY_MS : t;
       };

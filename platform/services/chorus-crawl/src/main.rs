@@ -919,7 +919,11 @@ fn registers_cases(path: &str) -> bool {
     // #4201 — a file under tests/fixtures/ is DATA a test reads, not a suite.
     // My two placement fixtures landed in the registry the run after I wrote
     // them and moved the counts they exist to prove (read 1045 -> 1048).
-    !path.contains("platform/services/shared/") && !path.contains("/tests/fixtures/")
+    // #4925 — a generator's templates/ are SOURCE copied into the crates it
+    // generates (athena-gen's door_tests.rs → pulse/api/src/door_tests.rs); their
+    // #[test] fns run under the generated crates' names. Registering the template
+    // too minted 47 rows no lane can emit ("no result" every night).
+    !path.contains("platform/services/shared/") && !path.contains("/tests/fixtures/") && !path.contains("/templates/")
 }
 
 #[cfg(test)]
@@ -943,6 +947,17 @@ mod registers_cases_4131 {
         assert!(
             registers_cases("platform/services/werk-test/src/lib.rs"),
             "control: a real crate's file does register"
+        );
+    }
+
+    // #4925 — a generator template is copied into the crates it generates; only
+    // the copies run. NEGATIVE: the template registers nothing; the generated copy does.
+    #[test]
+    fn negative_proof_a_generator_template_registers_no_cases_and_its_copy_does() {
+        assert!(!registers_cases("designing/services/athena-gen/templates/door_tests.rs"));
+        assert!(
+            registers_cases("directing/products/pulse/api/src/door_tests.rs"),
+            "control: the generated copy is the suite that runs"
         );
     }
 }
@@ -2007,7 +2022,13 @@ fn run_readings(which: &str, args: &[String]) -> i32 {
         let home = std::env::var("HOME").unwrap_or_default();
         let spine = std::env::var("CHORUS_SPINE").unwrap_or_else(|_| format!("{home}/.chorus/chorus.log"));
         let archives: Vec<String> = std::env::var("CHORUS_SPINE_ARCHIVES").map(|v| v.split(':').filter(|s| !s.is_empty()).map(String::from).collect())
-            .unwrap_or_else(|_| vec![format!("{home}/.chorus/chorus.log.archived-20260723.gz")]);
+            .unwrap_or_else(|_| {
+                // #4925 — every rotated log too, not one named archive
+                let dir = format!("{home}/{}", chorus_crawl::readings::SPINE_ARCHIVE_DIR);
+                let names: Vec<String> = std::fs::read_dir(&dir).map(|d| d.filter_map(|e| e.ok())
+                    .map(|e| e.file_name().to_string_lossy().into_owned()).collect()).unwrap_or_default();
+                chorus_crawl::readings::spine_archives(&home, &names)
+            });
         // streamed line by line: the spine is gigabytes, never read into memory whole
         use std::io::BufRead;
         let mut readers: Vec<Box<dyn BufRead>> = Vec::new();
@@ -4091,9 +4112,16 @@ fn print_graph_vs_project(
     // #4091 AC4 — the Grafana framework: Alert rows against Grafana's rules
     {
         let bin = chorus_crawl::convergence_land_bin(std::env::var("CONVERGENCE_LAND").ok(), &std::env::var("HOME").unwrap_or_default(), |p| std::path::Path::new(p).is_file());
+        // #4925 — validate went silent for 280+ s after the declared-domain line as
+        // jeffbridwell (26 s as a role, where this step refuses at once for want of a
+        // Grafana credential). Each slow step names itself and its seconds, so a stall
+        // reads as the step that stalled, never as silence.
+        let t0 = std::time::Instant::now();
+        println!("chorus-crawl: reconcile grafana rules: start ({bin} sync)");
         let out = Command::new(&bin).arg("sync").output()
             .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
             .unwrap_or_else(|e| format!("unmeasured cannot run {bin}: {e}"));
+        println!("chorus-crawl: reconcile grafana rules: {} s", t0.elapsed().as_secs());
         let row = chorus_crawl::grafana_rule_row(&out);
         if !row.measured {
             println!("chorus-crawl: reconcile grafana rules: UNMEASURED — {}", out.lines().next().unwrap_or("no output").trim_start_matches("unmeasured "));
@@ -4104,6 +4132,8 @@ fn print_graph_vs_project(
     // for one afternoon nothing proved that every page on disk had a row or that
     // every row still had a file. Jeff caught it by asking the obvious question.
     {
+        let t0 = std::time::Instant::now();
+        println!("chorus-crawl: reconcile pages and endpoints: start");
         let read_file = |q: &str| std::fs::read_to_string(std::path::Path::new(root).join(q)).ok();
         let tracked = tracked_files(root).unwrap_or_default();
         let (want_pages, want_endpoints, _) = pages::desired_rows(
@@ -4111,6 +4141,7 @@ fn print_graph_vs_project(
             &read_file,
             std::path::Path::new(GATHERING_ROOT).is_dir(),
         );
+        println!("chorus-crawl: reconcile pages and endpoints: tree read in {} s", t0.elapsed().as_secs());
         for (kind, key_field, want) in [
             (
                 "pages",
