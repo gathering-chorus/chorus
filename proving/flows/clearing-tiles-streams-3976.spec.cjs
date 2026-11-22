@@ -204,10 +204,11 @@ test.describe('#3976 the streams pane renders the beats', () => {
 });
 
 test.describe('#3976 reconciliation — tiles and streams must agree', () => {
-  // #4073 / #4417 / #4925 — the Clearing this spec boots reads its own seeded spine
-  // (ownClearing, seeded at start), so tiles and pane share one fixture world: the
-  // hold is lifted.
-  test('a role the tile calls active has recent lines in the pane', async ({ page, request }) => {
+  // #4073 — held: the pane reads this spec's own seeded spine (#4417; seeded at start since
+  // #4925), but the TILES still read the live roles' actor state. Measured #4925 cicd run 1
+  // (11-22 10:49): wren's tile 600 s, kade's 660 s — the live roles' real quiet times — vs
+  // the seeded pane's 35 s. Lifted when the tile source is a fixture too (Abby).
+  test.skip('a role the tile calls active has recent lines in the pane', async ({ page, request }) => {
     await assertClearingTarget(request);
     await page.goto(CLEARING, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#tiles .tile', { timeout: 20000 });
