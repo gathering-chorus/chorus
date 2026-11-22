@@ -545,6 +545,17 @@ pub fn refusal_reason(reply: &str) -> String {
     one.chars().take(160).collect()
 }
 
+/// #4925 round 4 — is this principal reply (curl's body, then "\n<http code>") a 200 for a
+/// person? Parsed, never substring-matched: the door pretty-prints `"principalKind": "person"`
+/// with a space, so person_signed_in's text match never matched and no browser sign-in
+/// counted (Silas, 11-22 16:50: logout refused with Jeff signed in). Pure.
+pub fn is_person_reply(answer: &str) -> bool {
+    let (body, code) = answer.trim_end().rsplit_once('\n').unwrap_or(("", answer.trim()));
+    code.trim() == "200"
+        && serde_json::from_str::<Value>(body).ok()
+            .is_some_and(|v| v["data"]["principalKind"].as_str() == Some("person"))
+}
+
 /// #4368 — the login decision from the identity API's answer for one
 /// principal: `code` is the HTTP status, `body` the JSON it returned.
 pub fn login_verdict(name: &str, code: &str, body: &str, api: &str) -> Result<Option<String>, String> {
