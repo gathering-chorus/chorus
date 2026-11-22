@@ -53,7 +53,10 @@ async function looksLikeLogin(page) {
  * looks like.
  */
 async function signIn(page) {
-  await page.waitForLoadState('networkidle');
+  // #4915 — 'load', never 'networkidle': a page with a live stream (the Clearing room, its
+  // socket) is never idle, and the room check timed out here at 30 s. The password field's
+  // own wait below is what says the form is ready.
+  await page.waitForLoadState('load');
   const password = page.locator('input[type="password"]').first();
   await password.waitFor({ state: 'visible' });
   await page.locator('input[type="email"], input[name="email"], input[name="username"]').first().fill(USER);
@@ -61,7 +64,7 @@ async function signIn(page) {
   const loginUrl = page.url();
   await page.locator('button[type="submit"], input[type="submit"]').first().click();
   await page.waitForURL((u) => u.toString() !== loginUrl, { timeout: 30000 });
-  await page.waitForLoadState('networkidle');
+  await page.waitForLoadState('load');
   signedIn.add(page);
 }
 
@@ -82,7 +85,7 @@ async function passConsent(page) {
   const before = page.url();
   await authorize.click();
   await page.waitForURL((u) => u.toString() !== before, { timeout: 30000 });
-  await page.waitForLoadState('networkidle');
+  await page.waitForLoadState('load');   // #4915 — the landing page may hold a live stream
 }
 
 /**
