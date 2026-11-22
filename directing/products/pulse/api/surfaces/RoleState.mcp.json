@@ -1,10 +1,10 @@
 {
   "class": "RoleState",
   "binding": "mcp",
-  "convention": "ADR-031 chorus_<plural-resource>_<verb>",
+  "convention": "#4515 athena-<verb>, the class named in the call",
   "tools": [
-    { "name": "chorus_rolestates_list", "verb": "list", "route": "GET /pulse/awareness/rolestates" },
-    { "name": "chorus_rolestates_get", "verb": "get", "route": "GET /pulse/awareness/rolestates/:name" },
-    { "name": "chorus_rolestates_add", "verb": "add", "route": "POST /pulse/awareness/rolestates", "delegatesTo": "the generated door" }
+    { "name": "athena-list", "verb": "list", "route": "GET /pulse/awareness/rolestates" },
+    { "name": "athena-get", "verb": "get", "route": "GET /pulse/awareness/rolestates/:name" },
+    { "name": "athena-add", "verb": "add", "route": "POST /pulse/awareness/rolestates", "delegatesTo": "the generated door" }
   ]
 }

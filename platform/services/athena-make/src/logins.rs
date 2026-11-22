@@ -1,5 +1,5 @@
 //! #4517 AC5 — `POST /identity/logins`: the door writes every Session row.
-//!
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! A role keeps its own login and calls this once. The door has already verified the
 //! login; this decides the row (identity-login::plan_login) and writes it through the
 //! normal create path with the caller's own login, so the DAL's owner rule holds and

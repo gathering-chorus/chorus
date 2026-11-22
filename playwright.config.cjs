@@ -8,20 +8,8 @@
  * ~/.chorus/flow-creds.env (chmod 600, outside the repo) if it exists, so the
  * signed-in flows RUN instead of skipping. Env vars already set win over the file.
  */
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
-
-const credFile = process.env.FLOW_CREDS_FILE || path.join(os.homedir(), '.chorus', 'flow-creds.env');
-if (fs.existsSync(credFile)) {
-  for (const line of fs.readFileSync(credFile, 'utf8').split('\n')) {
-    const m = line.match(/^\s*(?:export\s+)?([A-Z0-9_]+)\s*=\s*(.*)$/);
-    if (!m) continue;
-    const key = m[1];
-    const val = m[2].trim().replace(/^['"]|['"]$/g, '');
-    if (process.env[key] === undefined) process.env[key] = val;
-  }
-}
+// #4915 — one loader for the flow creds, shared with scripts outside this runner
+require('./proving/flows/_auth.cjs').loadFlowCreds();
 
 module.exports = {
   testDir: './proving/flows',

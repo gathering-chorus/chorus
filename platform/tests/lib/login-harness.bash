@@ -159,6 +159,8 @@ row.update(name=nm, actsAs=role, ownedBy="principal-"+role, startedAt=now, sessi
 if b.get("person"): row["startedBy" if b.get("personAt")=="browser" else "startReportedBy"]=b["person"]   # 4412: the door vouches (browser) or labels (terminal)
 json.dump(row, open(sys.argv[2],"w"), separators=(",",":")); print(json.dumps({"name": "session-"+nm, "created": True}))' "\$b" "$T/bodies/\$(printf %03d \$n)-POST-identity_sessions.json" "\$n"
   printf '201\n'; exit 0 ;; esac
+# #4915 — the door never answers a write: curl's own timeout error, no HTTP code
+if [ -n "\$m" ] && [ -f "$T/write-door-down" ]; then echo "curl: (28) Operation timed out after 10002 milliseconds with 0 bytes received" >&2; exit 28; fi
 if [ -n "\$m" ]; then
   n=\$(ls "$T/bodies" | wc -l | tr -d ' '); route=\$(echo "\$url" | sed -E 's#.*/v1/##; s#/#_#g')
   cp "\$b" "$T/bodies/\$(printf %03d \$n)-\$m-\$route.json"

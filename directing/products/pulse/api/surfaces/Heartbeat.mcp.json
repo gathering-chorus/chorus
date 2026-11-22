@@ -1,10 +1,10 @@
 {
   "class": "Heartbeat",
   "binding": "mcp",
-  "convention": "ADR-031 chorus_<plural-resource>_<verb>",
+  "convention": "#4515 athena-<verb>, the class named in the call",
   "tools": [
-    { "name": "chorus_heartbeats_list", "verb": "list", "route": "GET /pulse/awareness/heartbeats" },
-    { "name": "chorus_heartbeats_get", "verb": "get", "route": "GET /pulse/awareness/heartbeats/:name" },
-    { "name": "chorus_heartbeats_add", "verb": "add", "route": "POST /pulse/awareness/heartbeats", "delegatesTo": "the generated door" }
+    { "name": "athena-list", "verb": "list", "route": "GET /pulse/awareness/heartbeats" },
+    { "name": "athena-get", "verb": "get", "route": "GET /pulse/awareness/heartbeats/:name" },
+    { "name": "athena-add", "verb": "add", "route": "POST /pulse/awareness/heartbeats", "delegatesTo": "the generated door" }
   ]
 }

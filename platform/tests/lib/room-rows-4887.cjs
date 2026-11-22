@@ -17,6 +17,7 @@
 const [, , pw, url, ...need] = process.argv;
 const { chromium } = require(pw);
 const { contentHash } = require('../../chorus-sdk/reply/hash');
+const auth = require('../../../proving/flows/_auth.cjs');
 const LOKI = process.env.LOKI_URL || 'http://localhost:3102';
 
 async function latestEmitted(roles) {
@@ -33,11 +34,16 @@ async function latestEmitted(roles) {
   return { role: ev.role, hash: ev.hash, at: ev.timestamp };
 }
 
-async function roomRecord() {
+// #4915 — the public room needs a sign-in (401 "not-signed-in" since #4580/#5015): read
+// its record from the signed-in page, as Jeff's browser does, never anonymously.
+async function roomRecord(page) {
   if (process.env.ROOM_RECORD_FILE) return JSON.parse(require('fs').readFileSync(process.env.ROOM_RECORD_FILE, 'utf8'));
-  const r = await fetch(new URL('api/messages', url), { signal: AbortSignal.timeout(10000) });
-  if (!r.ok) throw new Error(`room record ${r.status}`);
-  return r.json();
+  const got = await page.evaluate(async () => {
+    const r = await fetch('api/messages', { signal: AbortSignal.timeout(10000) });
+    return { ok: r.ok, status: r.status, body: r.ok ? await r.json() : null };
+  });
+  if (!got.ok) throw new Error(`room record ${got.status}`);
+  return got.body;
 }
 
 (async () => {
@@ -47,22 +53,33 @@ async function roomRecord() {
   } else {
     for (const n of need) want.push(await latestEmitted(n.split('|')));
   }
-  const record = await roomRecord();
-  for (const w of want) {
-    const row = record.find((m) => m.from === w.role && contentHash(m.text || '') === w.hash);
-    w.id = row ? row.id : null;
-    w.ts = row ? row.ts : (w.at || null);
-  }
   const b = await chromium.launch({
     executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     headless: true,
     args: ['--use-mock-keychain', '--password-store=basic'],
   });
+  const p = await b.newPage();
+  let code = 2;
+  let verdict = null;
+  let signOut = 'not signed in';
   try {
-    const p = await b.newPage();
     const errs = [];
+    if (!process.env.ROOM_RECORD_FILE) {
+      // no creds on this account (a role's card run): unmeasured (3), the _auth.cjs rule —
+      // never a pass and never a red; the nightly runs as the account that holds them
+      if (!auth.haveCreds) { console.log('unmeasured: no flow creds on this account (~/.chorus/flow-creds.env); the room needs a sign-in'); await b.close(); process.exit(3); }
+      await auth.gotoSignedIn(p, url);
+    }
+    // #4915 review — listen only on the room: an error on the sign-in or consent page is
+    // not the room's
     p.on('pageerror', (e) => errs.push(e.message));
     await p.goto(url, { waitUntil: 'load', timeout: 20000 });
+    const record = await roomRecord(p);
+    for (const w of want) {
+      const row = record.find((m) => m.from === w.role && contentHash(m.text || '') === w.hash);
+      w.id = row ? row.id : null;
+      w.ts = row ? row.ts : (w.at || null);
+    }
     await p.waitForFunction('document.querySelectorAll("#messages-stream [data-from]").length > 0', { timeout: 20000 });
     const rows = await p.$$eval('#messages-stream [data-from]', (els) => els.map((e) => ({ id: e.id, from: e.dataset.from, ts: e.dataset.ts || '' })));
     const seen = new Set(rows.map((r) => `${r.from}:${r.id}`));
@@ -71,9 +88,19 @@ async function roomRecord() {
     // absent AND older than the page's oldest row: the page scrolled past it — unmeasured
     const scrolled = absent.filter((w) => w.ts && Date.parse(w.ts) < oldest);
     const missing = absent.filter((w) => !scrolled.includes(w));
-    console.log(JSON.stringify({ url, rows: rows.length, want, missing, scrolled, errs }));
-    process.exit(missing.length || errs.length ? 1 : scrolled.length ? 3 : 0);
+    verdict = { url, rows: rows.length, want, missing, scrolled, errs };
+    code = missing.length || errs.length ? 1 : scrolled.length ? 3 : 0;
   } finally {
+    // #5026 — a probe that signed in signs out, or its Session row stays open. The verdict
+    // exits AFTER this (#4915 review: an exit inside the try skipped the sign-out)
+    // A failed sign-out does not change the verdict (the _auth.cjs rule: the door ends the
+    // row at the next sign-in, #4966), but it is printed in the verdict line, never only on
+    // stderr (#4915 review: a leak nobody sees)
+    signOut = await auth.signOutIfSignedIn(p, new URL(url).origin)
+      .then((did) => (did ? 'signed out' : 'not signed in'), (e) => `FAILED: ${e.message}`);
+    if (signOut.startsWith('FAILED')) console.error(`sign-out ${signOut} — the Session row stays open until the next sign-in`);
     await b.close();
   }
+  if (verdict) console.log(JSON.stringify({ ...verdict, signOut }));
+  process.exit(code);
 })().catch((e) => { console.error(`could not measure: ${e.message}`); process.exit(2); });

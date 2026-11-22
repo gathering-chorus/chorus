@@ -39,20 +39,14 @@ Feature: A principal logs in, works, and logs out
   #   When Jeff runs "chorus-principal login wren"
   #   Then wren's first line to Jeff names where wren left off, before Jeff types anything
 
-  Scenario: A turn keeps the session current
+  # #4915 — #4517 AC6 made Session rows the door's alone: a turn no longer PATCHes
+  # lastSeenAt (liveness is the newer of the row and the stream's last action). "A turn
+  # keeps the session current" and "A turn never renews a session" tested that retired
+  # write and read red every night from 11-18; what stands is the door-only truth.
+  Scenario: A turn writes no Session row; only the door does
     Given wren is logged in
     When wren takes a turn
-    Then the same session row's last-seen time moves to the turn's time
-    And no second session row is written
-
-  # #4950 — "A live session never reads as expired" and "Another role's token never moves
-  # a session's expiry" are deleted: #4944/#4948 retired renewal (a session is login to
-  # logout; liveness is the role's process). What stands is the no-renewal truth.
-  Scenario: A turn never renews a session
-    Given wren is logged in
-    And wren's login token has been renewed
-    When wren takes a turn
-    Then the turn's session write carries no expiry
+    Then the turn writes no Session row
 
   Scenario: An unchanged focus is still re-checked
     Given wren is logged in
@@ -112,8 +106,16 @@ Feature: A principal logs in, works, and logs out
     Given wren is logged in
     And the store refuses the next row write, naming a reason and a token
     When wren takes a turn
-    Then the spine says the session row failed, with the store's reason
+    Then the spine says the presence row failed, with the store's reason
     And the token is not on the spine
+
+  # #4915 — live 11-21 every role's presence write failed with http="" why="": the door
+  # never answered and the reason was thrown away. A write with no answer names why.
+  Scenario: A row write the door never answers says so
+    Given wren is logged in
+    And the door gives no answer to the next row write
+    When wren takes a turn
+    Then the spine says the presence row failed because the door gave no answer
 
   Scenario: A service principal has no login
     Given bridge's Principal row says it is a service

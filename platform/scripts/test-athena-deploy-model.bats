@@ -261,7 +261,10 @@ teardown_file() {
 
 @test "#3731 NEGATIVE PROOF: SHACL validator crash reports UNKNOWN, never 0 violations (non-gating)" {
   fake="$BATS_TEST_TMPDIR/bin"; mkdir -p "$fake"
-  printf '#!/bin/sh\nexit 3\n' > "$fake/shacl-crash"; chmod +x "$fake/shacl-crash"
+  # #4915 — since #4942 the identity gate runs the same validator first, and a crash there
+  # rightly refuses. This fake answers the gate's own run cleanly (its shapes file is
+  # athena-deploy-identity-shapes-*) and crashes only for the report, the leg under test.
+  printf '#!/bin/sh\ncase "$*" in *athena-deploy-identity-shapes-*) exit 0 ;; esac\nexit 3\n' > "$fake/shacl-crash"; chmod +x "$fake/shacl-crash"
   run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" SHACL_REPORT=1 SHACL_BIN="$fake/shacl-crash" "$SCRIPT"
   echo "output: $output"
   [ "$status" -eq 0 ]   # report stays non-gating — the deploy itself is fine
@@ -269,10 +272,15 @@ teardown_file() {
   ! echo "$output" | grep -q "0 violation(s)" || return 1
 }
 
-@test "#3731 NEGATIVE PROOF: absent shacl is an explicit skip, not a clean-run lookalike" {
+# #4915 — since #4942 a land that writes principals cannot deploy with no validator: the
+# identity gate cannot ask, so it refuses (exit 2) before any store call. The report's own
+# absent state stays distinct from a clean run (tests/shacl_report_4229.rs).
+@test "#3731/#4942 NEGATIVE PROOF: absent shacl never reads as a clean run — a principal-writing deploy refuses" {
   run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" SHACL_REPORT=1 SHACL_BIN="/nonexistent-shacl-3731" "$SCRIPT"
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "SHACL report SKIPPED"
+  echo "output: $output"
+  [ "$status" -eq 2 ]
+  echo "$output" | grep -q "the gate cannot ask, so it refuses"
+  ! echo "$output" | grep -q "0 violation(s)" || return 1
 }
 
 @test "#3731 NEGATIVE PROOF: absent riot REFUSES the deploy (was: silent unvalidated deploy)" {

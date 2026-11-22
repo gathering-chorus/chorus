@@ -12,9 +12,35 @@ CRAWL_BIN="${CRAWL_BIN_4965:-$(command -v chorus-crawl)}"   # a role account's H
 
 # declared_gap <crawler> <tree> — empty when the declared-domain line is measured with missing=0;
 # else the line, or why there is none
+# #4915 — validate runs under a deadline (VALIDATE_DEADLINE_4965, 300 s): as jeffbridwell it ran
+# past werk-test's 1200 s unit timeout every night from 11-20 (26 s as chorus-kade), so the suite
+# died UNMEASURED saying nothing. Now a stall is red, naming the last lines and when they came.
+validate_lines() { # validate_lines <crawler> <tree>: the run's output, or "STALLED ..." on the deadline
+  python3 - "$1" "$2" "${VALIDATE_DEADLINE_4965:-300}" <<'PY'
+import os, signal, subprocess, sys, threading, time
+crawler, tree, deadline = sys.argv[1], sys.argv[2], float(sys.argv[3])
+env = dict(os.environ, CHORUS_ROOT=tree, CHORUS_ROLE="kade")
+# its own process group, so the deadline ends the crawler AND its children (#4915 review)
+p = subprocess.Popen([crawler, "--validate"], cwd=tree, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True)
+t0, seen = time.time(), []
+def read():
+    for line in p.stdout: seen.append((time.time() - t0, line.rstrip()))
+r = threading.Thread(target=read, daemon=True); r.start(); r.join(deadline)
+if r.is_alive():
+    os.killpg(p.pid, signal.SIGTERM)
+    try: p.wait(5)
+    except subprocess.TimeoutExpired: os.killpg(p.pid, signal.SIGKILL)
+    tail = " · ".join(f"+{t:.0f}s {l[:120]}" for t, l in seen[-3:]) or "no output at all"
+    print(f"STALLED: {crawler} --validate still running after {deadline:.0f} s; last lines: {tail}")
+else:
+    p.wait(); print("\n".join(l for _, l in seen))
+PY
+}
 declared_gap() {
-  local line
-  line="$(cd "$2" && CHORUS_ROOT="$2" CHORUS_ROLE=kade "$1" --validate 2>/dev/null | grep -m1 '^VALIDATE|tests|Test (declared domain)|')"
+  local out line
+  out="$(validate_lines "$1" "$2")"
+  case "$out" in STALLED:*) echo "$out"; return ;; esac
+  line="$(printf '%s\n' "$out" | grep -m1 '^VALIDATE|tests|Test (declared domain)|')"
   [ -n "$line" ] || { echo "no 'Test (declared domain)' line from $1 --validate"; return; }
   [[ "$line" == *"|missing=0|"*"|measured" ]] || echo "$line"
 }
@@ -33,6 +59,13 @@ declared_gap() {
   done
   printf '#!/bin/sh\necho "VALIDATE|code|CodeFile|tree=1|graph=1|missing=0|stale=0|measured"\n' > "$fake"
   [[ "$(declared_gap "$fake" "$BATS_TEST_TMPDIR")" == *"no 'Test (declared domain)' line"* ]] || return 1
+  # a crawler that never finishes is red by name, never a timeout that says nothing
+  # ... and its children go with it: a stalled crawler's worker left running is the leak
+  printf '#!/bin/sh\nsleep 30 &\necho $! > "%s/child.pid"\necho "chorus-crawl: pass start"\nwait\n' "$BATS_TEST_TMPDIR" > "$fake"
+  [[ "$(VALIDATE_DEADLINE_4965=2 declared_gap "$fake" "$BATS_TEST_TMPDIR")" == "STALLED:"*"pass start"* ]] || return 1
+  child="$(cat "$BATS_TEST_TMPDIR/child.pid")"; [ -n "$child" ] || { echo "the fake wrote no child pid"; return 1; }
+  sleep 1
+  ! ps -p "$child" >/dev/null || { echo "the stalled crawler's child $child outlived the deadline"; return 1; }
   # control: the measured zero passes
   printf '#!/bin/sh\necho "VALIDATE|tests|Test (declared domain)|tree=9|graph=9|missing=0|stale=0|measured"\n' > "$fake"
   [ -z "$(declared_gap "$fake" "$BATS_TEST_TMPDIR")" ]

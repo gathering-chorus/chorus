@@ -66,7 +66,14 @@ fn mcp_diffs(make: &Value, gen: &Value, out: &mut Vec<String>) {
     for verb in m.keys().chain(g.keys()).collect::<BTreeSet<_>>() {
         match (m.get(verb), g.get(verb)) {
             (Some(a), Some(b)) => {
-                for k in ["name", "route", "delegatesTo"] {
+                // #4915 — names are checked against what the runner serves (#4515: athena-<verb>,
+                // the class in the call), not against athena-make: its ADR-031 binding keeps the
+                // retired per-class names, which no runner serves (an ADR question for Silas)
+                let served = format!("athena-{verb}");
+                if b.get("name").and_then(Value::as_str) != Some(served.as_str()) {
+                    out.push(format!("mcp tool name {verb}: athena-gen {}, the runner serves {served}", b.get("name").and_then(Value::as_str).unwrap_or("(none)")));
+                }
+                for k in ["route", "delegatesTo"] {
                     if a.get(k) != b.get(k) {
                         let s = |v: &Value| v.get(k).and_then(Value::as_str).unwrap_or("(none)").to_string();
                         let label = if k == "name" { format!("mcp tool name {verb}") } else if k == "route" { format!("mcp route {verb}") } else { format!("mcp {k} {verb}") };

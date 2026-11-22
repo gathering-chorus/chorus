@@ -16,12 +16,12 @@ pub fn collection_route(p: &Product, domain: &str, c: &Class) -> String {
     if p.domain_unit { format!("/{domain}/{}", c.segment) } else { format!("/{}/{domain}/{}", p.name, c.segment) }
 }
 
-/// ADR-031 tool names: chorus_<plural>_<verb>, one per route the API serves.
+/// #4515 tool names: the runner serves athena-<verb> with the class named in the call
+/// (ADR-031's chorus_<plural>_<verb> names were retired; nothing serves them), one per route.
 pub fn mcp_json(p: &Product, domain: &str, c: &Class) -> String {
-    let plural = crate::model::pluralize(&c.name).to_lowercase();
     let base = collection_route(p, domain, c);
     let tool = |verb: &str, route: String, extra: &str| {
-        format!("{{ \"name\": \"chorus_{plural}_{verb}\", \"verb\": \"{verb}\", \"route\": \"{}\"{extra} }}", esc(&route))
+        format!("{{ \"name\": \"athena-{verb}\", \"verb\": \"{verb}\", \"route\": \"{}\"{extra} }}", esc(&route))
     };
     let tools = [
         tool("list", format!("GET {base}"), ""),
@@ -29,7 +29,7 @@ pub fn mcp_json(p: &Product, domain: &str, c: &Class) -> String {
         tool("add", format!("POST {base}"), ", \"delegatesTo\": \"the generated door\""),
     ];
     format!(
-        "{{\n  \"class\": \"{}\",\n  \"binding\": \"mcp\",\n  \"convention\": \"ADR-031 chorus_<plural-resource>_<verb>\",\n  \"tools\": [\n    {}\n  ]\n}}\n",
+        "{{\n  \"class\": \"{}\",\n  \"binding\": \"mcp\",\n  \"convention\": \"#4515 athena-<verb>, the class named in the call\",\n  \"tools\": [\n    {}\n  ]\n}}\n",
         esc(&c.name), tools.join(",\n    ")
     )
 }

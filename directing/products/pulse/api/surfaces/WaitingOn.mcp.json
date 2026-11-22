@@ -1,10 +1,10 @@
 {
   "class": "WaitingOn",
   "binding": "mcp",
-  "convention": "ADR-031 chorus_<plural-resource>_<verb>",
+  "convention": "#4515 athena-<verb>, the class named in the call",
   "tools": [
-    { "name": "chorus_waitingons_list", "verb": "list", "route": "GET /pulse/awareness/waitingons" },
-    { "name": "chorus_waitingons_get", "verb": "get", "route": "GET /pulse/awareness/waitingons/:name" },
-    { "name": "chorus_waitingons_add", "verb": "add", "route": "POST /pulse/awareness/waitingons", "delegatesTo": "the generated door" }
+    { "name": "athena-list", "verb": "list", "route": "GET /pulse/awareness/waitingons" },
+    { "name": "athena-get", "verb": "get", "route": "GET /pulse/awareness/waitingons/:name" },
+    { "name": "athena-add", "verb": "add", "route": "POST /pulse/awareness/waitingons", "delegatesTo": "the generated door" }
   ]
 }

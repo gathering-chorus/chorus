@@ -65,5 +65,5 @@ describe('#4984 the messages reader signs in with the relay\'s public address, a
       expect(Date.now() - t0).toBeLessThan(5000);
       expect(r.tags).toEqual([`ws://${HOST}`]);
     } finally { await r.close(); }
-  }, 8000);
+  });   // #4915 — no raised timeout (4416): jest's 5 s default fails a slow refusal by name
 });

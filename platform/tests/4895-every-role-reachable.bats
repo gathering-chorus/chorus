@@ -10,7 +10,9 @@
 PULSE="${PULSE_LIVE_URL:-http://localhost:3475}"  # #4915: a live READ; werk-test cages PULSE_URL (writes) to a dead port
 # prod's messages.db sits in the main checkout (the werk's .git points at it), never in a werk
 MAIN="$(cd "$BATS_TEST_DIRNAME/../.." && cd "$(git rev-parse --git-common-dir)/.." && pwd)"
-DB="${CHORUS_MESSAGES_DB:-$MAIN/platform/pulse/messages.db}"
+# #4915 — a live READ, like PULSE_LIVE_URL: werk-test cages CHORUS_MESSAGES_DB to an empty
+# scratch db for every suite ("no such table: messages" every night), so this never reads it
+DB="${CHORUS_MESSAGES_LIVE_DB:-$MAIN/platform/pulse/messages.db}"
 
 # verdict <role> <where-json> <newest-nudge-status>: GREEN, or RED naming what failed
 verdict() {

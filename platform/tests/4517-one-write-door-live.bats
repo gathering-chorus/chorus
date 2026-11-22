@@ -58,6 +58,10 @@ live_roles() { # roles the door lists as Teammates with a live run — read from
 @test "AC7 the live door refuses before the body and agrees with the Permission rows (this account's role)" {
   in_werk && skip "after-land check: a card's werk has not landed"
   role="${CHORUS_ROLE:-$(id -un | sed 's/^chorus-//')}"
+  # #4915 — the nightly runs as jeffbridwell, a person with no role login: "no login for
+  # jeffbridwell" read red every night from 11-19. Every role's door scope, door-written
+  # classes included, is measured from that account by 4022-role-write-scope-live.bats.
+  case "$(id -un)" in chorus-*) ;; *) [ -n "${CHORUS_ROLE:-}" ] || skip "this account has no role login; 4022-role-write-scope-live measures every role" ;; esac
   d="$BATS_TEST_TMPDIR"
   curl -sf --max-time 20 "$DOOR/v1/security/permissions?limit=1000" > "$d/perms.json"
   python3 "$PLAN" graphs "$DOOR" > "$d/graphs.json"; python3 "$PLAN" collections "$DOOR" > "$d/paths.txt"

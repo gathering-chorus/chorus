@@ -11,6 +11,22 @@
 // the playwright config from the machine's creds file). Nothing here reads,
 // prints, or persists a secret; when the env is empty the caller SKIPS with a
 // reason rather than reporting green on a journey that never ran.
+// #4915 — the loader lives here, so a script outside the playwright runner (the room
+// check, platform/tests/lib/room-rows-4887.cjs) signs in the same way; the playwright
+// config calls it. Env vars already set win over the file. Nothing is printed.
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+function loadFlowCreds() {
+  const credFile = process.env.FLOW_CREDS_FILE || path.join(os.homedir(), '.chorus', 'flow-creds.env');
+  if (!fs.existsSync(credFile)) return;
+  for (const line of fs.readFileSync(credFile, 'utf8').split('\n')) {
+    const m = line.match(/^\s*(?:export\s+)?([A-Z0-9_]+)\s*=\s*(.*)$/);
+    if (!m) continue;
+    if (process.env[m[1]] === undefined) process.env[m[1]] = m[2].trim().replace(/^['"]|['"]$/g, '');
+  }
+}
+loadFlowCreds();
 const USER = process.env.FLOW_USER;
 const PASS = process.env.FLOW_PASS;
 const haveCreds = Boolean(USER && PASS);
@@ -37,7 +53,10 @@ async function looksLikeLogin(page) {
  * looks like.
  */
 async function signIn(page) {
-  await page.waitForLoadState('networkidle');
+  // #4915 — 'load', never 'networkidle': a page with a live stream (the Clearing room, its
+  // socket) is never idle, and the room check timed out here at 30 s. The password field's
+  // own wait below is what says the form is ready.
+  await page.waitForLoadState('load');
   const password = page.locator('input[type="password"]').first();
   await password.waitFor({ state: 'visible' });
   await page.locator('input[type="email"], input[name="email"], input[name="username"]').first().fill(USER);
@@ -45,7 +64,7 @@ async function signIn(page) {
   const loginUrl = page.url();
   await page.locator('button[type="submit"], input[type="submit"]').first().click();
   await page.waitForURL((u) => u.toString() !== loginUrl, { timeout: 30000 });
-  await page.waitForLoadState('networkidle');
+  await page.waitForLoadState('load');
   signedIn.add(page);
 }
 
@@ -66,7 +85,7 @@ async function passConsent(page) {
   const before = page.url();
   await authorize.click();
   await page.waitForURL((u) => u.toString() !== before, { timeout: 30000 });
-  await page.waitForLoadState('networkidle');
+  await page.waitForLoadState('load');   // #4915 — the landing page may hold a live stream
 }
 
 /**
@@ -143,7 +162,7 @@ function signedOutTest() {
 }
 
 module.exports = {
-  haveCreds, looksLikeLogin, signIn, passConsent, gotoSignedIn,
+  loadFlowCreds, haveCreds, looksLikeLogin, signIn, passConsent, gotoSignedIn,
   signedIn, logoutUrl, markSignedOut, signOutIfSignedIn, signOutAll,
   get test() { return signedOutTest(); },
 };

@@ -1657,8 +1657,18 @@ fn api_call(ctx: &Ctx, role: &str, method: &str, url: &str, body: &Value, tag: &
     }
     let hdr_arg = format!("@{}", hdr.display());
     let body_arg = format!("@{}", body_path.display());
-    let answer = door(ctx, &["-s", "-w", "\n%{http_code}", "--max-time", "10", "-X", method, "-H", "Content-Type: application/json", "-H", &hdr_arg, "--data-binary", &body_arg, &url]).unwrap_or_default();
+    // #4915 — a door that never answers (timeout, refused connection) is named: on 11-21
+    // every role's presence write failed live with http="" why="" because curl's error
+    // was thrown away here. -S keeps curl's own error line; -s stays quiet otherwise.
+    let answer = door(ctx, &["-sS", "-w", "\n%{http_code}", "--max-time", "10", "-X", method, "-H", "Content-Type: application/json", "-H", &hdr_arg, "--data-binary", &body_arg, &url]);
     let _ = fs::remove_file(&hdr);
+    let answer = match answer {
+        Ok(a) => a,
+        Err(e) => {
+            let e = e.trim();
+            return ("no-answer".into(), format!("the door gave no answer: {}", if e.is_empty() { "curl failed with no error text" } else { e }));
+        }
+    };
     match answer.trim_end().rsplit_once('\n') { Some((b, c)) => (c.trim().to_string(), b.to_string()), None => (answer.trim().to_string(), String::new()) }
 }
 

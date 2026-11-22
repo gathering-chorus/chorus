@@ -150,3 +150,16 @@ end_of_walk() {
   ! printf '%s\n' "$blk" | grep -qF "logoutUrl(" || return 1
   ! printf '%s\n' "$blk" | grep -qF "test.skip(" || return 1
 }
+
+# #4915 — playwright.config.cjs loads the flow creds through _auth.cjs's one loader: a creds
+# file sets FLOW_USER for the runner; a value already in the env wins; no file sets nothing.
+@test "#4915 playwright.config.cjs loads flow creds through the shared loader" {
+  f="$BATS_TEST_TMPDIR/creds.env"; printf 'FLOW_USER=probe-4915\n' > "$f"
+  run env -u FLOW_USER FLOW_CREDS_FILE="$f" node -e 'require(process.argv[1]); console.log(process.env.FLOW_USER || "unset")' "$ROOT/playwright.config.cjs"
+  [ "$output" = "probe-4915" ] || { echo "config did not load the creds file: $output"; return 1; }
+  run env FLOW_USER=already FLOW_CREDS_FILE="$f" node -e 'require(process.argv[1]); console.log(process.env.FLOW_USER)' "$ROOT/playwright.config.cjs"
+  [ "$output" = "already" ] || { echo "the env value did not win: $output"; return 1; }
+  # NEGATIVE: no creds file, nothing is set
+  run env -u FLOW_USER FLOW_CREDS_FILE="$BATS_TEST_TMPDIR/none.env" node -e 'require(process.argv[1]); console.log(process.env.FLOW_USER || "unset")' "$ROOT/playwright.config.cjs"
+  [ "$output" = "unset" ] || { echo "set with no creds file: $output"; return 1; }
+}

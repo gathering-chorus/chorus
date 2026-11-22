@@ -23,8 +23,10 @@ build_sha() {
 setup() {
   command -v cargo >/dev/null || { echo "cargo not on PATH"; return 1; }
   S="$BATS_TEST_TMPDIR"
-  cp -R "$ROOT/platform/services/chorus-inject" "$S/inject"
-  rm -rf "$S/inject/target"
+  # #4915 — never copy target/: canonical still holds a pre-workspace chorus-inject/target
+  # whose lock files another account owns, and cp -R failed on them every night (11-21).
+  mkdir -p "$S/inject"
+  (cd "$ROOT/platform/services/chorus-inject" && tar -cf - --exclude ./target .) | (cd "$S/inject" && tar -xf -)
   cp "$ROOT/rust-toolchain.toml" "$S/inject/"
 }
 
