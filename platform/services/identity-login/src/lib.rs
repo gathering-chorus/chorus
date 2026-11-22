@@ -1,3 +1,4 @@
+// @domain: identity — placed by chorus-crawl's domain rules (#4538)
 //! #4517 AC5 — the door writes every Session row; this decides which row.
 //!
 //! Jeff, 2026-11-17 19:35: "we have done 10-20 cards trying to fix sessions over time."

@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! #4517 AC3 (Jeff 11-18 00:17) — a PATCH whose body is exactly `{"ownedBy": <caller>}` on a
 //! row with no owner is a claim, not an edit: the graph's Write holder names itself, through
 //! the DAL's `claim-owner` (absent checked in the same update, owner read back).

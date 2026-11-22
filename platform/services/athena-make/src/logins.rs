@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! #4517 AC5 — `POST /identity/logins`: the door writes every Session row.
 //!
 //! A role keeps its own login and calls this once. The door has already verified the

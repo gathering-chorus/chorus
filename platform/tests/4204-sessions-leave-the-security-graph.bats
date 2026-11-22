@@ -16,6 +16,11 @@
 #
 # These tests are worth nothing unless the SECOND half can fail: a run where the
 # new grant is wide would pass test 1 and 2 happily.
+#
+# #4915 — #4517 (landed 11-18) made Session rows the door's alone (writeAuthority
+# "door"): a login asks POST /identity/logins and the door writes the row. Tests 1, 2
+# and 5 still posted and patched Session rows as a role and read red every night from
+# 11-19. They now state today's rule: a role's own Session write is refused by name.
 
 setup() {
   CHORUS="${CHORUS_HOME:-$HOME/CascadeProjects/chorus}"
@@ -45,7 +50,7 @@ post_session() {
   body="$(mktemp)"
   printf '{"name":"%s-4204probe-%s","ownedBy":"principal-%s","tokenId":"t-4204-%s-%s","issuedAt":"%s","expiresAt":"%s","sessionState":"open","hostAccount":"probe"}' \
     "$role" "$$" "$role" "$role" "$$" "$now" "$exp" > "$body"
-  code="$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
+  code="$(curl -s -o "${BATS_TEST_TMPDIR}/session.reply" -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
           -H "@$h" --data-binary "@$body" "$API/v1/identity/sessions")"
   rm -f "$h" "$body"
   # #4332 — remember what this test wrote, so teardown deletes it. Every run
@@ -78,14 +83,19 @@ post_principal() {
   printf '%s' "$code"
 }
 
-@test "wren can record a login" {
-  code="$(post_session wren)"
-  [ "$code" = "201" ]
+# a role's own Session write: 403, and the reply says the door writes Sessions
+refused_by_the_door() { # $1 http code
+  [ "$1" = "403" ] || { echo "a role's Session write got $1, want 403"; return 1; }
+  grep -q "written by the door" "${BATS_TEST_TMPDIR}/session.reply" \
+    || { echo "403 without the door's reason: $(head -c 300 "${BATS_TEST_TMPDIR}/session.reply")"; return 1; }
 }
 
-@test "kade can record a login" {
-  code="$(post_session kade)"
-  [ "$code" = "201" ]
+@test "wren cannot write her own login row; the door writes it" {
+  refused_by_the_door "$(post_session wren)"
+}
+
+@test "kade cannot write his own login row; the door writes it" {
+  refused_by_the_door "$(post_session kade)"
 }
 
 @test "NEGATIVE PROOF — the same grant does NOT let wren write a Principal" {
@@ -118,17 +128,17 @@ patch_session() { # patch_session <caller> <row name> → HTTP code
   printf '%s' "$code"
 }
 
-@test "a role still edits its own login with no identity grant" {
-  [ "$(post_session wren)" = "201" ]
+@test "nor edit one: a role's PATCH of a Session row is refused by the door" {
   code="$(patch_session wren "wren-4204probe-$$")"
-  [ "$code" = "200" ] || { echo "wren editing her own login got $code"; false; }
+  [ "$code" = "403" ] || { echo "wren editing a login row got $code, want 403"; false; }
 }
 
-@test "#4332 no probe Session row this run wrote is left behind" {
-  post_session wren >/dev/null
-  teardown
-  left="$(curl -s --max-time 10 "$API/v1/identity/sessions?limit=5000" | tr -d ' \n' | grep -o "wren-4204probe-$$" | head -1)"
-  [ -z "$left" ]
+@test "#4332 no probe Session row from this suite is in the store" {
+  # 48 probe rows had built up by 2026-09-26; since #4517 no probe can be written,
+  # so any left is an old one that teardown never removed
+  listing="$(curl -sf --max-time 10 "$API/v1/identity/sessions?limit=5000")" || { echo "sessions listing unreadable"; return 1; }
+  left="$(printf '%s' "$listing" | tr -d ' \n' | grep -o '"[a-z-]*-4204probe-[0-9]*"' | head -3)"
+  [ -z "$left" ] || { echo "probe rows left: $left"; return 1; }
 }
 
 @test "NEGATIVE PROOF — no Session row is left in the security graph" {

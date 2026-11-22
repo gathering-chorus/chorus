@@ -33,6 +33,10 @@ setup_file() {
   curl -sf --max-time 20 "$API/v1/security/permissions?limit=1000" > "$d/perms.json"
   python3 "$PLAN" graphs "$API" > "$d/graphs.json"
   python3 "$PLAN" collections "$API" > "$d/paths.txt"
+  # #4915 — a door-written class (writeAuthority "door", #4517) is refused whatever the
+  # rows grant; without this list Session read "rows append, door refused" for every
+  # role, red every night from 11-19. Same list and rule as 4517's live check (#5002 AC6).
+  python3 "$PLAN" door-written "$ROOT"/roles/silas/ontology/*.ttl > "$d/door"
   # #4517 AC2 — one fixed, deliberately invalid create body per class: since AC1 the door
   # judges the body only after authz, so 403 = refuses and 422 = allows, and nothing is
   # ever written. Replaces the full create cycle, which went UNMEASURED wherever no served
@@ -55,7 +59,8 @@ scope_case() { # $1 role
   [ -z "$GATE" ] || skip "$GATE"
   [ -s "$BATS_FILE_TMPDIR/graphs.json" ] && [ -s "$BATS_FILE_TMPDIR/perms.json" ] \
     || { echo "no Permission rows or class list from $API — scope not measurable"; return 1; }
-  run python3 "$PLAN" verdict "$BATS_FILE_TMPDIR/$1.plan" "$BATS_FILE_TMPDIR/$1.out"
+  grep -qx Session "$BATS_FILE_TMPDIR/door" || { echo "the shapes name no door-written Session class — the door-written list is unreadable"; return 1; }
+  run python3 "$PLAN" verdict "$BATS_FILE_TMPDIR/$1.plan" "$BATS_FILE_TMPDIR/$1.out" "$BATS_FILE_TMPDIR/door"
   echo "$output"
   [ "$status" -eq 0 ]
 }

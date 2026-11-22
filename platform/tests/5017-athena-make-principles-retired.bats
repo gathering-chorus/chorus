@@ -16,10 +16,12 @@ REPO="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
 
 # The card's athena-make: ATHENA_MAKE_BIN, else the workspace build (built once if
 # missing; a failed build fails the test, never skips it).
+# #4915 — the workspace build (#4555), never $REPO/target/release: canonical still holds a
+# pre-workspace athena-make there, which serves /loom/principles (red every night from 11-21)
+. "$BATS_TEST_DIRNAME/../scripts/lib/workspace-bin.sh"
 card_make() {
-  local c="${ATHENA_MAKE_BIN:-${CARGO_TARGET_DIR:-$REPO/target}/release/athena-make}"
-  [ -x "$c" ] || (cd "$REPO" && cargo build --release --quiet -p athena-make) >&2 || return 1
-  [ -x "$c" ] && echo "$c"
+  if [ -n "${ATHENA_MAKE_BIN:-}" ]; then [ -x "$ATHENA_MAKE_BIN" ] && echo "$ATHENA_MAKE_BIN"; return; fi
+  workspace_bin_built "$REPO" athena-make athena-make release
 }
 
 free_port() { python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1])'; }

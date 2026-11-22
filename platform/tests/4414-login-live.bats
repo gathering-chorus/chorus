@@ -11,7 +11,12 @@
 # the role in its pane. After the land, every live registry entry runs under tmux
 # (judged by the process tree). Asserts are simple commands, never [[ ]] (bash 3.2).
 
-REG="${CHORUS_SESSIONS_DIR:-${CHORUS_STATE_DIR:-$HOME/.chorus}/sessions}"
+# #4915 — a live READ: werk-test cages CHORUS_SESSIONS_DIR to an empty scratch dir for every
+# suite ("0 of 0 entries" every night), so this reads the machine's registry by its own name.
+# It sits in the main account's ~/.chorus (role accounts register there too): the home of
+# whoever owns the main checkout.
+MAIN_HOME="$(eval echo "~$(stat -f %Su "$(cd "$BATS_TEST_DIRNAME/../.." && cd "$(git rev-parse --git-common-dir)/.." && pwd)")")"
+REG="${CHORUS_SESSIONS_LIVE_DIR:-$MAIN_HOME/.chorus/sessions}"
 
 # reads registry entries `<role>-<pid>.json` from the dir in $1 and, for each, the process
 # chain from $2 (lines "pid ppid comm", i.e. `ps -Ao pid=,ppid=,comm=`); exit 0 when there is

@@ -74,9 +74,6 @@ Given('{word} is logged in', STEP, function (role: string) {
   sh(`run "$SCRIPT" login ${role}; test "$(cat "$T/status")" -eq 0; test -f "$T/identity/${role}/session.row.json"`);
 });
 
-Given("wren's login token has been renewed", STEP, function () {
-  sh('mk_token wren $(( $(date +%s) + 3000 )); rm -f "$T/identity/wren/seen.at"');
-});
 
 Given("wren's presence was checked more than ten minutes ago and the focus has not changed", STEP, function () {
   sh(`python3 - "$T/identity/wren/presence.row.json" <<'PY'
@@ -104,6 +101,11 @@ chmod +x "$T/bin/ps3"; echo 'export AWAKE_PS="$T/bin/ps3"' > "$T/env.extra"`);
 
 Given('the identity service gives no token', STEP, function () {
   sh('touch "$T/token-fail"');
+});
+
+// #4915 — the door never answers a write: curl fails the way a timeout does, no HTTP code
+Given('the door gives no answer to the next row write', STEP, function () {
+  sh('touch "$T/write-door-down"; rm -f "$T/identity/wren/seen.at"');
 });
 
 Given('the store refuses the next row write, naming a reason and a token', STEP, function () {
@@ -139,6 +141,7 @@ import json,sys,os
 p=sys.argv[1]
 if os.path.exists(p): d=json.load(open(p)); d["lastSeenAt"]="2026-01-01T00:00:00Z"; json.dump(d,open(p,"w"))
 PY`);
+  sh('ls "$T/bodies" | wc -l | tr -d " " > "$T/bodies-before-turn"');
   seen('wren', { session_id: 'conv-turn', prompt: '<task-notification>x</task-notification>' });
 });
 
@@ -224,18 +227,15 @@ Then('nobody is recorded as having spoken', STEP, function () {
 
 Then("wren's first line to Jeff names where wren left off, before Jeff types anything", STEP, function () { return waiting(4378); });
 
-Then("the same session row's last-seen time moves to the turn's time", STEP, function () {
-  // #4944 — a PATCH of the fields that moved; the route names the row
-  sh('sess=$(row_name wren session); s=$(body PATCH "identity_sessions_$sess"); has "$s" \'"lastSeenAt":"20\'');
-});
-
-Then('no second session row is written', STEP, function () {
-  sh(`test "$(bodies | grep -c '^POST-identity_sessions.json$')" -eq 1`);
-});
-
-Then("the turn's session write carries no expiry", STEP, function () {
-  // not vacuous: the turn did write the session (lastSeenAt), and that write moves no expiry
-  sh('s=$(body PATCH "identity_sessions_$(row_name wren session)"); has "$s" \'"lastSeenAt":"20\'; test -z "$(printf \'%s\' "$s" | grep -F expiresAt || true)"');
+// #4915 — #4517 AC6: a turn writes no Session row (POST, PUT or PATCH); only the door does.
+// Not vacuous: the turn's hook ran and was not refused, and the login before it did write
+// its Session row through the door, so a turn that wrote one would show here.
+Then('the turn writes no Session row', STEP, function () {
+  sh(`test "$(cat "$T/turn.status")" -eq 0
+test "$(bodies | grep -c '^POST-identity_sessions.json$')" -ge 1
+before=$(cat "$T/bodies-before-turn")
+after=$(ls "$T/bodies" | tail -n +$((before + 1)) | grep -c 'identity_sessions' || true)
+test "$after" -eq 0 || { ls "$T/bodies" | tail -n +$((before + 1)); exit 1; }`);
 });
 
 Then("the presence's checked time moves to now", STEP, function () {
@@ -316,8 +316,12 @@ Then("wren's establish says it has no credential", STEP, function () {
   sh(`grep -qF "no credential for 'wren'" "$T/establish.log"`);
 });
 
-Then("the spine says the session row failed, with the store's reason", STEP, function () {
-  sh('grep -q "session.row.failed wren kind=session" "$T/spine.log"; grep -q "why=double-prefix: role-wren" "$T/spine.log"');
+Then("the spine says the presence row failed, with the store's reason", STEP, function () {
+  sh('grep -q "session.row.failed wren kind=presence" "$T/spine.log"; grep -q "why=double-prefix: role-wren" "$T/spine.log"');
+});
+
+Then('the spine says the presence row failed because the door gave no answer', STEP, function () {
+  sh('grep "session.row.failed wren kind=presence" "$T/spine.log" | grep -q "http=no-answer .*why=the door gave no answer: curl: (28)"');
 });
 
 Then('the token is not on the spine', STEP, function () {

@@ -6,7 +6,12 @@
 # Resolve ROOT from this script's own location (skills/gemba/) so the test verifies
 # the tree it lives in — the werk pre-merge, canonical after — never a hardcoded path
 # that silently tests the wrong checkout (eliminate-runtime-dep, DEC).
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# #4915 — the physical folder (pwd -P): .agents/skills is a symlink to skills/, so the
+# script is reached two levels or three deep; skills/gemba's real path is always two.
+ROOT="$(cd "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/../.." && pwd)"
+# a wrong ROOT made every "removed" check pass by itself: fail loudly instead
+[ -f "$ROOT/platform/services/pulse-gather/Cargo.toml" ] || [ -d "$ROOT/platform/services" ] \
+  || { echo "ROOT $ROOT is not the repo root: nothing here would be measured"; exit 1; }
 PASS=0
 FAIL=0
 

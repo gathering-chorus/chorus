@@ -29,7 +29,8 @@ PATTERNS = [
 
 def offenders(root):
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in ('node_modules', 'dist', 'target', '.git')]
+        # #4915 — dist.prev is the deploy's copy of the previous build (pulse keeps one): build output, like dist
+        dirnames[:] = [d for d in dirnames if d not in ('node_modules', 'dist', 'dist.prev', 'target', '.git')]
         for name in filenames:
             if not TEST_FILE.search(name):
                 continue

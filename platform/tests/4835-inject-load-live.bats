@@ -39,7 +39,8 @@ setup() {
   [ -S "$sock" ] || skip "UNMEASURED: no hooks daemon socket on this box"
   # #4839 AC3 — measured at the box's real load (it sat near 65 all day, so a
   # quiet-box gate never ran: hollow, Silas 10-31 12:28). The load is printed with the number.
-  load=$(sysctl -n vm.loadavg | awk '{print $2}')
+  # #4915 — absolute: the pipeline's PATH has no /usr/sbin ("sysctl: command not found")
+  load=$(/usr/sbin/sysctl -n vm.loadavg | awk '{print $2}')
   out="$BATS_TEST_TMPDIR/times"
   t0=$(python3 -c 'import time; print(int(time.time()*1e9))')
   for i in $(seq 1 40); do

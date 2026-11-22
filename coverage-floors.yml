@@ -59,6 +59,8 @@ rust:
   platform/services/borg-prove: 80           # measured 83.81%
   platform/services/chorus-runner: 80        # measured 66.24%
   platform/services/chorus-jeff-signer: 80   # measured 79.01%
+  # #4915 — chorus-oidc shipped with no floor (ratchet 17 -> 18, red 11-21); the 80% policy
+  platform/services/chorus-oidc: 80   # measured 92.81% lines, 2026-11-21 19:58
   platform/services/convergence-land: 80     # measured 53.83%
   platform/services/chorus-go: 80            # measured 54.92%
 

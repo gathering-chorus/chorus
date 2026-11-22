@@ -17,6 +17,7 @@
 const [, , pw, url, ...need] = process.argv;
 const { chromium } = require(pw);
 const { contentHash } = require('../../chorus-sdk/reply/hash');
+const auth = require('../../../proving/flows/_auth.cjs');
 const LOKI = process.env.LOKI_URL || 'http://localhost:3102';
 
 async function latestEmitted(roles) {
@@ -33,11 +34,16 @@ async function latestEmitted(roles) {
   return { role: ev.role, hash: ev.hash, at: ev.timestamp };
 }
 
-async function roomRecord() {
+// #4915 — the public room needs a sign-in (401 "not-signed-in" since #4580/#5015): read
+// its record from the signed-in page, as Jeff's browser does, never anonymously.
+async function roomRecord(page) {
   if (process.env.ROOM_RECORD_FILE) return JSON.parse(require('fs').readFileSync(process.env.ROOM_RECORD_FILE, 'utf8'));
-  const r = await fetch(new URL('api/messages', url), { signal: AbortSignal.timeout(10000) });
-  if (!r.ok) throw new Error(`room record ${r.status}`);
-  return r.json();
+  const got = await page.evaluate(async () => {
+    const r = await fetch('api/messages', { signal: AbortSignal.timeout(10000) });
+    return { ok: r.ok, status: r.status, body: r.ok ? await r.json() : null };
+  });
+  if (!got.ok) throw new Error(`room record ${got.status}`);
+  return got.body;
 }
 
 (async () => {
@@ -47,22 +53,26 @@ async function roomRecord() {
   } else {
     for (const n of need) want.push(await latestEmitted(n.split('|')));
   }
-  const record = await roomRecord();
-  for (const w of want) {
-    const row = record.find((m) => m.from === w.role && contentHash(m.text || '') === w.hash);
-    w.id = row ? row.id : null;
-    w.ts = row ? row.ts : (w.at || null);
-  }
   const b = await chromium.launch({
     executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     headless: true,
     args: ['--use-mock-keychain', '--password-store=basic'],
   });
+  const p = await b.newPage();
   try {
-    const p = await b.newPage();
     const errs = [];
     p.on('pageerror', (e) => errs.push(e.message));
+    if (!process.env.ROOM_RECORD_FILE) {
+      if (!auth.haveCreds) throw new Error('no flow creds on this account (~/.chorus/flow-creds.env): the room needs a sign-in');
+      await auth.gotoSignedIn(p, url);
+    }
     await p.goto(url, { waitUntil: 'load', timeout: 20000 });
+    const record = await roomRecord(p);
+    for (const w of want) {
+      const row = record.find((m) => m.from === w.role && contentHash(m.text || '') === w.hash);
+      w.id = row ? row.id : null;
+      w.ts = row ? row.ts : (w.at || null);
+    }
     await p.waitForFunction('document.querySelectorAll("#messages-stream [data-from]").length > 0', { timeout: 20000 });
     const rows = await p.$$eval('#messages-stream [data-from]', (els) => els.map((e) => ({ id: e.id, from: e.dataset.from, ts: e.dataset.ts || '' })));
     const seen = new Set(rows.map((r) => `${r.from}:${r.id}`));
@@ -74,6 +84,8 @@ async function roomRecord() {
     console.log(JSON.stringify({ url, rows: rows.length, want, missing, scrolled, errs }));
     process.exit(missing.length || errs.length ? 1 : scrolled.length ? 3 : 0);
   } finally {
+    // #5026 — a probe that signed in signs out, or its Session row stays open
+    await auth.signOutIfSignedIn(p, new URL(url).origin).catch((e) => console.error(`sign-out failed: ${e.message}`));
     await b.close();
   }
 })().catch((e) => { console.error(`could not measure: ${e.message}`); process.exit(2); });
