@@ -981,7 +981,7 @@ fn person_signed_in(ctx: &Ctx) -> Result<String, String> {
     for who in rows::signed_in_owners(body, &iso_utc(now_ms() as u64 / 1000)) {
         let purl = format!("{}/v1/identity/principals/{}", ctx.api, who);
         let pa = door(ctx, &["-s", "-w", "\n%{http_code}", "--max-time", "5", &purl]).unwrap_or_default();
-        if pa.contains("\"principalKind\":\"person\"") { return Ok(format!("{}.browser", who)); }
+        if rows::is_person_reply(&pa) { return Ok(format!("{}.browser", who)); }
     }
     // #4412 — Jeff 2026-10-01: "both use cases are valid". A person typing in
     // their own Mac account is present too: not an agent session, and the OS
