@@ -1,10 +1,10 @@
 {
   "class": "Reading",
   "binding": "mcp",
-  "convention": "ADR-031 chorus_<plural-resource>_<verb>",
+  "convention": "#4515 athena-<verb>, the class named in the call",
   "tools": [
-    { "name": "chorus_readings_list", "verb": "list", "route": "GET /pulse/awareness/readings" },
-    { "name": "chorus_readings_get", "verb": "get", "route": "GET /pulse/awareness/readings/:name" },
-    { "name": "chorus_readings_add", "verb": "add", "route": "POST /pulse/awareness/readings", "delegatesTo": "the generated door" }
+    { "name": "athena-list", "verb": "list", "route": "GET /pulse/awareness/readings" },
+    { "name": "athena-get", "verb": "get", "route": "GET /pulse/awareness/readings/:name" },
+    { "name": "athena-add", "verb": "add", "route": "POST /pulse/awareness/readings", "delegatesTo": "the generated door" }
   ]
 }

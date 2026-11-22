@@ -59,15 +59,18 @@ async function roomRecord(page) {
     args: ['--use-mock-keychain', '--password-store=basic'],
   });
   const p = await b.newPage();
+  let code = 2;
   try {
     const errs = [];
-    p.on('pageerror', (e) => errs.push(e.message));
     if (!process.env.ROOM_RECORD_FILE) {
       // no creds on this account (a role's card run): unmeasured (3), the _auth.cjs rule —
       // never a pass and never a red; the nightly runs as the account that holds them
       if (!auth.haveCreds) { console.log('unmeasured: no flow creds on this account (~/.chorus/flow-creds.env); the room needs a sign-in'); await b.close(); process.exit(3); }
       await auth.gotoSignedIn(p, url);
     }
+    // #4915 review — listen only on the room: an error on the sign-in or consent page is
+    // not the room's
+    p.on('pageerror', (e) => errs.push(e.message));
     await p.goto(url, { waitUntil: 'load', timeout: 20000 });
     const record = await roomRecord(p);
     for (const w of want) {
@@ -84,10 +87,12 @@ async function roomRecord(page) {
     const scrolled = absent.filter((w) => w.ts && Date.parse(w.ts) < oldest);
     const missing = absent.filter((w) => !scrolled.includes(w));
     console.log(JSON.stringify({ url, rows: rows.length, want, missing, scrolled, errs }));
-    process.exit(missing.length || errs.length ? 1 : scrolled.length ? 3 : 0);
+    code = missing.length || errs.length ? 1 : scrolled.length ? 3 : 0;
   } finally {
-    // #5026 — a probe that signed in signs out, or its Session row stays open
+    // #5026 — a probe that signed in signs out, or its Session row stays open. The verdict
+    // exits AFTER this (#4915 review: an exit inside the try skipped the sign-out)
     await auth.signOutIfSignedIn(p, new URL(url).origin).catch((e) => console.error(`sign-out failed: ${e.message}`));
     await b.close();
   }
+  process.exit(code);
 })().catch((e) => { console.error(`could not measure: ${e.message}`); process.exit(2); });
