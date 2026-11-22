@@ -2708,6 +2708,13 @@ fn run_cargo_sel(werk: &str, name: &str, quarantined: &[&str], exclude_bins: &[&
             }
             // #4063 — full nextest paths: the module chain resolves same-named fns
             let cases = werk_test::parse_nextest_case_paths(&text);
+            // #4925 — a build the box refused (permission on the target dir) ran nothing:
+            // UNMEASURED with its reason, never "fail, 0 pass, 0 fail"
+            if !ok && cases.is_empty() {
+                if let Some(why) = werk_test::cargo_box_refusal(&text) {
+                    return (werk_test::lane_unmeasured(why.clone()), Vec::new(), why);
+                }
+            }
             // #4454 — times and failure reasons, by the bare name a case is stored under
             note_case_times(werk_test::nextest_case_times(&text).into_iter()
                 .map(|(p, ms)| (werk_test::nextest_bare_name(&p).to_string(), ms)).collect());

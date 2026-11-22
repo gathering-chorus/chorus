@@ -104,8 +104,39 @@ smoke_one() {
   ! reply_proves_the_call "I ran it, it printed the token" "smoke-x-1" || return 1
 }
 
+# #4925 (Wren's call b) — off a role account (the nightly runs as jeffbridwell) the negative
+# proof below is re-run AS chorus-kade, the way the demo's reviews hop (werk-demo role_hop):
+# `sudo -n -u chorus-kade -H bash -c …`. It skipped every night before. A refused hop is
+# RED with its reason, never a skip. SMOKE_SUDO is the negative proof's seam.
+NEG_CASE="negative proof: a role whose settings block its tool call turns the smoke red"
+hop_and_judge() {
+  local q="'" inner
+  # a clean env: the outer bats' BATS_* variables broke the inner one (run 3: "bats_readlinkf:
+  # command not found"), so only what the case needs crosses the hop
+  # bats puts its own libexec first on PATH: there `bats` is the inner script, not the
+  # wrapper that defines bats_readlinkf (run 4: "bats_readlinkf: command not found")
+  local path; path="$(printf '%s' "$PATH" | tr ':' '\n' | grep -v 'libexec/bats-core' | paste -sd: -)"
+  inner="cd ${q}$ROOT${q} && exec env -i HOME=/Users/chorus-kade USER=chorus-kade PATH=${q}$path${q} CHORUS_HEADLESS=1 CHORUS_ROLE=kade CHORUS_TOOL_CLAUDE=${q}${CHORUS_TOOL_CLAUDE:-}${q} GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0=${q}$ROOT${q} bats -f ${q}$NEG_CASE${q} ${q}$BATS_TEST_FILENAME${q}"
+  local out rc
+  rc=0; out="$("${SMOKE_SUDO:-sudo}" -n -u chorus-kade -H bash -c "$inner" 2>&1)" || rc=$?
+  echo "$out"
+  [ "$rc" -eq 0 ] || { echo "RED: the hop to chorus-kade failed (exit $rc) — the case did not run as a role"; return 1; }
+  [[ "$out" == *"ok 1 $NEG_CASE"* && "$out" != *"# skip"* ]] || { echo "RED: the hop ran but the case did not pass as chorus-kade"; return 1; }
+}
+
+@test "NEGATIVE PROOF (#4925): a refused hop to chorus-kade is red with its reason, never a skip" {
+  printf '#!/bin/sh\necho "sudo: a password is required" >&2\nexit 1\n' > "$BATS_TEST_TMPDIR/sudo"; chmod +x "$BATS_TEST_TMPDIR/sudo"
+  # as the case calls it, with errexit on (run 3: under `run` this proof hid a lost reason)
+  out="$(SMOKE_SUDO="$BATS_TEST_TMPDIR/sudo" bash -ec "$(declare -f hop_and_judge); ROOT='$ROOT' NEG_CASE='x' BATS_TEST_FILENAME=f hop_and_judge" 2>&1)" && { echo "a refused hop passed: $out"; return 1; }
+  output="$out"
+  [[ "$output" == *"a password is required"* && "$output" == *"RED: the hop to chorus-kade failed"* ]] || { echo "$output"; return 1; }
+}
+
 @test "negative proof: a role whose settings block its tool call turns the smoke red" {
-  session_cases_or_skip
+  if ! is_role_account "$(id -un)"; then
+    hop_and_judge
+    return
+  fi
   # a copy of kade's session folder whose settings add a hook that refuses every tool
   d="$BATS_TEST_TMPDIR/kade"; cp -R "$ROOT/roles/kade" "$d"
   python3 - "$d/.claude/settings.json" <<'PY'

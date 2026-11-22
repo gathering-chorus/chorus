@@ -29,25 +29,21 @@ bats_require_minimum_version 1.5.0
 #   CHORUS_PRINCIPLES_FIXTURE_FILE, CHORUS_SESSION_ROWS_FIXTURE_DIR
 #                    fixtures/4336/session-start/
 #
-# Three properties live ONLY in those hardcoded /tmp paths (the stale-cache
-# rebuild, the .done marker, crash recovery from the checkpoint). Observing them
-# means writing a live Silas path, so they run only with RUN_LIVE_INTEGRATION=true
-# and snapshot/restore every live file into $BATS_TEST_TMPDIR.
+# #4925 (Silas) — the three properties that lived only in hardcoded /tmp paths (the
+# stale-cache rebuild, the .done marker, crash recovery from the checkpoint) now live in
+# this test's own world: CHORUS_SESSION_INIT_DIR and CHORUS_SESSION_TMP move the markers,
+# the cache and (since #4925) the checkpoint. They were gated on RUN_LIVE_INTEGRATION and
+# skipped every night. The sandbox still denies every write outside $T: the proof that
+# no live /tmp path is touched.
 
-# #3904 — resolve the INSTALLED shim (#2734: ~/.chorus/bin is the deploy
-# artifact; target/release is a build artifact that may be stale or absent).
-SHIM="$(command -v chorus-hook-shim || true)"
-[ -x "$SHIM" ] || SHIM="$HOME/.chorus/bin/chorus-hook-shim"
-[ -x "$SHIM" ] || SHIM="${CHORUS_ROOT}/target/$(id -un)/release/chorus-hook-shim"
+# #4925 — the shim of the TREE UNDER TEST first (#4885), then the installed one (#3904,
+# #2734): the crash case needs this round's checkpoint seam before the land deploys it.
+SHIM=""
+for c in "${CHORUS_ROOT}/target/$(id -un)/release/chorus-hook-shim" "${CHORUS_ROOT}/target/$(id -un)/debug/chorus-hook-shim" \
+         "$(command -v chorus-hook-shim || true)" "$HOME/.chorus/bin/chorus-hook-shim"; do
+  [ -x "$c" ] && { SHIM="$c"; break; }
+done
 FIXTURES="${CHORUS_ROOT}/platform/tests/fixtures/4336/session-start"
-LIVE_CACHE="/tmp/session-context-silas.md"
-LIVE_INIT_DIR="/tmp/claude-session-init"
-LIVE_CHECKPOINT="/tmp/role-checkpoint-silas.json"
-LIVE_FILES=("$LIVE_INIT_DIR/silas.pending" "$LIVE_INIT_DIR/silas.done" "$LIVE_CACHE" "/tmp/pulse-latest.json" "$LIVE_CHECKPOINT")
-
-live_gate() {
-  [ "${RUN_LIVE_INTEGRATION:-}" = "true" ] || skip "UNMEASURED — $1 lives only in a hardcoded /tmp path a live Silas session uses; set RUN_LIVE_INTEGRATION=true (#4336)"
-}
 
 setup() {
   [ -x "$SHIM" ] || skip "UNMEASURED — chorus-hook-shim is not installed or built (#4336)"
@@ -55,31 +51,16 @@ setup() {
   T="$(cd "$BATS_TEST_TMPDIR" && pwd -P)"
   # #3608 — the shim honors CHORUS_SESSIONS_DIR; never the live registry.
   export CHORUS_SESSIONS_DIR="$T/sessions"
-  mkdir -p "$T/sessions" "$T/home" "$T/root/roles/silas" "$T/root/platform/scripts" "$T/snap"
+  mkdir -p "$T/sessions" "$T/home" "$T/root/roles/silas" "$T/root/platform/scripts"
   # claudemd-gen stub: records that regen ran, exits $REGEN_EXIT (default 0)
   printf '#!/bin/bash\necho regen-ran >> "%s/regen.log"\nexit ${REGEN_EXIT:-0}\n' "$T" > "$T/root/platform/scripts/claudemd-gen"
   chmod +x "$T/root/platform/scripts/claudemd-gen"
   echo "NEXT-SESSION-FIXTURE-4336 pick up the card" > "$T/root/roles/silas/next-session.md"
-  # snapshot every live path, so a live-gated case can put back exactly what was there
-  local i=0 f
-  for f in "${LIVE_FILES[@]}"; do
-    if [ -e "$f" ]; then cp -p "$f" "$T/snap/$i"; fi
-    i=$((i + 1))
-  done
-}
-
-teardown() {
-  # Only a live-gated case writes a live path; only then is anything put back.
-  [ -n "${LIVE_TOUCHED:-}" ] || return 0
-  local i=0 f
-  for f in "${LIVE_FILES[@]}"; do
-    if [ -e "$T/snap/$i" ]; then
-      cmp -s "$T/snap/$i" "$f" 2>/dev/null || cp -p "$T/snap/$i" "$f"
-    else
-      rm -f "$f"
-    fi
-    i=$((i + 1))
-  done
+  # #4925 — the session's own /tmp world, inside $T
+  INIT_DIR="$T/init"; STMP="$T/stmp"; mkdir -p "$INIT_DIR" "$STMP"
+  LIVE_CACHE="$STMP/session-context-silas.md"
+  LIVE_INIT_DIR="$INIT_DIR"
+  LIVE_CHECKPOINT="$STMP/role-checkpoint-silas.json"
 }
 
 # #4022 — CHORUS_FREE_DISK_BYTES is the #4497 seam: without it every boot sent
@@ -89,8 +70,8 @@ teardown() {
 #   READ_CACHE=1       let the shim read the live cache (stale-cache case)
 boot() {
   local allow="${1:-}" deny_read=""
-  [ -n "${READ_CACHE:-}" ] || deny_read="$deny_read (literal \"/private$LIVE_CACHE\")"
-  [ -n "${READ_CHECKPOINT:-}" ] || deny_read="$deny_read (literal \"/private$LIVE_CHECKPOINT\")"
+  [ -n "${READ_CACHE:-}" ] || deny_read="$deny_read (literal \"$LIVE_CACHE\")"
+  [ -n "${READ_CHECKPOINT:-}" ] || deny_read="$deny_read (literal \"$LIVE_CHECKPOINT\")"
   local profile="(version 1)(allow default)(deny network*)
 (deny file-write* (subpath \"/\"))
 (allow file-write* (subpath \"$T\") (literal \"/dev/null\") (literal \"/dev/tty\") (regex #\"^/dev/fd/\") $allow)"
@@ -101,6 +82,7 @@ boot() {
     CHORUS_PULSE_PATH="$T/pulse.json" CHORUS_PRINCIPLES_FIXTURE_FILE="$FIXTURES/principles.json" \
     CHORUS_PRINCIPLES_CACHE_FILE="$T/principles-cache.json" CHORUS_SESSION_ROWS_FIXTURE_DIR="$FIXTURES" \
     TMPDIR="$T" REGEN_EXIT="${REGEN_EXIT:-0}" CHORUS_FREE_DISK_BYTES=200000000000 \
+    CHORUS_SESSION_INIT_DIR="${SESSION_INIT_OVERRIDE-$INIT_DIR}" CHORUS_SESSION_TMP="${SESSION_TMP_OVERRIDE-$STMP}" \
     sandbox-exec -p "$profile" "$SHIM" session-start silas
 }
 
@@ -145,28 +127,24 @@ assert 'additionalContext' in d['hookSpecificOutput']
 # --- AC: Context cache is rebuilt when stale ---
 
 @test "session-start rebuilds stale context cache" {
-  live_gate "the context cache"
-  LIVE_TOUCHED=1
   # A cache older than 10 minutes must be rebuilt at boot...
   echo "old" > "$LIVE_CACHE"
   touch -t 202601010000 "$LIVE_CACHE"
   before=$(stat -f %m "$LIVE_CACHE")
-  READ_CACHE=1 boot "(literal \"/private$LIVE_CACHE\")"
+  READ_CACHE=1 boot
   [ "$status" -eq 0 ]
   [[ "$stderr" == *"Context cached: $LIVE_CACHE"* ]] || return 1
   [ "$(stat -f %m "$LIVE_CACHE")" -gt "$before" ]
   # ...and a fresh, non-empty one is not.
-  READ_CACHE=1 boot "(literal \"/private$LIVE_CACHE\")"
+  READ_CACHE=1 boot
   [[ "$stderr" != *"Context cached:"* ]] || return 1
 }
 
 # --- AC: Protocol-pass writes .done marker (end of orchestration) ---
 
 @test "session-start writes .done on successful protocol check" {
-  live_gate "the .done boot marker"
-  LIVE_TOUCHED=1
   rm -f "$LIVE_INIT_DIR/silas.pending" "$LIVE_INIT_DIR/silas.done"
-  boot "(subpath \"/private$LIVE_INIT_DIR\")"
+  boot
   [ "$status" -eq 0 ]
   [ -f "$LIVE_INIT_DIR/silas.done" ]
 }
@@ -195,8 +173,6 @@ assert 'additionalContext' in d['hookSpecificOutput']
 # --- AC: Crash recovery path is wired ---
 
 @test "session-start branches on crash-recovery output" {
-  live_gate "crash recovery (reads /tmp/role-checkpoint-silas.json)"
-  LIVE_TOUCHED=1
   # A recent checkpoint and no current next-session.md → the boot resumes.
   rm -f "$T/root/roles/silas/next-session.md"
   printf '{"role":"silas","timestamp":"fixture-4336","state":"active","card_id":"4336","card_title":"fixture card","recent_files":[]}\n' > "$LIVE_CHECKPOINT"
@@ -284,4 +260,13 @@ crate_under_test() {
   [[ "$output" == *"session_start_writes_done: test"* ]] || return 1
   [[ "$output" == *"session_start_regenerates_pulse: test"* ]] || return 1
   [[ "$output" == *"boot_requires_verify_before_asserting: test"* ]] || return 1
+}
+
+@test "NEGATIVE PROOF (#4925): with no CHORUS_SESSION_TMP the cache write leaves the sandbox and is denied" {
+  echo "old" > "$LIVE_CACHE"; touch -t 202601010000 "$LIVE_CACHE"
+  SESSION_TMP_OVERRIDE="" READ_CACHE=1 boot
+  # the shim falls back to the live /tmp, outside $T: the sandbox denies the write, so this
+  # world's cache is never rebuilt — the seam, not luck, is what keeps the cases off /tmp
+  [[ "$stderr" != *"Context cached: $LIVE_CACHE"* ]] || { echo "$stderr"; return 1; }
+  [ "$(cat "$LIVE_CACHE")" = "old" ] || return 1
 }

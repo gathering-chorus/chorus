@@ -35,18 +35,22 @@ fn boot_with(home: std::path::PathBuf, java: String) -> Result<(std::process::Ch
     let err_path = dir.join("fuseki.err");
     let err_file = std::fs::File::create(&err_path).map_err(|e| format!("cannot open {}: {e}", err_path.display()))?;
     let jar_s = jar.to_str().ok_or("jar path is not utf-8")?.to_string();
-    let child = Command::new(&java).current_dir(&dir).env("FUSEKI_BASE", &dir).env("FUSEKI_HOME", &home)
+    let mut child = Command::new(&java).current_dir(&dir).env("FUSEKI_BASE", &dir).env("FUSEKI_HOME", &home)
         .args(["-Xmx256m", "-cp", &jar_s, "org.apache.jena.fuseki.cmd.FusekiCmd", "--config=config.ttl", &format!("--port={port}")])
         .stdout(std::process::Stdio::null()).stderr(err_file).spawn().map_err(|e| format!("spawn error {e}"))?;
-    let tries = 240;
-    for _ in 0..tries {
+    // #4925 round 2 (review) — a real 120 s deadline (each ping may take its own second),
+    // and a Fuseki that never answered is stopped, not left running after the test
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+    while std::time::Instant::now() < deadline {
         if Command::new("curl").args(["-sf", "-o", "/dev/null", "--max-time", "1", &format!("http://127.0.0.1:{port}/$/ping")]).status().is_ok_and(|s| s.success()) {
             return Ok((child, port, dir));
         }
         std::thread::sleep(std::time::Duration::from_millis(500));
     }
+    let _ = child.kill();
+    let _ = child.wait();
     let tail: String = std::fs::read_to_string(&err_path).unwrap_or_default().lines().rev().take(5).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join(" | ");
-    Err(format!("no ping on :{port} after {} s; last fuseki stderr: {}", tries / 2, if tail.is_empty() { "(empty)" } else { &tail }))
+    Err(format!("no ping on :{port} after 120 s; last fuseki stderr: {}", if tail.is_empty() { "(empty)" } else { &tail }))
 }
 
 /// #4925 NEGATIVE PROOF (Silas): a missing java names java, never "no scratch Fuseki".

@@ -72,46 +72,52 @@ def num(counts, key, word):
 
 LOKI = os.environ.get("LOKI_URL", "http://localhost:3102")
 
-def running_block(events):
-    """#4925 — a running run's live block from its case events, pure. `events` are the
-    event dicts (event, file, case, reason). Deduped by (file, case): the last word wins."""
-    last = {}
-    for e in events:
-        ev = e.get("event", "")
-        if not ev.startswith("test.case.") or ev == "test.case.started":
-            continue
-        last[(e.get("file", ""), e.get("case", ""))] = (ev.rsplit(".", 1)[-1], e.get("reason", ""))
-    n = {k: sum(1 for v in last.values() if v[0] == k) for k in ("passed", "failed", "skipped")}
+def running_block(counts, failed):
+    """#4925 — a running run's live block, pure. `counts` is {"passed": n, "failed": n,
+    "skipped": n} (Loki's metric count, so a 14,000-case run is counted whole, never
+    capped at a page); `failed` the failed-case event dicts (file, case, reason). A case
+    named twice (a retry) is shown once."""
+    n = {k: int(counts.get(k, 0)) for k in ("passed", "failed", "skipped")}
     out = [f"          live cases  {n['passed']:,} passed · {n['failed']} failed · {n['skipped']} skipped (from the run's events)"]
     fails = {}
-    for (f, c), (st, why) in last.items():
-        if st == "failed":
-            fails.setdefault(f, []).append((c, why))
+    for e in failed:
+        fails.setdefault(e.get("file", ""), {})[e.get("case", "")] = e.get("reason", "")
     for f in sorted(fails):
         out.append(f"            ✗ {f}   {len(fails[f])} failed")
-        for c, why in fails[f][:3]:
+        for c, why in list(fails[f].items())[:3]:
             out.append(f"                {c[:70]}{' — ' + why[:90] if why else ''}")
     return out
 
+def _loki(path, params):
+    import json as _j, urllib.parse as up
+    with urllib.request.urlopen(f"{LOKI}{path}?" + up.urlencode(params), timeout=30) as r:
+        return _j.load(r)["data"]["result"]
+
 def live_events(started_iso):
-    """The newest nightly trace's case events since `started_iso` (Loki). [] when Loki
-    does not answer: the block then says it could not read them, never "0 failed"."""
-    import json as _j, urllib.parse as up, datetime as dt
+    """The newest nightly trace's counts and failed cases since `started_iso` (Loki).
+    None when Loki does not answer or answers something unreadable: the block then says
+    UNMEASURED, never "0 failed" and never a crash."""
+    import json as _j, datetime as dt, time as _t
     try:
-        t0 = int(dt.datetime.fromisoformat(started_iso).timestamp() * 1e9)
-    except ValueError:
-        return None
-    q = '{job="platform-chorus", role="nightly"} |= "test.case." | json | event=~"test.case.(passed|failed|skipped)"'
-    url = f"{LOKI}/loki/api/v1/query_range?" + up.urlencode({"query": q, "start": str(t0), "limit": "5000", "direction": "forward"})
-    try:
-        with urllib.request.urlopen(url, timeout=30) as r:
-            res = _j.load(r)["data"]["result"]
+        t0 = dt.datetime.fromisoformat(started_iso)
+        start = str(int(t0.timestamp() * 1e9))
+        rng = max(60, int(_t.time() - t0.timestamp()) + 60)
+        sel = '{job="platform-chorus", role="nightly"} |= "test.case."'
+        last = _loki("/loki/api/v1/query_range", {"query": sel, "start": start, "limit": "1", "direction": "backward"})
+        line = [l for s_ in last for _, l in s_["values"]]
+        if not line:
+            return {}, []
+        trace = _j.loads(line[0]).get("trace", "")
+        if not trace:
+            return None
+        q = f'{sel} |= "{trace}" | json | event=~"test.case.(passed|failed|skipped)"'
+        res = _loki("/loki/api/v1/query", {"query": f"sum by (event) (count_over_time({q} [{rng}s]))"})
+        counts = {r["metric"]["event"].rsplit(".", 1)[-1]: int(float(r["value"][1])) for r in res}
+        fres = _loki("/loki/api/v1/query_range", {"query": f'{sel} |= "{trace}" |= "test.case.failed"', "start": start, "limit": "2000"})
+        failed = [_j.loads(l) for s_ in fres for _, l in s_["values"]]
+        return counts, failed
     except Exception:
         return None
-    evs = [_j.loads(l) for s_ in res for _, l in s_["values"]]
-    traces = [e.get("trace", "") for e in evs if e.get("trace")]
-    newest = traces[-1] if traces else ""
-    return [e for e in evs if e.get("trace") == newest]
 
 def main():
     if "--fixture" in sys.argv:
@@ -123,8 +129,8 @@ def main():
     if not finished(front) and "IN PROGRESS" in v:
         started = when.split(" ")[0]
         running = f"running now: started {started.replace('T', ' ')[:16]}, {v.replace('IN PROGRESS — ', '')}"
-        evs = live_events(started)
-        running += "\n" + ("\n".join(running_block(evs)) if evs is not None
+        live = live_events(started)
+        running += "\n" + ("\n".join(running_block(*live)) if live is not None
                             else "          live cases  UNMEASURED — the run's events could not be read (Loki)")
     page = get(f"{BASE}?run={args[0]}") if args else latest_finished(front, lambda r: get(f"{BASE}?run={r}"))
     if page is None:

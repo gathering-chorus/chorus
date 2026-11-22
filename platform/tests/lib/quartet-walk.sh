@@ -116,14 +116,17 @@ except Exception: print("")' "$rows" 2>/dev/null)"
   # (Principle moved out of athena-make in #5017/#5021: GET /principles/principles 404s),
   # so Practice.expresses had no row to point at and the class read UNMEASURED every night.
   # Read a real row of the class from the store instead, and say why the route did not.
-  echo "$target: route ${path:-none} answered ${code:-no route}; read from the store" >> "$WORK/edge-why"
-  curl -sf --max-time 15 -G "$RESIDUE_QUERY" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -H 'Accept: application/sparql-results+json' \
+  local found
+  found="$(curl -sf --max-time 15 -G "$RESIDUE_QUERY" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -H 'Accept: application/sparql-results+json' \
     --data-urlencode "query=SELECT ?s WHERE { GRAPH ?g { ?s a ?c . FILTER(STRENDS(STR(?c), \"#$target\")) FILTER(!CONTAINS(STR(?s), \"zz-\")) } } LIMIT 1" 2>/dev/null \
     | python3 -c 'import json,sys
 try:
     b=json.load(sys.stdin)["results"]["bindings"]
     print(b[0]["s"]["value"].rsplit("#",1)[-1] if b else "")
-except Exception: print("")' 2>/dev/null
+except Exception: print("")' 2>/dev/null)"
+  # the why is kept only when the store had no row either: then it names the dead route
+  [ -n "$found" ] && { printf '%s' "$found"; return 0; }
+  echo "$target: route ${path:-none} answered ${code:-no route}, and the store holds no $target row" >> "$WORK/edge-why"
 }
 
 # #4915 (Silas) — a literal the shape constrains with sh:pattern. The pattern is the
@@ -263,6 +266,7 @@ PYR
 
   # Fill the body: literals get a marked value, edges get a real subject.
   BODY="$WORK/$CLASS.body.json"; MISSING=""; UNMET=""
+  : > "$WORK/edge-why"   # #4925 round 2 — one class's route misses never read as another's
   : >"$WORK/$CLASS.pairs"
   # #4282 — fields are joined with '|', not tabs. A tab is whitespace to `read`,
   # so consecutive tabs collapse: a literal field with no targetClass read its

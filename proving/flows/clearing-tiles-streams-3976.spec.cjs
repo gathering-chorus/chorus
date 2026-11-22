@@ -31,15 +31,17 @@
  * RUN
  *   CLEARING_URL=http://localhost:3470 npx playwright test proving/flows/clearing-tiles-streams-3976.spec.cjs
  *
- * NEGATIVE PROOFS live in this file as real tests, not as prose — see the three
+ * NEGATIVE PROOFS live in this file as real tests, not as prose — see the
  * `reconciliation` cases at the bottom. Two of them assert the check goes RED on
  * a disagreeing spine and GREEN on a quiet one, because a reconciliation check
  * that cannot separate "disagreeing" from "quiet" is the same defect class it
  * was built to catch.
  */
 const { test, expect } = require('@playwright/test');
-const { ownClearing } = require('./lib/own-clearing.cjs');
+const { ownClearing, startChorusApiStub } = require('./lib/own-clearing.cjs');
+const { testClearingEnv } = require('../../directing/clearing/tests/lib/test-clearing-world.cjs');
 const path = require('path');
+const os = require('os');
 const fs = require('fs');
 
 const ROLES = ['wren', 'silas', 'kade'];
@@ -59,7 +61,7 @@ const ROLES = ['wren', 'silas', 'kade'];
  * So the spec brings its own world (#3528): with no CLEARING_URL it starts the
  * Clearing built from THIS tree, on its own port, against the real spine. Not
  * one assertion changes — same tiles, same pane, same no-tolerance skew rule,
- * same four negative proofs; a genuine disagreement still reds it. CLEARING_URL
+ * same negative proofs; a genuine disagreement still reds it. CLEARING_URL
  * still wins when set, so grading the deployed Clearing after a land is one env
  * var, which is the post-deploy check and belongs after the deploy.
  */
@@ -114,6 +116,63 @@ function ageToSeconds(text) {
   if (!m) return null;
   const n = Number(m[1]);
   return { s: n, m: n * 60, h: n * 3600, d: n * 86400 }[m[2].toLowerCase()];
+}
+
+/** Format seconds into tiles.ts formatAge ("45s ago", "10m ago") for stub assertions. */
+function secondsToAgeText(secs) {
+  if (secs < 0) return 'just now';
+  if (secs < 60) return `${secs}s ago`;
+  if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
+  if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
+  return `${Math.floor(secs / 86400)}d ago`;
+}
+
+/** Grade tile state/age against /api/stream rows; shared by the live browser check and its negative proof. */
+function reconcileTilesAndStreams(tiles, rows, nowMs = Date.now()) {
+  const disagreements = [];
+  const today = new Date(nowMs).toDateString();
+  const DAY_MS = 86400000;
+  const TILE_POLL_SEC = 120;
+  const stamp = (r) => {
+    // #4925 — /api/stream serves an ISO ts; read as `${today} ${ts}` it was NaN,
+    // and a NaN pane was skipped below: the check could never go red
+    const iso = Date.parse(r.ts);
+    if (!Number.isNaN(iso) && /T/.test(String(r.ts))) return iso;
+    const t = Date.parse(`${today} ${r.ts}`);
+    return Number.isNaN(t) ? NaN : t > nowMs ? t - DAY_MS : t;
+  };
+
+  for (const { role, state: rawState, ageText } of tiles) {
+    const state = String(rawState || '').trim().toLowerCase();
+    const ageSec = ageToSeconds(ageText);
+    const mine = rows.filter((r) => r.role === role);
+    const active = state.includes('building') || state.includes('observing');
+
+    // 1. Active tile, empty pane — the extreme case.
+    if (active && mine.length === 0) {
+      disagreements.push(
+        `${role}: tile says "${state}" (age ${ageText || 'none'}) but the pane has ZERO lines for it`,
+      );
+      continue;
+    }
+
+    // 2. THE 06:19 CASE — compare ages for EVERY role, active or idle, with no >120s slack.
+    if (ageSec === null || mine.length === 0) continue;
+    const newest = mine
+      .map(stamp)
+      .filter((t) => !Number.isNaN(t))
+      .sort((a, b) => b - a)[0];
+    if (newest === undefined) continue;
+    const paneAgeSec = Math.round((nowMs - newest) / 1000);
+    const skewSec = Math.abs(paneAgeSec - ageSec);
+    if (skewSec > TILE_POLL_SEC) {
+      disagreements.push(
+        `${role}: tile age ${ageText} (${ageSec}s) vs pane newest ${paneAgeSec}s — ` +
+          `${Math.round(skewSec / 60)}m apart. This is the 06:19 defect.`,
+      );
+    }
+  }
+  return disagreements;
 }
 
 test.describe('#3976 tiles render what Jeff reads', () => {
@@ -204,11 +263,10 @@ test.describe('#3976 the streams pane renders the beats', () => {
 });
 
 test.describe('#3976 reconciliation — tiles and streams must agree', () => {
-  // #4073 — held: the pane reads this spec's own seeded spine (#4417; seeded at start since
-  // #4925), but the TILES still read the live roles' actor state. Measured #4925 cicd run 1
-  // (11-22 10:49): wren's tile 600 s, kade's 660 s — the live roles' real quiet times — vs
-  // the seeded pane's 35 s. Lifted when the tile source is a fixture too (Abby).
-  test.skip('a role the tile calls active has recent lines in the pane', async ({ page, request }) => {
+  // #4073 / #4925 — lifted: ownClearing now stubs CHORUS_API_BASE (/api/chorus/context/roles)
+  // via production stateFromStreams over the world's own seeded spine, so tiles and /api/stream
+  // read the same fixture spine instead of leaking to live :3340.
+  test('a role the tile calls active has recent lines in the pane', async ({ page, request }) => {
     await assertClearingTarget(request);
     await page.goto(CLEARING, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#tiles .tile', { timeout: 20000 });
@@ -216,80 +274,15 @@ test.describe('#3976 reconciliation — tiles and streams must agree', () => {
     const res = await page.request.get(`${CLEARING}/api/stream?lines=200`);
     const rows = await res.json();
 
-    const disagreements = [];
+    const tiles = [];
     for (const role of ROLES) {
       const tile = page.locator(`#tiles .tile-${role}`);
-      const state = (await tile.locator('.tile-state').innerText()).trim().toLowerCase();
+      const state = (await tile.locator('.tile-state').innerText()).trim();
       const ageText = (await tile.locator('.tile-age').innerText()).trim();
-      const ageSec = ageToSeconds(ageText);
-
-      const mine = rows.filter((r) => r.role === role);
-      const active = state.includes('building') || state.includes('observing');
-
-      // 1. Active tile, empty pane — the extreme case.
-      if (active && mine.length === 0) {
-        disagreements.push(
-          `${role}: tile says "${state}" (age ${ageText || 'none'}) but the pane has ZERO lines for it`,
-        );
-        continue;
-      }
-
-      // 2. THE 06:19 CASE — and the one the first version of this check could
-      // NOT see, which is why it passed in production against the very defect
-      // it was written for:
-      //
-      //   tile "wren idle 10m" (=6:09)    pane's newest wren line 5:33   36m apart
-      //   tile "kade building 1m"         pane's newest kade line 6:05   14m apart
-      //
-      // Neither trips an active/empty rule: wren was not "active" so the old
-      // check skipped it entirely, and kade HAD lines so it passed. The
-      // disagreement lives in the AGES, so ages are what must be compared —
-      // for EVERY role, not only the ones a tile calls active.
-      if (ageSec === null || mine.length === 0) continue;
-      const today = new Date().toDateString();
-      // The pane renders a CLOCK TIME ("8:47 PM"), not a date, so today's date
-      // is stamped on it to compare. Across midnight that is wrong in a way
-      // that reads as the very defect this checks for: a line from 20:47
-      // yesterday becomes 20:47 TODAY — fifteen hours in the future — and the
-      // skew comes out negative and enormous. It made the check red at 05:40
-      // and green at 20:40 on identical surfaces (#2725, 2026-08-25). A time
-      // that lands ahead of now belongs to yesterday.
-      const DAY_MS = 86400000;
-      const stamp = (r) => {
-        // #4925 — /api/stream serves an ISO ts; read as `${today} ${ts}` it was NaN,
-        // and a NaN pane was skipped below: the check could never go red
-        const iso = Date.parse(r.ts);
-        if (!Number.isNaN(iso) && /T/.test(String(r.ts))) return iso;
-        const t = Date.parse(`${today} ${r.ts}`);
-        return Number.isNaN(t) ? NaN : t > Date.now() ? t - DAY_MS : t;
-      };
-      const newest = mine
-        .map(stamp)
-        .filter((t) => !Number.isNaN(t))
-        .sort((a, b) => b - a)[0];
-      if (newest === undefined) continue;
-      const paneAgeSec = Math.round((Date.now() - newest) / 1000);
-      const skewSec = Math.abs(paneAgeSec - ageSec);
-      // NO TOLERANCE. Jeff, 2026-08-22: "if u check the role state and streams
-      // they MUST match at any given time."
-      //
-      // A 5-minute slack was here and it was wrong — inventing an allowance for
-      // a disagreement that must not exist. Both surfaces read the SAME spine;
-      // if they disagree, it is because they read different event sets, which is
-      // the defect, not an artifact of polling. Widening the assertion to make
-      // it pass is exactly what #3734 forbids.
-      //
-      // The only slack is one tile poll (120s at tiles.ts:40) — beyond that the
-      // surfaces are telling Jeff two different things about the same role.
-      const TILE_POLL_SEC = 120;
-      if (skewSec > TILE_POLL_SEC) {
-        disagreements.push(
-          `${role}: tile age ${ageText} (${ageSec}s) vs pane newest ${paneAgeSec}s — ` +
-            `${Math.round(skewSec / 60)}m apart. This is the 06:19 defect.`,
-        );
-      }
+      tiles.push({ role, state, ageText });
     }
 
+    const disagreements = reconcileTilesAndStreams(tiles, rows);
     expect(
       disagreements,
       `tiles and streams disagree:\n  ${disagreements.join('\n  ')}\n` +
@@ -301,24 +294,18 @@ test.describe('#3976 reconciliation — tiles and streams must agree', () => {
   // a role whose only recent event is hook.decision lights the tile and renders
   // nothing in the pane, which is exactly what Jeff saw.
   test('the reconciliation rule REDS on a tile-active/pane-empty role', () => {
-    const tiles = [{ role: 'wren', state: 'building', age: '45s' }];
-    const streamRows = [{ role: 'silas', type: 'activity', text: 'running Bash' }];
-    const disagreements = tiles
-      .filter((t) => t.state === 'building')
-      .filter((t) => streamRows.filter((r) => r.role === t.role).length === 0)
-      .map((t) => t.role);
-    expect(disagreements, 'a tile-active role with no pane lines must be reported').toEqual(['wren']);
+    const tiles = [{ role: 'wren', state: 'building', ageText: '45s ago' }];
+    const streamRows = [{ role: 'silas', type: 'activity', text: 'running Bash', ts: nowIso() }];
+    const disagreements = reconcileTilesAndStreams(tiles, streamRows);
+    expect(disagreements.length, 'a tile-active role with no pane lines must be reported').toBe(1);
+    expect(disagreements[0]).toContain('wren');
   });
 
   // NEGATIVE PROOF 2 — the QUIET case must PASS. A check that cannot separate
   // "disagreeing" from "nobody is working" is the defect class this card names.
   test('the reconciliation rule STAYS GREEN when everyone is simply idle', () => {
-    const tiles = ROLES.map((role) => ({ role, state: 'idle', age: '2h' }));
-    const streamRows = [];
-    const disagreements = tiles
-      .filter((t) => t.state === 'building')
-      .filter((t) => streamRows.filter((r) => r.role === t.role).length === 0)
-      .map((t) => t.role);
+    const tiles = ROLES.map((role) => ({ role, state: 'idle', ageText: '2h ago' }));
+    const disagreements = reconcileTilesAndStreams(tiles, []);
     expect(disagreements, 'an idle team is not a disagreement').toEqual([]);
   });
 
@@ -355,5 +342,54 @@ test.describe('#3976 reconciliation — tiles and streams must agree', () => {
     const stale = ageToSeconds(tile.age) > 900;
     expect(stale, 'an active tile aged 36m must be reported as stale').toBe(true);
     expect(ageToSeconds('45s') > 900, 'a fresh age must NOT be reported').toBe(false);
+  });
+
+  // NEGATIVE PROOF 5 (#4925) — testClearingEnv cages CHORUS_API_BASE/URL off :3340 (RED on
+  // df3cc10ae, where both were undefined and ownClearing polled live :3340), and the real
+  // startChorusApiStub REDS reconciliation when tile and stream events skew >120s.
+  test('NEGATIVE PROOF (#4925): testClearingEnv cages CHORUS_API_BASE/URL, and startChorusApiStub REDS on >120s skew', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), '3976-neg5-'));
+    let stub = null;
+    try {
+      const env = testClearingEnv(tmp, 29111, 'tok');
+      expect(env.CHORUS_API_BASE).toBe('http://127.0.0.1:1');
+      expect(env.CHORUS_API_URL).toBe('http://127.0.0.1:1');
+
+      const now = Date.now();
+      const oldActionIso = new Date(now - 600_000).toISOString();
+      const recentHookIso = new Date(now - 5_000).toISOString();
+      const spineFile = path.join(tmp, 'chorus.log');
+      fs.writeFileSync(spineFile, [
+        JSON.stringify({ timestamp: oldActionIso, event: 'agent.action', role: 'wren', phase: 'started', tool: 'Bash', call_id: 'c1', digest: 'Old · bash: ls' }),
+        JSON.stringify({ timestamp: recentHookIso, event: 'hook.decision', role: 'wren' }),
+      ].join('\n') + '\n');
+
+      stub = await startChorusApiStub({ spineFile, roles: ['wren'] });
+      const res = await fetch(`${stub.url}/api/chorus/context/roles`);
+      const body = await res.json();
+      const row = body.data.roles[0];
+      const ageSecs = Math.floor((Date.now() - Date.parse(row.lastActivity)) / 1000);
+      const skewed = reconcileTilesAndStreams(
+        [{ role: 'wren', state: row.state, ageText: secondsToAgeText(ageSecs) }],
+        [{ role: 'wren', type: 'call', text: 'Old · bash: ls', ts: oldActionIso }],
+      );
+      expect(skewed.length, 'hook.decision at 5s vs agent.action at 600s must trip >120s skew').toBe(1);
+      expect(skewed[0]).toContain('06:19 defect');
+
+      // Control: aligned 35s agent.action on both surfaces stays GREEN
+      const alignedIso = new Date(Date.now() - 35_000).toISOString();
+      fs.writeFileSync(spineFile, JSON.stringify({ timestamp: alignedIso, event: 'agent.action', role: 'wren', phase: 'started', tool: 'Bash', call_id: 'c2', digest: 'Fresh · bash: ls' }) + '\n');
+      const res2 = await fetch(`${stub.url}/api/chorus/context/roles`);
+      const row2 = (await res2.json()).data.roles[0];
+      const ageSecs2 = Math.floor((Date.now() - Date.parse(row2.lastActivity)) / 1000);
+      const aligned = reconcileTilesAndStreams(
+        [{ role: 'wren', state: row2.state, ageText: secondsToAgeText(ageSecs2) }],
+        [{ role: 'wren', type: 'call', text: 'Fresh · bash: ls', ts: alignedIso }],
+      );
+      expect(aligned).toEqual([]);
+    } finally {
+      if (stub) await stub.close();
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });

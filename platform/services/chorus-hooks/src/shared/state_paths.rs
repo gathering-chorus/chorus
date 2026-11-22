@@ -249,6 +249,19 @@ pub fn session_context_file(role: &str) -> String {
     format!("{}/session-context-{}.md", session_tmp_dir(), role)
 }
 
+/// #4925 (Silas) — `<session tmp>/role-checkpoint-<role>.json`. It was hard-coded to /tmp,
+/// so the crash-recovery e2e case could only run against a live role's checkpoint and was
+/// gated off every night. It follows CHORUS_SESSION_TMP with the other two, as #4432 meant.
+pub fn role_checkpoint_file(role: &str) -> String {
+    role_checkpoint_in(&session_tmp_dir(), role)
+}
+
+/// `<dir>/role-checkpoint-<role>.json`, pure (the test needs no process-wide env).
+pub fn role_checkpoint_in(dir: &str, role: &str) -> String {
+    format!("{}/role-checkpoint-{}.json", dir, role)
+}
+
+
 /// Chat directory
 pub const CHAT_DIR: &str = "/tmp/chorus-chat";
 
@@ -287,4 +300,13 @@ pub fn board_snapshot_path(ext: &str) -> String {
     });
     let dir = pulse.parent().map(|d| d.to_path_buf()).unwrap_or_default();
     dir.join(format!("board-wip-snapshot.{ext}")).to_string_lossy().into_owned()
+}
+
+#[cfg(test)]
+mod role_checkpoint_4925 {
+    #[test]
+    fn the_checkpoint_lives_in_the_session_tmp_dir() {
+        assert_eq!(super::role_checkpoint_in("/x/stmp", "silas"), "/x/stmp/role-checkpoint-silas.json");
+        assert_eq!(super::role_checkpoint_in("/tmp", "silas"), "/tmp/role-checkpoint-silas.json");
+    }
 }

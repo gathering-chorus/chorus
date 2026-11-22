@@ -18,43 +18,9 @@ setup() {
 }
 
 
-# --- AC 4: Seed webhook returns 200 with valid Twilio payload ---
-
-@test "POST /api/seed/sms returns 200 with signed Twilio payload" {
-  # #4336: this posts a signed SMS to the live seed webhook, which files a real
-  # seed, and it reads the app's .env for the Twilio secret. Only a run that
-  # means to do both may run it.
-  [ "${RUN_LIVE_INTEGRATION:-}" = "true" ] || skip "UNMEASURED — writes a real seed and reads app secrets; RUN_LIVE_INTEGRATION=true to run (#4336)"
-  # Load credentials
-  ENV_FILE="${HOME}/CascadeProjects/jeff-bridwell-personal-site/.env"
-  [ -f "$ENV_FILE" ] || skip "No .env file"
-  TWILIO_AUTH_TOKEN=$(grep '^TWILIO_AUTH_TOKEN=' "$ENV_FILE" | cut -d= -f2-)
-  CAPTURE_ALLOWED_PHONES=$(grep '^CAPTURE_ALLOWED_PHONES=' "$ENV_FILE" | cut -d= -f2- | cut -d, -f1)
-  [ -n "$TWILIO_AUTH_TOKEN" ] || skip "No Twilio auth token"
-
-  PROBE_SID="SM_PROBE_E2E_$(date +%s)"
-  PROBE_BODY="[SEED-PROBE] E2E test $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  WEBHOOK_URL="${APP_API}/api/seed/sms"
-  # Sign against public URL (Twilio signature spec) but send to localhost
-  SIGN_URL="https://lightlifeurbangardens.com/api/seed/sms"
-
-  # Build signed request
-  SIGN_DATA="${SIGN_URL}Body${PROBE_BODY}From${CAPTURE_ALLOWED_PHONES}MessageSid${PROBE_SID}NumMedia0To${CAPTURE_ALLOWED_PHONES}"
-  SIGNATURE=$(echo -n "$SIGN_DATA" | openssl dgst -sha1 -hmac "$TWILIO_AUTH_TOKEN" -binary | base64)
-
-  BODY="Body=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${PROBE_BODY}', safe=''))")"
-  BODY="${BODY}&From=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${CAPTURE_ALLOWED_PHONES}', safe=''))")"
-  BODY="${BODY}&MessageSid=${PROBE_SID}"
-  BODY="${BODY}&NumMedia=0"
-  BODY="${BODY}&To=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${CAPTURE_ALLOWED_PHONES}', safe=''))")"
-
-  http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
-    -X POST "$WEBHOOK_URL" \
-    -H "Content-Type: application/x-www-form-urlencoded" \
-    -H "X-Twilio-Signature: ${SIGNATURE}" \
-    -d "$BODY" 2>/dev/null)
-  [ "$http_code" = "200" ]
-}
+# --- AC 4 (deleted #4925, Wren): the signed-Twilio case wrote a real seed and read the app's
+# secrets, so it was gated and skipped every night. The live seed path is probed daily by
+# platform/scripts/seed-probe.sh (com.chorus.seed-probe, 05:55). ---
 
 # --- AC 5: Chorus search returns results array ---
 

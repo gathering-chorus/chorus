@@ -35,6 +35,8 @@ PCF="$ROOT/platform/scripts/policy-check-field"
 ROWS="$ROOT/roles/wren/ontology/hats-instances-4175.ttl"
 FIXTURE="$ROOT/platform/tests/fixtures/hats-4175-violations.ttl"
 CORE="$ROOT/roles/silas/ontology/chorus.ttl"
+# #4925 — holdsRole (Principal → Role) lives here
+PRINCIPALS="$ROOT/roles/silas/ontology/identity-principals-3613.ttl"
 # #4325 — the layer edges live in their own file (#4293); the real model is both
 LAYERS="$ROOT/roles/silas/ontology/cmdb-layers-4293.ttl"
 
@@ -83,16 +85,11 @@ rows_against() {  # $1=check $2..=data files
   done < <(checks)
 }
 
-@test "#4175 RED — every hat check finds exactly the violations it claims" {
-  # #4255 — gc-one-home-per-subject claims provenRedRows 4 and its fixture holds
-  # none, so this cannot go red for that check. Silas is building the real
-  # fixture on #4256; skipping with the owner named beats a red nobody reads.
-  skip 'gc-one-home-per-subject fixture has no violation — Silas, #4256'
-  while read -r chk claimed; do
-    n="$(rows_against "$chk" "$FIXTURE")"
-    [ "$n" -eq "$claimed" ] || { echo "$chk found $n row(s) in the fixture, claims $claimed"; return 1; }
-  done < <(checks)
-}
+# #4925 (Silas) — the RED case was deleted: it compared each check's hits in the shared hats
+# fixture with provenRedRows, which is the LIVE count when the rule was proven, not a fixture
+# count (7 of 11 checks mismatch). Since #4960 every check has its own violationFixture, run by
+# platform/tests/4960-policy-rows.bats "negative proof: every SPARQL check counts its fixture's
+# violation and is clean on empty data".
 
 @test "#4175 the fixture's compliant twins are never flagged" {
   # Each violating row has a compliant sibling of the same shape. If any check
@@ -144,10 +141,10 @@ PY
 }
 
 @test "#4175 no appointment contradicts the ownership it qualifies" {
-  # #4255 — the check compares an appointee (a Role) with an owner (a Principal)
-  # and never traverses holdsRole between them: 292 rows have that shape, not a
-  # contradiction. Wren is fixing the query to hop holdsRole.
-  skip 'check compares Role to Principal without holdsRole — Wren, 292 rows'
+  # #4255 / #4925 (Wren) — the check compared an appointee (a Role) with an owner (a
+  # Principal) and never hopped holdsRole: 292 rows had that shape, not a contradiction.
+  # The query now drops an owner that holds the appointee role; holdsRole lives in
+  # identity-principals-3613.ttl, so that file is loaded (without it: 8 rows again).
   # gc-appointee-is-the-owner, run over the generated appointments joined to the
   # ownership recorded in the committed model. Zero rows: the file and the store
   # agree about every anchor.
@@ -157,9 +154,18 @@ PY
   # allowed by name for about an hour, then Silas ruled the store right and the
   # file was fixed, so the allowance is gone rather than outliving the defect.
   query_of gc-appointee-is-the-owner > "$BATS_TEST_TMPDIR/own.rq"
-  run arq --data "$APPTS" --data "$CORE" --query "$BATS_TEST_TMPDIR/own.rq" --results csv
+  run arq --data "$APPTS" --data "$CORE" --data "$PRINCIPALS" --query "$BATS_TEST_TMPDIR/own.rq" --results csv
   [ "$status" -eq 0 ]
   [ "$(echo "$output" | tail -n +2 | grep -c . || true)" -eq 0 ] || { echo "$output"; return 1; }
+}
+
+@test "#4175 NEGATIVE PROOF (#4925): an appointee the owner does not hold is still a contradiction" {
+  query_of gc-appointee-is-the-owner > "$BATS_TEST_TMPDIR/own.rq"
+  printf '@prefix c: <https://jeffbridwell.com/chorus#> .\nc:appt-planted-wrong a c:Appointment ; c:appointee c:role-borg-queen ; c:overAnchor c:pulse .\n' > "$BATS_TEST_TMPDIR/planted.ttl"
+  run arq --data "$APPTS" --data "$CORE" --data "$PRINCIPALS" --data "$BATS_TEST_TMPDIR/planted.ttl" --query "$BATS_TEST_TMPDIR/own.rq" --results csv
+  [ "$status" -eq 0 ]
+  [ "$(echo "$output" | tail -n +2 | grep -c . || true)" -eq 1 ] || { echo "$output"; return 1; }
+  [[ "$output" == *"appt-planted-wrong"* ]] || { echo "$output"; return 1; }
 }
 
 # --- the generator itself ------------------------------------------------------

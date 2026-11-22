@@ -125,6 +125,9 @@ print(len(silas_wip))
   out=$(envelope "spec verifying athena section appears with domain context")
   # #4925 — both sides of the rule are a reading: it skipped whenever silas held no WIP
   # card. No WIP: the Athena section must be ABSENT (it is conditional); WIP: present below.
+  # #4925 round 2 (review) — an empty or broken envelope would pass an absence check: the
+  # envelope must be a real one (it carries its Pulse section) before absence means anything
+  [[ "$out" == *"## Pulse"* ]] || { echo "no envelope to judge (no Pulse section)"; echo "$out" >&2; false; }
   if [ "${wip:-0}" -eq 0 ]; then
     [[ "$out" != *"## Athena"* ]] || { echo "Athena section shown while silas holds no WIP card"; echo "$out" >&2; false; }
     return 0

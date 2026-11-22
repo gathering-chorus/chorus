@@ -118,6 +118,14 @@ fn repo_root() -> Option<std::path::PathBuf> {
     resolve_repo_root(REPO_ROOT.get().cloned(), env_root, &cwd)
 }
 
+/// #4925 round 2 — a crate's repo-relative home by its package name (athena-gen lives in
+/// designing/services, pulse-api in directing/products/pulse/api); platform/services/<name>
+/// when the tree cannot be read or does not hold it. Suite rows, typed binaries and a
+/// card's changed-binary pick all name the crate by this, never by a hard-coded prefix.
+pub fn crate_home(krate: &str) -> String {
+    repo_root().map(|r| crate_rel_dir(&r, krate)).unwrap_or_else(|| format!("platform/services/{}", krate))
+}
+
 /// #4925 — the Cargo package name of the crate `path` sits in, outside
 /// platform/services, when that crate's Cargo.toml is in `root`. None when the
 /// path is in no crate.
@@ -132,7 +140,7 @@ pub fn crate_name_in_tree(root: &std::path::Path, path: &str) -> Option<String> 
 /// runs (empty = all). A card that changed only tests/<stem>.rs files runs just
 /// those binaries: the crate list decides what to BUILD, not what to run.
 pub fn cargo_only_bins(krate: &str, changed: &[String]) -> Vec<String> {
-    let prefix = format!("platform/services/{}/", krate);
+    let prefix = format!("{}/", crate_home(krate));
     let mine: Vec<&str> = changed.iter().filter_map(|f| f.strip_prefix(&prefix)).collect();
     let stems: Vec<String> = mine.iter()
         .filter_map(|r| r.strip_prefix("tests/").and_then(|t| t.strip_suffix(".rs")))
@@ -3374,7 +3382,7 @@ pub fn file_suite_stage(suite: &str, rows: &[TestRow]) -> String {
 /// are typed something other than unit, as (stem, type). They run in their
 /// own type's stage; the crate's unit run excludes them.
 pub fn crate_binary_types(krate: &str, rows: &[TestRow]) -> Vec<(String, String)> {
-    let prefix = format!("platform/services/{}/tests/", krate);
+    let prefix = format!("{}/tests/", crate_home(krate));
     let mut out: Vec<(String, String)> = Vec::new();
     for r in rows {
         let Some(stem) = r.file_path.strip_prefix(&prefix).and_then(|x| x.strip_suffix(".rs")) else { continue };
@@ -3669,7 +3677,7 @@ pub fn jest_project_args_for(has_hermetic_project: bool, run_integration: bool, 
 /// integration run is the package under the `integration` kind.
 pub fn stage_item_label(stage: &str, lane: &str, item: &str) -> (String, String) {
     match (lane, item.split_once('#')) {
-        ("cargo", Some((c, stem))) => (stage.to_string(), format!("platform/services/{}/tests/{}.rs", c, stem)),
+        ("cargo", Some((c, stem))) => (stage.to_string(), format!("{}/tests/{}.rs", crate_home(c), stem)),
         (_, Some((p, _))) => (stage.to_string(), p.to_string()),
         (l, None) => (l.to_string(), item.to_string()),
     }
@@ -3954,6 +3962,16 @@ pub fn did_not_start(tool: &str, err: &std::io::Error) -> String {
     } else {
         format!("{} did not start: {}", tool, err)
     }
+}
+
+/// #4925 — a cargo build the BOX refused (it cannot write its target dir), as the
+/// reason, from cargo's own output; None for anything else (a compile error stays red).
+/// Measured 11-22 12:37: `werk-test lane --crate=pulse-api` from chorus-kade against
+/// canonical read "fail, 0 pass, 0 fail" for `Permission denied (os error 13) at path
+/// ".../target/chorus-kadeXXXX"`. Pure.
+pub fn cargo_box_refusal(out: &str) -> Option<String> {
+    out.lines().map(str::trim).find(|l| l.contains("Permission denied (os error 13)") || l.contains("Operation not permitted (os error 1)"))
+        .map(|l| format!("build could not write its target: {}", l.chars().take(200).collect::<String>()))
 }
 
 /// #4537 — the failed bats cases whose failure is the membrane refusing a

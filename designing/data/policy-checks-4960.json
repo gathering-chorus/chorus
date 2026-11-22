@@ -103,7 +103,7 @@
   "status": "ratchet",
   "baseline": "244",
   "checkKind": "sparql",
-  "checkSpec": "PREFIX c: <https://jeffbridwell.com/chorus#>\nSELECT ?s ?appointee ?owner ?anchor WHERE {\n  ?s a c:Appointment ; c:appointee ?appointee ; c:overAnchor ?anchor .\n  ?anchor c:ownedBy ?owner .\n  FILTER(?appointee != ?owner)\n}",
+  "checkSpec": "PREFIX c: <https://jeffbridwell.com/chorus#>\nSELECT ?s ?appointee ?owner ?anchor WHERE {\n  ?s a c:Appointment ; c:appointee ?appointee ; c:overAnchor ?anchor .\n  ?anchor c:ownedBy ?owner .\n  FILTER(?appointee != ?owner)\n  FILTER NOT EXISTS { ?owner c:holdsRole ?appointee }\n}",
   "violationFixture": "platform/tests/fixtures/4960/appointee-is-the-owner.trig",
   "derivedFrom": "https://jeffbridwell.com/chorus#adr-054",
   "foldedFrom": "gc-appointee-is-the-owner",
