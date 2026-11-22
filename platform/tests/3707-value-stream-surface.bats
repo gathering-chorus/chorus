@@ -83,11 +83,9 @@ print(d)'"
   ! grep -q 'data/athena/' "$page" || return 1
 }
 
-@test "product layer serves at each step (pending: ProductShape instancesGraph decl — Wren follow-on)" {
-  # /products serves count:0 until the shape decl lands (#3697-3703 scope cut).
-  # This pin flips from skip to assert when that follow-on card lands.
-  skip "pending Wren's ProductShape instancesGraph follow-on — /products count:0 is the known gap, not a #3707 regression"
-}
+# #4925 — the "product layer serves at each step" pin was an unconditional skip: it asserted
+# nothing and read UNMEASURED every night. The product layer is Wren's ProductShape follow-on;
+# its test arrives with that card.
 
 @test "athena-health catalog does not advertise a retired endpoint" {
   api_up || skip "chorus-api :3340 unreachable"

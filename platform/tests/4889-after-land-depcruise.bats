@@ -13,8 +13,9 @@ W="${CHORUS_HOME:-$HOME/CascadeProjects/chorus}/ops/logs/werk-demo.jsonl"
 # when #4889 reached main (epoch seconds), or nothing before it lands
 land_time() { git -C "$ROOT" log origin/main --first-parent -1 -E --grep='^#4889([^0-9]|$)' --format=%ct 2>/dev/null; }
 
-# the dependency-cruiser part of the first arch review recorded for another card after
-# #4889's land ($2, epoch seconds); empty when there is none yet
+# the dependency-cruiser part of the NEWEST arch review recorded for another card after
+# #4889's land ($2, epoch seconds); empty when there is none yet. #4925 (Silas) — it read
+# the FIRST one, the 11-06 error, so it could never go green whatever later reviews held.
 next_arch_depcruise() {
   python3 - "$1" "$2" <<'PY'
 import json, sys
@@ -25,7 +26,7 @@ for line in open(sys.argv[1], errors="replace"):
     except ValueError: continue
     if e.get("event") != "demo.gate.result" or e.get("gate") != "arch" or e.get("card_id") == 4889: continue
     ts = e.get("ts", 0)
-    if ts > landed_ms and (best is None or ts < best[0]): best = (ts, e.get("findings", ""))
+    if ts > landed_ms and (best is None or ts > best[0]): best = (ts, e.get("findings", ""))
 if best is None: print("")
 else:
     part = [p for p in best[1].split(" | ") if "dependency-cruiser:" in p]
@@ -53,7 +54,12 @@ ran() { [ -n "$1" ] && [[ "$1" != *" error] dependency-cruiser"* && "$1" != *"co
   got="$(next_arch_depcruise "$f" 1)"
   [[ "$got" == *"no dependency-cruiser report"* ]] || { echo "$got"; return 1; }
   ! ran "$got" || return 1
-  ran "[part 2/2 pass] dependency-cruiser: no findings" || return 1   # control
+  ran "[part 2/2 pass] dependency-cruiser: note: ran clean — no dependency violations found (909 modules)" || return 1   # control
+  # #4925 — the NEWEST review is judged: an old error followed by a later clean run is green
+  printf '%s\n' '{"ts":2000,"event":"demo.gate.result","card_id":4900,"gate":"arch","findings":"[part 2/2 error] dependency-cruiser: no dependency-cruiser report"}' \
+    '{"ts":5000,"event":"demo.gate.result","card_id":4925,"gate":"arch","findings":"[part 2/2 pass] dependency-cruiser: note: ran clean — no dependency violations found (909 modules)"}' > "$f.3"
+  got="$(next_arch_depcruise "$f.3" 1)"
+  [[ "$got" == *"ran clean"* ]] || { echo "judged an older review: $got"; return 1; }
   # a review that has no dependency-cruiser part at all is red, not "not yet"
   printf '%s\n' '{"ts":3000,"event":"demo.gate.result","card_id":4901,"gate":"arch","findings":"gate-arch: no findings"}' > "$f.2"
   got="$(next_arch_depcruise "$f.2" 1)"

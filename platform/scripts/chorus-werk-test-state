@@ -9,6 +9,11 @@ skipped failed, same for cases, by suite listing of each case that fails + suite
 Reads the /nightly page (chorus-api), the one source every role reports from:
 never logs, never a per-role slice. Backs the /wts and /werk-test-state skills.
 
+#4925 (Jeff 11-22 08:32) — one exception, for a run still going: the page holds only
+its suite count until it ends, so the running block reads the run's own case events
+(test.case.* on its trace, Loki) and says so: cases passed/failed/skipped so far and
+each failed case under its file with its reason.
+
 Usage:
   chorus-werk-test-state              # latest FINISHED run (a run in progress is one line on top)
   chorus-werk-test-state RUN          # a run id from the page, e.g. 2026-09-30T08:33:41
@@ -65,6 +70,49 @@ def num(counts, key, word):
     m = re.search(rf"([\d,]+) {word}", counts.get(key, ""))
     return m.group(1) if m else "—"
 
+LOKI = os.environ.get("LOKI_URL", "http://localhost:3102")
+
+def running_block(events):
+    """#4925 — a running run's live block from its case events, pure. `events` are the
+    event dicts (event, file, case, reason). Deduped by (file, case): the last word wins."""
+    last = {}
+    for e in events:
+        ev = e.get("event", "")
+        if not ev.startswith("test.case.") or ev == "test.case.started":
+            continue
+        last[(e.get("file", ""), e.get("case", ""))] = (ev.rsplit(".", 1)[-1], e.get("reason", ""))
+    n = {k: sum(1 for v in last.values() if v[0] == k) for k in ("passed", "failed", "skipped")}
+    out = [f"          live cases  {n['passed']:,} passed · {n['failed']} failed · {n['skipped']} skipped (from the run's events)"]
+    fails = {}
+    for (f, c), (st, why) in last.items():
+        if st == "failed":
+            fails.setdefault(f, []).append((c, why))
+    for f in sorted(fails):
+        out.append(f"            ✗ {f}   {len(fails[f])} failed")
+        for c, why in fails[f][:3]:
+            out.append(f"                {c[:70]}{' — ' + why[:90] if why else ''}")
+    return out
+
+def live_events(started_iso):
+    """The newest nightly trace's case events since `started_iso` (Loki). [] when Loki
+    does not answer: the block then says it could not read them, never "0 failed"."""
+    import json as _j, urllib.parse as up, datetime as dt
+    try:
+        t0 = int(dt.datetime.fromisoformat(started_iso).timestamp() * 1e9)
+    except ValueError:
+        return None
+    q = '{job="platform-chorus", role="nightly"} |= "test.case." | json | event=~"test.case.(passed|failed|skipped)"'
+    url = f"{LOKI}/loki/api/v1/query_range?" + up.urlencode({"query": q, "start": str(t0), "limit": "5000", "direction": "forward"})
+    try:
+        with urllib.request.urlopen(url, timeout=30) as r:
+            res = _j.load(r)["data"]["result"]
+    except Exception:
+        return None
+    evs = [_j.loads(l) for s_ in res for _, l in s_["values"]]
+    traces = [e.get("trace", "") for e in evs if e.get("trace")]
+    newest = traces[-1] if traces else ""
+    return [e for e in evs if e.get("trace") == newest]
+
 def main():
     if "--fixture" in sys.argv:
         sys.exit(fixture_mode())
@@ -75,6 +123,9 @@ def main():
     if not finished(front) and "IN PROGRESS" in v:
         started = when.split(" ")[0]
         running = f"running now: started {started.replace('T', ' ')[:16]}, {v.replace('IN PROGRESS — ', '')}"
+        evs = live_events(started)
+        running += "\n" + ("\n".join(running_block(evs)) if evs is not None
+                            else "          live cases  UNMEASURED — the run's events could not be read (Loki)")
     page = get(f"{BASE}?run={args[0]}") if args else latest_finished(front, lambda r: get(f"{BASE}?run={r}"))
     if page is None:
         print((running + "\n" if running else "") + "no finished nightly run on the page")

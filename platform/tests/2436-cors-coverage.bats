@@ -64,21 +64,6 @@ setup() {
   [ "$output" = "DENIED" ]
 }
 
-# The two live legs below are BOX-DEPENDENT: their answer is a fact about
-# whichever chorus-api the caller points at, not about this code. Run against a
-# host that has not deployed the fix they are correctly red, which would deadlock
-# a land on its own gate. So they refuse to score unless a system-under-test is
-# named explicitly, and say so rather than passing quietly (Jeff, 2026-09-02: a
-# box-dependent test reports UNMEASURED, never a green).
-#
-# The real live proof for this card is the demo, where prod and the variant are
-# probed side by side and disagree.
-
-@test "live (opt-in): the named system refuses a stranger and serves our own pages" {
-  if [ -z "${CORS_SUT:-}" ]; then
-    skip "UNMEASURED — no CORS_SUT named; set CORS_SUT=http://host:port to score a running system"
-  fi
-  run env CHORUS_API_URL="$CORS_SUT" bash "$PROBE"
-  echo "$output"
-  [ "$status" -eq 0 ]
-}
+# #4925 — the live leg moved to 2436-cors-live.bats (@needs: machine): a card run never
+# probes a box that has not deployed its change (the land-deadlock reason it was opt-in),
+# and the nightly scores prod after every land instead of skipping every night.

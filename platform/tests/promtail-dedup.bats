@@ -1,74 +1,116 @@
 #!/usr/bin/env bats
-# @test-type: integration — auto-classified (#3528 sweep); service-hitting=integration(skip-if-absent), static-guard=unit
+# @test-type: integration — promtail syntax/route checks + live Loki :3102 stream dedup query
 # @domain: logs — the product domain this suite guards (#4334)
 load test_helper
-# promtail-dedup.bats — verify no duplicate Promtail streams in Loki (#1986)
+# promtail-dedup.bats — verify no duplicate Promtail streams in Loki (#1986, #4925)
 # What Jeff sees: Loki queries return one stream per log file, not duplicates.
-# Prior work: #1984 added glob-based scrape for Chorus/Gathering log dirs.
-# Log evidence: chorus-api.log had 2 Loki streams (job=daemon-logs + job=chorus-api).
-# Fix: __path_exclude__ in promtail-native.yaml excludes dedicated files from glob.
-#
-# #4336: the exclude checks were greps of the config text. They now ask the parsed
-# config which jobs would scrape a given file (fixtures/4336/promtail-routes.rb applies
-# each target's __path__ and __path_exclude__ globs), so an exclude that sits in the
-# wrong job, on the wrong target, or misses the file goes red. A real promtail
-# scrape of a fixture log was tried and cannot run hermetically: promtail never exits
-# on its own and ignores SIGALRM, so it would need to be killed. The live-stream
-# check is gated to RUN_LIVE_INTEGRATION. The config and binary live outside this
-# repo (shared-observability, ~/bin), so their absence reports UNMEASURED, not red.
 
-# #4994: the config lives in this repo (a role's $HOME is not jeffbridwell's, so the old path read UNMEASURED there)
-PROMTAIL_CONFIG="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)/platform/config/promtail/promtail-native.yaml"
-# #4994: promtail runs as jeffbridwell (gui/501); a role's $HOME is not his
-# the binary comes from its LaunchAgent in this repo; its home is two levels up (~/bin/promtail)
-PROMTAIL_BIN="${PROMTAIL_BIN:-$(plutil -extract ProgramArguments.0 raw "$(cd "$BATS_TEST_DIRNAME/../.." && pwd)/platform/scripts/launchagents-canonical/com.gathering.promtail.plist" 2>/dev/null)}"
+REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
+PROMTAIL_CONFIG="$REPO_ROOT/platform/config/promtail/promtail-native.yaml"
+PROMTAIL_BIN="${PROMTAIL_BIN:-$(plutil -extract ProgramArguments.0 raw "$REPO_ROOT/platform/scripts/launchagents-canonical/com.gathering.promtail.plist" 2>/dev/null)}"
 PROMTAIL_HOME="${PROMTAIL_HOME:-$(dirname "$(dirname "$PROMTAIL_BIN")")}"
-LOKI="http://localhost:3102"
+LOKI_URL="${LOKI_URL:-http://localhost:3102}"
 ROUTES="${BATS_TEST_DIRNAME}/fixtures/4336/promtail-routes.rb"
+ANCHOR="${BATS_TEST_DIRNAME}/lib/live_anchor.py"
 LOGS="${PROMTAIL_HOME}/Library/Logs"
 
-need_config() {
-  [ -f "$PROMTAIL_CONFIG" ] || skip "UNMEASURED — promtail config not on this box ($PROMTAIL_CONFIG) (#4336)"
-}
-
-# jobs that would scrape <file> under <config>, comma-joined
 routes() { ruby "$ROUTES" "$1" "$2" | paste -sd, -; }
 
+loki_count_at() {
+  local at="$1" logql="$2"
+  curl -sfG --max-time 10 "${LOKI_URL}/loki/api/v1/query" \
+    --data-urlencode "time=${at}" \
+    --data-urlencode "query=sum(count_over_time(${logql}[1h]))" \
+    | python3 -c 'import json,sys; r=json.load(sys.stdin)["data"]["result"]; print(int(float(r[0]["value"][1])) if r else 0)'
+}
+
+check_loki_dedup() {
+  local target="$LOGS/Chorus/chorus-api.log" line at own dup
+  line=$(LOKI_URL="$LOKI_URL" python3 "$ANCHOR" newest "{job=\"chorus-api\",filename=\"${target}\"}") || {
+    echo "Loki anchor failed for {job=\"chorus-api\",filename=\"${target}\"}"
+    return 1
+  }
+  at=$(python3 -c "import sys; print(int(float(sys.argv[1])) + 1)" "${line%%$'\t'*}")
+  own=$(loki_count_at "$at" "{job=\"chorus-api\",filename=\"${target}\"}") || { echo "own query failed"; return 1; }
+  dup=$(loki_count_at "$at" "{job=\"daemon-logs\",filename=\"${target}\"}") || { echo "dup query failed"; return 1; }
+  echo "$own in job=chorus-api, $dup in job=daemon-logs (1h ending $at)"
+  [ "$own" -gt 0 ] || { echo "vacuous window: 0 lines in job=chorus-api"; return 1; }
+  [ "$dup" -eq 0 ] || { echo "duplicate scrape: $dup lines in job=daemon-logs"; return 1; }
+}
+
 @test "Promtail config is valid" {
-  need_config
-  [ -x "$PROMTAIL_BIN" ] || skip "UNMEASURED — promtail binary not on this box ($PROMTAIL_BIN) (#4336)"
+  [ -f "$PROMTAIL_CONFIG" ]
+  [ -x "$PROMTAIL_BIN" ]
   run "$PROMTAIL_BIN" -config.file="$PROMTAIL_CONFIG" -check-syntax
   [ "$status" -eq 0 ]
   echo "$output" | grep -q "Valid config"
 }
 
 @test "chorus-api.log is scraped by its own job only, never also by the daemon-logs glob" {
-  need_config
-  # positive control: a file with no dedicated job IS picked up by the glob, so an
-  # empty answer below cannot pass for "excluded"
+  [ -f "$PROMTAIL_CONFIG" ]
   [ "$(routes "$PROMTAIL_CONFIG" "$LOGS/Chorus/some-other-daemon.log")" = "daemon-logs" ]
   [ "$(routes "$PROMTAIL_CONFIG" "$LOGS/Chorus/chorus-api.log")" = "chorus-api" ]
 }
 
 @test "cloudflared.log is scraped by its own job only, never also by the gathering daemon-logs glob" {
-  need_config
+  [ -f "$PROMTAIL_CONFIG" ]
   [ "$(routes "$PROMTAIL_CONFIG" "$LOGS/Gathering/some-other-daemon.log")" = "daemon-logs" ]
   [ "$(routes "$PROMTAIL_CONFIG" "$LOGS/Gathering/cloudflared.log")" = "cloudflared" ]
 }
 
 @test "NEGATIVE PROOF: a config whose glob job lost its exclude reports the duplicate" {
-  need_config
+  [ -f "$PROMTAIL_CONFIG" ]
   fixture="$BATS_TEST_TMPDIR/promtail.yaml"
   sed -E '/__path_exclude__:.*Logs\/(Chorus|Gathering)\/\{/d' "$PROMTAIL_CONFIG" > "$fixture"
   [ "$(routes "$fixture" "$LOGS/Chorus/chorus-api.log")" = "chorus-api,daemon-logs" ]
   [ "$(routes "$fixture" "$LOGS/Gathering/cloudflared.log")" = "cloudflared,daemon-logs" ]
 }
 
-@test "no recent daemon-logs entries for chorus-api.log (last 1 min)" {
-  [ "${RUN_LIVE_INTEGRATION:-}" = "true" ] || skip "UNMEASURED — queries the live Loki on :3102; set RUN_LIVE_INTEGRATION=true (#4336)"
-  count=$(curl -s "${LOKI}/loki/api/v1/query" \
-    --data-urlencode "query=count_over_time({job=\"daemon-logs\",filename=\"${PROMTAIL_HOME}/Library/Logs/Chorus/chorus-api.log\"}[1m])" \
-    2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); vals=d.get('data',{}).get('result',[]); print(sum(int(v['value'][1]) for v in vals))" 2>/dev/null)
-  [ -n "$count" ]
-  [ "$count" -eq 0 ]
+@test "Loki ingests chorus-api.log under job=chorus-api only, never daemon-logs" {
+  run check_loki_dedup
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
+
+@test "NEGATIVE PROOF: live Loki dedup check fails on daemon-logs duplicates, zero own lines, or unreachable Loki" {
+  LOKI_URL="http://127.0.0.1:9" run check_loki_dedup
+  [ "$status" -ne 0 ]
+
+  cat > "$BATS_TEST_TMPDIR/stub.py" <<'PY'
+import http.server, json, sys, urllib.parse
+port_file, mode_file = sys.argv[1], sys.argv[2]
+class H(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
+    def do_GET(self):
+        mode = open(mode_file).read().strip()
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("query", [""])[0]
+        if "query_range" in self.path:
+            res = [{"stream": {}, "values": [["1795350000000000000", "ok"]]}]
+        else:
+            val = ("2" if mode == "dup" else "0") if "daemon-logs" in q else ("0" if mode == "zero_own" else "5")
+            res = [{"metric": {}, "value": [1795350001, val]}] if val != "0" else []
+        body = json.dumps({"status": "success", "data": {"result": res}}).encode()
+        self.send_response(200); self.send_header("Content-Type", "application/json"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+srv = http.server.HTTPServer(("127.0.0.1", 0), H)
+open(port_file, "w").write(str(srv.server_port))
+srv.serve_forever()
+PY
+  ( python3 "$BATS_TEST_TMPDIR/stub.py" "$BATS_TEST_TMPDIR/port" "$BATS_TEST_TMPDIR/mode" >/dev/null 2>&1 & echo $! > "$BATS_TEST_TMPDIR/pid" )
+  srv_pid="$(cat "$BATS_TEST_TMPDIR/pid")"
+  for _ in 1 2 3 4 5 6 7 8 9 10; do [ -s "$BATS_TEST_TMPDIR/port" ] && break; sleep 0.1; done
+  stub="http://127.0.0.1:$(cat "$BATS_TEST_TMPDIR/port")"
+
+  echo "dup" > "$BATS_TEST_TMPDIR/mode"
+  LOKI_URL="$stub" run check_loki_dedup
+  [ "$status" -ne 0 ]
+  echo "$output" | grep -q "duplicate scrape" || { kill "$srv_pid" 2>/dev/null || true; echo "$output"; return 1; }
+
+  echo "zero_own" > "$BATS_TEST_TMPDIR/mode"
+  LOKI_URL="$stub" run check_loki_dedup
+  [ "$status" -ne 0 ]
+  echo "$output" | grep -q "vacuous window" || { kill "$srv_pid" 2>/dev/null || true; echo "$output"; return 1; }
+
+  echo "ok" > "$BATS_TEST_TMPDIR/mode"
+  LOKI_URL="$stub" run check_loki_dedup
+  kill "$srv_pid" 2>/dev/null || true
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }

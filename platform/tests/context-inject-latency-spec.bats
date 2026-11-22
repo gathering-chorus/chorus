@@ -40,16 +40,26 @@ load_gate_reason() {
   # driven into its own unreadable branch from the seam, which is the branch
   # the proof exists to reach (#3734). Unset still reads the box; empty now
   # means what the fixture says it means.
-  load="${LOAD_1MIN-$(sysctl -n vm.loadavg 2>/dev/null | awk '{print $2}')}"
-  ncpu="${NCPU:-$(sysctl -n hw.ncpu 2>/dev/null || echo 8)}"
+  # #4925 — absolute path: the nightly runs under launchd's PATH, which has no /usr/sbin
+  # (#4582), so a bare `sysctl` read nothing and the gate said "load average unreadable"
+  load="${LOAD_1MIN-$(/usr/sbin/sysctl -n vm.loadavg 2>/dev/null | awk '{print $2}')}"
+  ncpu="${NCPU:-$(/usr/sbin/sysctl -n hw.ncpu 2>/dev/null || echo 8)}"
   [ -n "$load" ] || { echo "UNMEASURED — load average unreadable"; return 0; }
   python3 -c "import sys; l=float('$load'); n=float('$ncpu'); sys.exit(0 if l >= n else 1)" \
     && echo "UNMEASURED — 1-minute load ${load} at or above ${ncpu} cores; latency would measure the box, not the cache"
   return 0
 }
+# #4925 (Silas row 3) — the nightly runs this in its last lane while the load is still
+# falling from the parallel pool; it skipped both latency cases every night. It now waits
+# up to QUIET_WAIT_SECS (300) for the load to drop below the core count, checking every
+# 10 s, and only then reports UNMEASURED naming the load (never a pass).
 require_quiet_box() {
-  local why; why=$(load_gate_reason)
-  [ -z "$why" ] || skip "$why"
+  local why waited=0 limit="${QUIET_WAIT_SECS:-300}"
+  why=$(load_gate_reason)
+  while [ -n "$why" ] && [[ "$why" == *"at or above"* ]] && [ "$waited" -lt "$limit" ]; do
+    sleep 10; waited=$((waited + 10)); why=$(load_gate_reason)
+  done
+  [ -z "$why" ] || skip "$why (waited ${waited}s)"
 }
 
 envelope_ms() {
@@ -114,4 +124,9 @@ assert warm * 100 / cold <= 70, f'warm ratio {warm*100/cold:.0f}% of cold — ex
   [[ "$out" == UNMEASURED* ]] || { echo "gate open at load 57.7: '$out'" >&2; return 1; }
   out=$(LOAD_1MIN= NCPU=8 load_gate_reason)
   [[ "$out" == UNMEASURED* ]] || { echo "unreadable load must not read as quiet: '$out'" >&2; return 1; }
+}
+
+@test "NEGATIVE PROOF (#4925): under launchd's PATH (no /usr/sbin) the gate still reads the load" {
+  out=$(PATH=/usr/bin:/bin NCPU=10000 load_gate_reason)
+  [[ "$out" != *"unreadable"* ]] || { echo "$out"; return 1; }
 }

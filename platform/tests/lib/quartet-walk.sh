@@ -93,7 +93,7 @@ TOTAL="$(printf '%s\n' "$CLASSES" | wc -l | tr -d ' ')"
 # One real subject of a class, for filling an edge. Empty when the collection is
 # empty — the case then reports WHY rather than sending a made-up IRI.
 resolve_edge() {
-  local target="$1" path
+  local target="$1" path code rows name
   path="$("$GEN" generate-tests --class "$target" 2>/dev/null \
     | python3 -c 'import json,sys
 try:
@@ -101,12 +101,28 @@ try:
     print(next((r.split(" ",1)[1] for r in d["unit"]["routes"]
                 if r.startswith("GET ") and ":name" not in r and not r.endswith("/batch")), ""))
 except Exception: print("")' 2>/dev/null)"
-  [ -n "$path" ] || return 0
-  curl -sf --max-time 15 "$API$path" 2>/dev/null | python3 -c 'import json,sys
+  if [ -n "$path" ]; then
+    rows="$WORK/edge-$target.json"
+    code="$(curl -s --max-time 15 -o "$rows" -w '%{http_code}' "$API$path" 2>/dev/null || echo 000)"
+    name="$(python3 -c 'import json,sys
 try:
-    rows=json.load(sys.stdin).get("data") or []
+    rows=json.load(open(sys.argv[1])).get("data") or []
     rows=rows if isinstance(rows,list) else []
     print((rows[0].get("name") or str(rows[0].get("iri","")).rsplit("#",1)[-1]) if rows else "")
+except Exception: print("")' "$rows" 2>/dev/null)"
+    [ -n "$name" ] && { printf '%s' "$name"; return 0; }
+  fi
+  # #4925 (Silas) — the generated route can name a door that no longer serves the class
+  # (Principle moved out of athena-make in #5017/#5021: GET /principles/principles 404s),
+  # so Practice.expresses had no row to point at and the class read UNMEASURED every night.
+  # Read a real row of the class from the store instead, and say why the route did not.
+  echo "$target: route ${path:-none} answered ${code:-no route}; read from the store" >> "$WORK/edge-why"
+  curl -sf --max-time 15 -G "$RESIDUE_QUERY" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -H 'Accept: application/sparql-results+json' \
+    --data-urlencode "query=SELECT ?s WHERE { GRAPH ?g { ?s a ?c . FILTER(STRENDS(STR(?c), \"#$target\")) FILTER(!CONTAINS(STR(?s), \"zz-\")) } } LIMIT 1" 2>/dev/null \
+    | python3 -c 'import json,sys
+try:
+    b=json.load(sys.stdin)["results"]["bindings"]
+    print(b[0]["s"]["value"].rsplit("#",1)[-1] if b else "")
 except Exception: print("")' 2>/dev/null
 }
 
@@ -117,42 +133,60 @@ except Exception: print("")' 2>/dev/null
 # row's own, with the probe tag before its extension, and must re.fullmatch the pattern.
 # Prints the value; "UNMET <pattern>" when no served row gives one; nothing when the
 # field has no pattern.
-patterned_value() {  # <class> <field> <tag>
-  local class="$1" field="$2" tag="$3" pat path
-  pat="$(curl -sf --max-time 15 -G "$RESIDUE_QUERY" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -H 'Accept: application/sparql-results+json' \
-    --data-urlencode "query=PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT ?p WHERE { GRAPH ?g { ?s sh:targetClass ?c . FILTER(STRENDS(STR(?c), \"#$class\")) ?s sh:property ?pr . ?pr sh:path ?f . FILTER(STRENDS(STR(?f), \"#$field\")) ?pr sh:pattern ?p } } LIMIT 1" 2>/dev/null \
+patterned_value() {  # <class> <field> <tag> [datatype]
+  local class="$1" field="$2" tag="$3" dtype="${4:-}" pat uniq asis path
+  # #4925 — the pattern, and whether the field carries a chorus:unique* annotation
+  read -r uniq pat < <(curl -sf --max-time 15 -G "$RESIDUE_QUERY" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -H 'Accept: application/sparql-results+json' \
+    --data-urlencode "query=PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT ?p (COUNT(?q) AS ?u) WHERE { GRAPH ?g { ?s sh:targetClass ?c . FILTER(STRENDS(STR(?c), \"#$class\")) ?s sh:property ?pr . ?pr sh:path ?f . FILTER(STRENDS(STR(?f), \"#$field\")) ?pr sh:pattern ?p . OPTIONAL { ?pr ?q ?o . FILTER(STRSTARTS(STR(?q), \"https://jeffbridwell.com/chorus#unique\")) } } } GROUP BY ?p LIMIT 1" 2>/dev/null \
     | python3 -c 'import json,sys
-b=json.load(sys.stdin)["results"]["bindings"]; print(b[0]["p"]["value"] if b else "")' 2>/dev/null)"
+b=json.load(sys.stdin)["results"]["bindings"]
+print(b[0]["u"]["value"], b[0]["p"]["value"]) if b else print("0")' 2>/dev/null)
   [ -n "$pat" ] || return 0
+  # #4925 (Silas) — a served value may go as-is only when it names nothing: not unique,
+  # not the row's name/label, not an anyURI
+  asis=0
+  [ "${uniq:-0}" = 0 ] && [ "$field" != name ] && [ "$field" != label ] && [ "$dtype" != anyURI ] && asis=1
   path="$("$GEN" generate-tests --class "$class" 2>/dev/null | python3 -c 'import json,sys
 try:
     d=json.load(sys.stdin)
     print(next((r.split(" ",1)[1] for r in d["unit"]["routes"] if r.startswith("GET ") and ":name" not in r and not r.endswith("/batch")), ""))
 except Exception: print("")' 2>/dev/null)"
-  { [ -n "$path" ] && curl -sf --max-time 15 "$API$path" 2>/dev/null || echo '{}'; } | tagged_match "$pat" "$field" "$tag"
+  { [ -n "$path" ] && curl -sf --max-time 15 "$API$path" 2>/dev/null || echo '{}'; } | tagged_match "$pat" "$field" "$tag" "$asis"
 }
 
-# stdin: a served list page. A served row's <field> value that fullmatches <pattern>,
-# with -<tag> before its extension, if that still fullmatches; else "UNMET <pattern>".
-tagged_match() {  # <pattern> <field> <tag>
+# stdin: a served list page. A served row's <field> value that matches <pattern>, made
+# the probe's own, in order (#4925, Wren + Silas):
+#   a. -<tag> before its extension, if that still matches;
+#   b. else the tag folded to the pattern's alphabet (upper case, "_"), e.g. keyId ^[A-Z0-9_]+$;
+#   c. else the served value as-is, ONLY when <asis> is 1 (the field names nothing: not
+#      unique, not the name/label, not an anyURI), e.g. fileMode "0644" under ^0[0-7]{3}$;
+#   d. else "UNMET <pattern>".
+# Cleanup finds the probe row by its IRI, never by a field value (quartet-walk's residue query).
+tagged_match() {  # <pattern> <field> <tag> [asis 0|1]
   python3 -c 'import json,re,sys,os
 pat, field, tag = sys.argv[1:4]
+asis = len(sys.argv) > 4 and sys.argv[4] == "1"
 try: rows = json.load(sys.stdin).get("data") or []
 except Exception: rows = []
+served = None
 for r in rows if isinstance(rows, list) else []:
     v = r.get(field)
     v = v[0] if isinstance(v, list) and v else v
     if not isinstance(v, str) or not re.search(pat, v): continue
+    served = served or v
     stem, ext = os.path.splitext(v)
-    t = f"{stem}-{tag}{ext}"
     # #4965 (Silas) - shape patterns are anchored where they mean it (^urn:chorus:
     # is a prefix), so fullmatch never took a real value. A value the tag would
-    # break is not sent, not even as served: that is the value of a live row
-    # (#4915; red in proof run 034wwPUt)
-    if not re.search(pat, t): continue
-    print(t)
+    # break is not sent as a tagged value (#4915; red in proof run 034wwPUt)
+    folded = re.sub(r"[^A-Za-z0-9]", "_", tag).upper()
+    for t in (f"{stem}-{tag}{ext}", f"{stem}_{folded}{ext}"):
+        if re.search(pat, t):
+            print(t)
+            sys.exit(0)
+if asis and served is not None:
+    print(served)
     sys.exit(0)
-print("UNMET " + pat)' "$1" "$2" "$3"
+print("UNMET " + pat)' "$@"
 }
 
 # #4915 (Silas) — the graphs this owner holds acl:Append on and not acl:Write. Append
@@ -245,7 +279,7 @@ PYR
       # A constrained literal takes one of the shape's own words. Inventing a
       # value here would 422 forever and read as a broken API.
       V="$ALLOWED"
-    elif PV="$(patterned_value "$CLASS" "$FIELD" "zz-4267-${RUN_ID:-probe}")" && [ -n "$PV" ]; then
+    elif PV="$(patterned_value "$CLASS" "$FIELD" "zz-4267-${RUN_ID:-probe}" "$DTYPE")" && [ -n "$PV" ]; then
       case "$PV" in "UNMET "*) UNMET="$UNMET $FIELD: pattern ${PV#UNMET } unmet"; continue ;; esac
       V="$PV"
     else
@@ -275,7 +309,7 @@ for f in json.load(open(sys.argv[1])).get("requiredFields") or []:
     unmeasured=$((unmeasured+1)); continue
   fi
   if [ -n "$MISSING" ]; then
-    emit "$CLASS" UNMEASURED "no row to point a required edge at:$MISSING"
+    emit "$CLASS" UNMEASURED "no row to point a required edge at:$MISSING$( [ -s "$WORK/edge-why" ] && printf ' (%s)' "$(tr '\n' ';' < "$WORK/edge-why")" )"
     unmeasured=$((unmeasured+1)); continue
   fi
 

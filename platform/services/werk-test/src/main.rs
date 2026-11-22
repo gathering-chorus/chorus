@@ -1842,7 +1842,15 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
                 _ => { c.env_remove("CLEARING_URL"); }
             }
             let (rc, out) = werk_test::time_unit("proving/flows", || werk_test::run_capped(c, std::time::Duration::from_secs(1800)));
-            forward_test_events(&root);
+            let events = forward_test_events(&root);
+            // #4925 — one row per spec file, from the reporter's own case events: the
+            // registry lists the flows per file and this stage stored nothing, so all 15
+            // read "no result". A failing spec turns its own row red, not only the lane.
+            let flows = werk_test::flow_file_results(&events);
+            let cases: Vec<werk_test::CaseResult> = flows.iter().map(|(c, _)| c.clone()).collect();
+            let reasons: Vec<(String, String, String)> = flows.iter().filter(|(_, r)| !r.is_empty())
+                .map(|(c, r)| (c.file_path.clone(), c.test_name.clone(), r.clone())).collect();
+            store_unit("proving/flows", &cases, &[], &reasons, &std::collections::HashMap::new());
             let (verdict, summary) = werk_test::ui_lane_verdict(rc, &out);
             werk_test::print_unit_time("ui", "proving/flows", "proving/flows");
             println!("nightly-unit|ui|proving/flows|{}|{}", verdict, summary);
@@ -2534,16 +2542,19 @@ fn test_events_path(werk: &str) -> String {
 
 /// #4454 — move the children's events to the spine: the file is renamed
 /// first, so a child still writing starts a new one and nothing is read twice.
-fn forward_test_events(werk: &str) {
+/// Forwards the child's test events to the spine and returns what it read
+/// (#4925: the ui stage builds its per-spec rows from the same text).
+fn forward_test_events(werk: &str) -> String {
     let path = test_events_path(werk);
     static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let taken = format!("{}.{}", path, N.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
     if std::fs::rename(&path, &taken).is_err() {
-        return;
+        return String::new();
     }
     let text = std::fs::read_to_string(&taken).unwrap_or_default();
     let _ = std::fs::remove_file(&taken);
     emit_spine_batch(&werk_test::forwardable_test_events(&text));
+    text
 }
 
 /// #3929 — probe `cargo nextest --version` ONCE per process against the pin in

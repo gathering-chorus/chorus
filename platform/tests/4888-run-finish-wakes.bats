@@ -92,29 +92,105 @@ ROOM_URL="${CLEARING_ROOM_URL:-https://lightlifeurbangardens.com/clearing-v2/}"
 # must render on the page Jeff loads. One the page has scrolled past reads
 # unmeasured. Before the land no real wake exists to check (the card's AC5 sits
 # under "After land": the land's own wake proves it).
-WAKE_RE='^\[alert → [a-z-]+\] #[0-9]+ [a-z-]+ .*· dagu [^ ]+ · /cws [0-9]+$'
-@test "AC5: the newest run-finished wake in the room's record renders on the public page" {
-  code="$(curl -s --max-time 10 -o "$BATS_TEST_TMPDIR/rec" -w '%{http_code}' "${ROOM_URL}api/messages" || true)"
-  # #5002 (Silas): the public room's record sits behind sign-in (401). This check has
-  # no credential, so behind sign-in it reads unmeasured, never green; any other failure is red.
-  case "$code" in 401|302|403) skip "unmeasured: the room's record needs sign-in (HTTP $code)" ;; esac
-  [ "$code" = 200 ] || { echo "room record unreadable (HTTP $code)"; return 1; }
-  rec="$(cat "$BATS_TEST_TMPDIR/rec")"
-  want="$(printf '%s' "$rec" | node -e '
-    const {contentHash}=require(process.argv[1]); let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{
-    const re=new RegExp(process.argv[2]); const w=JSON.parse(s).filter(m=>m.from==="system"&&re.test(m.text||"")).pop();
-    if(w) console.log("system:"+contentHash(w.text)); });' "$ROOT/platform/chorus-sdk/reply/hash.js" "$WAKE_RE")"
-  [ -n "$want" ] || skip "unmeasured: no run-finished wake in the room's record"
-  run env WANT_4887="$want" node "$ROOT/platform/tests/lib/room-rows-4887.cjs" "$ROOT/node_modules/playwright-core" "$ROOM_URL"
+# #4889 fenced failure wakes (multi-line) + #4970 quiet pass wakes: match both single-line and fenced run-finished wakes.
+WAKE_RE_JS='^\[alert → [a-z-]+\] #[0-9]+ [a-z-]+ (?:failed · \/cws [0-9]+\n```\n[\s\S]*· dagu [^ \n]+\n```.*|.*· dagu [^ \n]+ · \/cws [0-9]+)$'
+@test "AC5: a real run-finished wake ingested into Clearing v2 requires sign-in on tunneled reads and renders on the room page" {
+  cage
+  # #4925 — the tree under test's own Clearing v2: a card's werk holds no dist unless the
+  # card changed clearing-v2 (werk-build builds changed units only). tsc takes ~2 s.
+  (cd "$ROOT/directing/clearing-v2" && npm run build >"$BATS_TEST_TMPDIR/cv2-build.log" 2>&1) \
+    || { echo "clearing-v2 build failed:"; tail -5 "$BATS_TEST_TMPDIR/cv2-build.log"; return 1; }
+  printf '#!/bin/sh\n[ "$1" = nudge-send ] && printf "%%s" "$4" > %s/raw_wake\n' "$BATS_TEST_TMPDIR" > "$BATS_TEST_TMPDIR/shim"
+  chmod +x "$BATS_TEST_TMPDIR/shim"
+  finish failed cicd >/dev/null
+  raw="$(cat "$BATS_TEST_TMPDIR/raw_wake")"
+  case "$raw" in "[alert →"*) wake_text="$raw" ;; *) wake_text="[alert → silas] $raw" ;; esac
+
+  run env WAKE_TEXT="$wake_text" WAKE_RE="$WAKE_RE_JS" ROOT="$ROOT" node - <<'NODE'
+const http = require('http');
+const crypto = require('crypto');
+const { chromium } = require(process.env.ROOT + '/node_modules/playwright-core');
+const { contentHash } = require(process.env.ROOT + '/platform/chorus-sdk/reply/hash.js');
+const { createApp } = require(process.env.ROOT + '/directing/clearing-v2/dist/server.js');
+const { mintShareSessionCookie } = require(process.env.ROOT + '/directing/clearing-v2/dist/share-session.js');
+
+(async () => {
+  const cookieKey = crypto.randomBytes(32);
+  const { app, router, stopKeys } = createApp({
+    cookieKey,
+    knownKeys: new Map(),
+    rolesUrl: 'http://127.0.0.1:9/roles',
+    cardsUrl: 'http://127.0.0.1:9/cards',
+    alertsUrl: 'http://127.0.0.1:9/alerts',
+    pulseUrl: 'http://127.0.0.1:9/pulse',
+    readingsUrl: 'http://127.0.0.1:9/readings',
+    streamUrl: 'http://127.0.0.1:9/streams',
+    relayUrl: '',
+    signInUrl: 'https://example.invalid/login',
+    readOnly: true,
+  });
+  router.ingest({ id: 'wake-4888', from: 'system', room: 'team', visible: true, text: process.env.WAKE_TEXT, ts: new Date().toISOString() });
+  const srv = http.createServer(app);
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const port = srv.address().port;
+  const base = `http://127.0.0.1:${port}`;
+  let browser;
+  try {
+    // 1. Negative proof on the gate (#5002): tunneled anonymous read is refused (401), never 200.
+    const anon = await fetch(`${base}/api/messages`, { headers: { 'cf-ray': 'test-4888' } });
+    if (anon.status !== 401) throw new Error(`expected 401 without sign-in, got ${anon.status}`);
+
+    // 2. Signed-in tunneled read gets 200 and matches WAKE_RE.
+    const cookie = `chorus_share_session=${mintShareSessionCookie('https://jeffbridwell.com/chorus#principal-jeff', cookieKey)}`;
+    const authed = await fetch(`${base}/api/messages`, { headers: { 'cf-ray': 'test-4888', cookie } });
+    if (authed.status !== 200) throw new Error(`expected 200 with sign-in, got ${authed.status}`);
+    const rec = await authed.json();
+    const re = new RegExp(process.env.WAKE_RE);
+    const w = rec.filter((m) => m.from === 'system' && re.test(m.text || '')).pop();
+    if (!w) throw new Error(`real run-finished wake did not match WAKE_RE: ${JSON.stringify(process.env.WAKE_TEXT)}`);
+
+    // 3. Headless Chrome loads the room with the signed-in cookie and renders #msg-wake-4888 on #messages-stream.
+    browser = await chromium.launch({
+      executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      headless: true,
+      args: ['--use-mock-keychain', '--password-store=basic'],
+    });
+    const ctx = await browser.newContext({ extraHTTPHeaders: { 'cf-ray': 'test-4888', cookie } });
+    const page = await ctx.newPage();
+    const errs = [];
+    page.on('pageerror', (e) => errs.push(e.message));
+    await page.goto(`${base}/`, { waitUntil: 'load', timeout: 15000 });
+    await page.waitForSelector(`#messages-stream #msg-${w.id}[data-from="system"]`, { timeout: 10000 });
+    if (errs.length) throw new Error(`pageerror: ${errs.join('; ')}`);
+    console.log(JSON.stringify({ ok: true, id: w.id, hash: contentHash(w.text) }));
+  } finally {
+    if (browser) await browser.close();
+    stopKeys();
+    await new Promise((r) => srv.close(r));
+  }
+})().catch((e) => { console.error(e.message); process.exit(1); });
+NODE
   echo "$output"
-  [ "$status" -ne 3 ] || skip "unmeasured: $output"
   [ "$status" -eq 0 ] || return 1
 }
 
-@test "AC5: the wake pattern matches run-finished's own words, and not an older nudge" {
-  re="$WAKE_RE"
-  [[ "[alert → abby-normal] #999999 clearing-evaluate passed · dagu 034rvgJDfrob5mIxbyTwg3 · /cws 999999" =~ $re ]] || return 1
-  [[ ! "[alert → silas] werk v2 #4887 cicd failed at test-pipeline: x · dagu y · /cws 4887 · retry" =~ $re ]] || return 1
+@test "AC5: the wake pattern matches run-finished's own words (single-line and #4889 fenced), and not an older nudge; old single-line regex fails on #4889 fenced wake (negative proof)" {
+  cage
+  printf '#!/bin/sh\n[ "$1" = nudge-send ] && printf "%%s" "$4" > %s/raw_wake\n' "$BATS_TEST_TMPDIR" > "$BATS_TEST_TMPDIR/shim"
+  chmod +x "$BATS_TEST_TMPDIR/shim"
+  finish failed cicd >/dev/null
+  raw="$(cat "$BATS_TEST_TMPDIR/raw_wake")"
+  case "$raw" in "[alert →"*) fenced="$raw" ;; *) fenced="[alert → silas] $raw" ;; esac
+  old_re='^\[alert → [a-z-]+\] #[0-9]+ [a-z-]+ .*· dagu [^ ]+ · \/cws [0-9]+$'
+  node -e '
+    const re = new RegExp(process.argv[1]);
+    const oldRe = new RegExp(process.argv[2]);
+    const fenced = process.argv[3];
+    if (oldRe.test(fenced)) process.exit(10);
+    if (!re.test(fenced)) process.exit(1);
+    if (!re.test("[alert → abby-normal] #999999 clearing-evaluate passed · dagu 034rvgJDfrob5mIxbyTwg3 · /cws 999999")) process.exit(2);
+    if (re.test("[alert → silas] werk v2 #4887 cicd failed at test-pipeline: x · dagu y · /cws 4887 · retry")) process.exit(3);
+  ' "$WAKE_RE_JS" "$old_re" "$fenced"
 }
 
 @test "AC5 negative proof: the room check names a wake the page does not show" {
