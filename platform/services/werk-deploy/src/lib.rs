@@ -1117,6 +1117,26 @@ pub fn deploy_with_landed(card: u64, role: &str, target: &str, home: &Path, werk
         let _ = register_gh(&werk_s, card, role, &trace, name, built_identity, target);
     }
 
+    // #4925 round 3 — record what the demo slot now holds, one cdhash per binary, so the
+    // land proves every binary it promotes (the record used to name one per crate: for
+    // chorus-hooks the signed shim, never the daemon).
+    if target == "werk" {
+        let slot = demo_slot_dir(&werk_s, role);
+        let mut recs: Vec<(String, String)> = Vec::new();
+        for (name, _) in &built {
+            let dir = werk.join(crate_rel_dir(&werk, name));
+            if !dir.join("Cargo.toml").is_file() { continue; }
+            for b in crate_binaries_in(&dir) {
+                if let Some(h) = demo_slot_file(&slot, &b).and_then(|f| file_cdhash(&f)) {
+                    recs.push((format!("{}/{}", name, b), h));
+                }
+            }
+        }
+        if !recs.is_empty() {
+            jsonl(home, role, card, &trace, "deploy.demo.bins", &format!(",\"bins\":\"{}\"", summary(&recs)));
+        }
+    }
+
     // #4119 — the single environment bring-up. env_up is service-agnostic, so one
     // call covers every TS unit in ts_werk_units; the names are logged so the
     // record still says which units this bring-up stands for.
@@ -2260,9 +2280,72 @@ pub fn promote_verdict(demo: &[(String, String)], krate: &str, files: &[Option<S
 /// land reaches canonical's build folder or an install. Pure.
 pub fn promote_plan(demo: &[(String, String)], candidates: &[(String, Vec<Option<String>>)])
     -> Result<Vec<(String, PromoteVerdict)>, String> {
+    let named: Vec<PromoteCandidate> = candidates.iter()
+        .map(|(c, f)| (c.clone(), f.iter().map(|h| (String::new(), h.clone())).collect()))
+        .collect();
+    promote_plan_bins(demo, &[], &named)
+}
+
+/// #4925 round 3 — a crate's files to promote: (crate, [(binary, cdhash)]).
+pub type PromoteCandidate = (String, Vec<(String, Option<String>)>);
+
+/// #4925 round 3 — the demo's per-binary record: the `crate/bin=cdhash` pairs of the last
+/// `deploy.demo.bins` event written after the card's last `rebuilt` event (the demo that ran).
+/// Empty for a demo older than the record, which then keeps the crate-level rule. Pure.
+pub fn demo_bin_cdhashes(jsonl_content: &str, card: u64) -> Vec<(String, String)> {
+    let key = format!("\"card_id\":{},", card);
+    let mut out = Vec::new();
+    for l in jsonl_content.lines().filter(|l| l.contains(&key)) {
+        if l.contains("\"event\":\"rebuilt\"") {
+            out.clear();
+        } else if l.contains("\"event\":\"deploy.demo.bins\"") {
+            if let Some(rest) = l.find("\"bins\":\"").map(|s| &l[s + "\"bins\":\"".len()..]) {
+                out = rest.find('"').map(|e| parse_build_summary(&rest[..e])).unwrap_or_default();
+            }
+        }
+    }
+    out
+}
+
+/// #4925 round 3 — the verdict for crate `krate` whose demo-slot files are `files`
+/// (binary, cdhash). When the demo recorded the crate's binaries one by one, every
+/// recorded binary must match its own record (the chorus-hooks daemon is proven, not
+/// only the signed shim); a binary the demo slot never held has no record and is not
+/// judged. A demo with no per-binary record keeps #5018's crate-level rule. Pure.
+pub fn promote_verdict_bins(demo: &[(String, String)], demo_bins: &[(String, String)], krate: &str,
+    files: &[(String, Option<String>)]) -> PromoteVerdict {
+    let prefix = format!("{krate}/");
+    let hashes: Vec<Option<String>> = files.iter().map(|(_, h)| h.clone()).collect();
+    if !demo_bins.iter().any(|(k, _)| k.starts_with(&prefix)) {
+        return promote_verdict(demo, krate, &hashes);
+    }
+    if hashes.iter().all(Option::is_none) {
+        return PromoteVerdict::Unreadable;
+    }
+    let mut judged = 0;
+    for (bin, h) in files {
+        let Some((_, rec)) = demo_bins.iter().find(|(k, _)| *k == format!("{prefix}{bin}")) else { continue };
+        judged += 1;
+        if h.as_deref() != Some(rec.as_str()) {
+            return PromoteVerdict::Refuse { demo: format!("{bin} {rec}"),
+                file: format!("{bin} {}", h.as_deref().unwrap_or("unreadable")) };
+        }
+    }
+    if judged == 0 {
+        return PromoteVerdict::Refuse { demo: format!("{krate}: no binary of the crate in the record"),
+            file: hashes.iter().flatten().cloned().collect::<Vec<_>>().join("/") };
+    }
+    let crate_level = demo.iter().find(|(c, _)| c == krate).map(|(_, d)| d.clone())
+        .filter(|d| hashes.iter().any(|h| h.as_deref() == Some(d.as_str())));
+    PromoteVerdict::Ship(crate_level.unwrap_or_else(|| hashes.iter().flatten().next().cloned().unwrap_or_default()))
+}
+
+/// #4925 round 3 — promote_plan over named binaries and the per-binary record. Pure.
+pub fn promote_plan_bins(demo: &[(String, String)], demo_bins: &[(String, String)],
+    candidates: &[PromoteCandidate]) -> Result<Vec<(String, PromoteVerdict)>, String> {
     let mut plan = Vec::new();
     for (c, files) in candidates {
-        match promote_verdict(demo, c, files) {
+        match promote_verdict_bins(demo, demo_bins, c, files) {
             PromoteVerdict::Refuse { demo: d, file: f } => return Err(promote_refusal(c, &d, &f)),
             v => plan.push((c.clone(), v)),
         }
@@ -2276,18 +2359,38 @@ pub fn promote_refusal(krate: &str, demo: &str, file: &str) -> String {
 (cdhash {demo}); nothing copied or installed. Run the card again so the demo and the land read one build.")
 }
 
+/// #4925 round 3 — the role's demo slot: WERK_<ROLE>_BIN when set (installed_path's
+/// rule), else `<werk_base>/<role>-bin`, the werk's sibling (the land's env has no slot var).
+pub fn demo_slot_dir(werk_s: &str, role: &str) -> PathBuf {
+    match env::var(werk_slot_var(role)) {
+        Ok(s) if !s.is_empty() => PathBuf::from(s),
+        _ => Path::new(werk_s).parent().unwrap_or(Path::new("/")).join(format!("{}-bin", role)),
+    }
+}
+
+/// #4925 round 3 — the file the demo ran for binary `bin`: the slot's, past a launcher to
+/// its Mach-O (`<bin>-bin`, #4773). None when the slot holds no such binary.
+pub fn demo_slot_file(slot: &Path, bin: &str) -> Option<String> {
+    let p = slot.join(bin);
+    p.is_file().then(|| resolve_binary_target_path(&p.to_string_lossy()))
+}
+
 /// #4494 — split the card's crates into (promoted pairs, crates to rebuild).
 /// A promoted crate's binaries are cloned (cp -c) from the werk into
 /// canonical's target/release, where the install path already reads them.
 fn promote_crates(home: &Path, werk_s: &str, role: &str, card: u64, trace: &str, canon: &Path, crates: &[String],
-    demo: &[(String, String)]) -> R<(Vec<(String, String)>, Vec<String>)> {
+    demo: &[(String, String)], demo_bins: &[(String, String)]) -> R<(Vec<(String, String)>, Vec<String>)> {
     let mut promoted = Vec::new();
     let mut rebuild = Vec::new();
     let tree = |rev: &str, p: &str| run_env(Some(werk_s), &[], "git", &["-C", werk_s, "rev-parse", &format!("{}:{}", rev, p)])
         .map(|s| s.trim().to_string()).unwrap_or_default();
     let account = current_account();
+    // #4925 round 3 — the files to prove and copy are the ones the demo RAN (its slot),
+    // not the werk's target: a later cargo build relinks target ad hoc (11-22: the
+    // shim the demo signed, 40100777, sat in the slot; target held its ad hoc relink).
+    let slot = demo_slot_dir(werk_s, role);
     // phase 1: which crates may promote, and each one's built files with their cdhashes
-    let mut candidates: Vec<(String, Vec<Option<String>>)> = Vec::new();
+    let mut candidates: Vec<PromoteCandidate> = Vec::new();
     let mut files: Vec<(Vec<String>, Vec<String>)> = Vec::new();
     for c in crates {
         let rel = crate_rel_dir(Path::new(werk_s), c);
@@ -2296,7 +2399,9 @@ fn promote_crates(home: &Path, werk_s: &str, role: &str, card: u64, trace: &str,
         let werk_trees: Vec<(String, String)> = inputs.iter().map(|p| (p.clone(), tree("HEAD", p))).collect();
         let main_trees: Vec<(String, String)> = inputs.iter().map(|p| (p.clone(), tree("origin/main", p))).collect();
         let bins = crate_binaries_in(&Path::new(werk_s).join(&rel));
-        let built: Vec<String> = bins.iter().map(|b| built_binary(werk_s, &account, b)).collect();
+        let built: Vec<String> = bins.iter()
+            .map(|b| demo_slot_file(&slot, b).unwrap_or_else(|| built_binary(werk_s, &account, b)))
+            .collect();
         let ready = !bins.is_empty() && built.iter().all(|b| Path::new(b).is_file());
         if !(ready && may_promote(&werk_trees, &main_trees)) {
             let why = if !ready { "no-demo-binary" } else { "main-moved-under-the-crate" };
@@ -2305,12 +2410,12 @@ fn promote_crates(home: &Path, werk_s: &str, role: &str, card: u64, trace: &str,
             rebuild.push(c.clone());
             continue;
         }
-        candidates.push((c.clone(), built.iter().map(|b| file_cdhash(b)).collect()));
+        candidates.push((c.clone(), bins.iter().zip(&built).map(|(b, f)| (b.clone(), file_cdhash(f))).collect()));
         files.push((bins, built));
     }
     // #5018 — match or stop, for every crate, before anything is copied
-    let plan = promote_plan(demo, &candidates).map_err(|why| {
-        if let Some((c, d, f)) = refused_parts(demo, &candidates) {
+    let plan = promote_plan_bins(demo, demo_bins, &candidates).map_err(|why| {
+        if let Some((c, d, f)) = refused_parts(demo, demo_bins, &candidates) {
             jsonl(home, role, card, trace, "deploy.cdhash.diverged",
                 &format!(",\"crate\":\"{}\",\"demo\":\"{}\",\"prod\":\"{}\",\"stage\":\"promote\"", c, d, f));
             emit_spine(home, "deploy.cdhash.diverged", role, card, trace, &[("crate", &c), ("demo", &d), ("prod", &f)]);
@@ -2357,8 +2462,9 @@ fn promote_crates(home: &Path, werk_s: &str, role: &str, card: u64, trace: &str,
 }
 
 /// #5018 — the refused crate's (name, demo cdhash, file cdhashes), for the stop's event.
-fn refused_parts(demo: &[(String, String)], candidates: &[(String, Vec<Option<String>>)]) -> Option<(String, String, String)> {
-    candidates.iter().find_map(|(c, f)| match promote_verdict(demo, c, f) {
+fn refused_parts(demo: &[(String, String)], demo_bins: &[(String, String)],
+    candidates: &[PromoteCandidate]) -> Option<(String, String, String)> {
+    candidates.iter().find_map(|(c, f)| match promote_verdict_bins(demo, demo_bins, c, f) {
         PromoteVerdict::Refuse { demo: d, file } => Some((c.clone(), d, file)),
         _ => None,
     })
@@ -2482,10 +2588,10 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
     let mut prod_hashes: Vec<(String, String)> = Vec::new();
     // #4494 — build once: a crate whose inputs are the same in the werk and on
     // main ships the binary the demo ran; any other crate builds from main.
-    let demo = fs::read_to_string(home.join("ops/logs/werk-deploy.jsonl"))
-        .map(|c| demo_cdhashes(&c, card))
-        .unwrap_or_default();
-    let (promoted, rebuild) = promote_crates(home, werk_s, role, card, trace, &canon, &crates, &demo)?;
+    let record = fs::read_to_string(home.join("ops/logs/werk-deploy.jsonl")).unwrap_or_default();
+    let demo = demo_cdhashes(&record, card);
+    let demo_bins = demo_bin_cdhashes(&record, card);
+    let (promoted, rebuild) = promote_crates(home, werk_s, role, card, trace, &canon, &crates, &demo, &demo_bins)?;
     prod_hashes.extend(promoted);
     if !rebuild.is_empty() {
         let only = rebuild.join(",");

@@ -2366,6 +2366,19 @@
         "trace_id": "Werk trace join key"
       }
     },
+    "deploy.demo.bins": {
+      "producer": "deploys",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `deploy` verb — `demo.bins` phase (deploy.demo.bins): after a werk demo installs, one cdhash per binary the role's demo slot holds (`bins`: crate/bin=cdhash,...). The land proves each promoted binary against it (#4925). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "role": "Acting role",
+        "trace_id": "Werk trace join key",
+        "bins": "crate/bin=cdhash pairs, comma-joined"
+      }
+    },
     "deploy.cdhash.matched": {
       "producer": "deploys",
       "category": "fact",
