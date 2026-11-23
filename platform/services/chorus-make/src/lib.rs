@@ -244,13 +244,20 @@ pub const MODEL_THEN_WERK: &str = "${CHORUS_HOME}/platform/scripts/werk-v2 ${CAR
 /// paired card's driver and navigator through ops-nudge. Failure handlers only route.
 pub const RUN_FINISHED: &str = "  exit:\n    command: '${CHORUS_HOME}/platform/scripts/run-finished ${CARD} ${ROLE} ${DAG_NAME} ${DAG_RUN_ID}'\n";
 
-/// What every werk-style land does when it succeeds: athena-land, then the crawl.
+/// What every werk-style land does when it succeeds: the pair ends, then athena-land.
 /// #4752 — a cicd or land red goes back to the card's pair first (`pair routed`
 /// exits 1 when the card has none, and the builder's nudge or route runs).
 pub const PAIR_ROUTED: &str = "${CHORUS_HOME}/platform/scripts/pair routed ${CARD} ${DAG_NAME} ${DAG_RUN_ID} || ";
 /// #4752 — the land succeeded only after borg-prove recorded it proven in prod:
 /// the card's pair ends there (Jeff 10-30: "pair ends when card is in prod").
-pub const LAND_THEN_MODEL: &str = "${CHORUS_HOME}/platform/scripts/pair proven ${CARD}; ${CHORUS_HOME}/platform/scripts/athena-land ${CARD} ${ROLE} || { ${CHORUS_HOME}/platform/scripts/crawl-detached.sh; exit 1; }; ${CHORUS_HOME}/platform/scripts/crawl-detached.sh";
+pub const LAND_THEN_MODEL: &str = "${CHORUS_HOME}/platform/scripts/pair proven ${CARD}; ${CHORUS_HOME}/platform/scripts/athena-land ${CARD} ${ROLE}";
+/// #4821 — a land's exit wakes the owner, then crawls, pass or fail. The crawl
+/// sat in the success handler, so every land that merged and then stopped
+/// unproven at borg-verify-in-prod skipped it (#4772, #4805 on 10-31; #4925 three
+/// times on 11-23), and the crawler stayed out of sync with git until someone
+/// kickstarted it by hand. crawl-detached hands the crawl to launchd and leaves a
+/// running pass alone, so a land that merged nothing costs one idle start.
+pub const LAND_EXIT: &str = "  exit:\n    command: '${CHORUS_HOME}/platform/scripts/run-finished ${CARD} ${ROLE} ${DAG_NAME} ${DAG_RUN_ID}; ${CHORUS_HOME}/platform/scripts/crawl-detached.sh'\n";
 
 fn sorted(rows: &[Row]) -> Result<Vec<Row>, Vec<String>> {
     let errs = check(rows);
@@ -359,8 +366,17 @@ impl Slots {
     }
 }
 
+/// A pipeline's success and exit handler commands. #4821 — the land's exit also crawls.
+struct Handlers<'a> {
+    success: Option<&'a str>,
+    exit: &'a str,
+}
+
+/// Most pipelines: no success handler, and the exit handler's one wake.
+const WAKE_ONLY: Handlers<'static> = Handlers { success: None, exit: RUN_FINISHED };
+
 /// The header both halves share: params, the machine's env, the failure nudge.
-fn preamble(out: &mut String, description: &str, queue: &str, params: &[&str], routes: &str, on_success: Option<&str>, slots: Slots) {
+fn preamble(out: &mut String, description: &str, queue: &str, params: &[&str], routes: &str, handlers: Handlers, slots: Slots) {
     out.push_str(HEADER);
     out.push_str(&format!("description: {}\n", quote(description)));
     out.push_str(&format!("queue: {queue}\n"));
@@ -410,19 +426,18 @@ fn preamble(out: &mut String, description: &str, queue: &str, params: &[&str], r
             "handler_on:\n  failure:\n    command: '{PAIR_ROUTED}${{CHORUS_HOME}}/platform/scripts/borg-prove route ${{CARD}} ${{ROLE}} ${{DAG_RUN_ID}} {routes} || true'\n"
         ));
     }
-    out.push_str(RUN_FINISHED);
+    out.push_str(handlers.exit);
     // #4494 — the land event triggers athena (#4177): a land whose commit
     // carried model sources deploys the model. v1 fired it from the old MCP server's
     // werk-merge case; v2's land never passes through there, so #4496's
     // PolicyShape never reached the store (Wren, 22:48). On success only, after
     // accept: a slow or failed model run never holds the card's accept.
-    if let Some(cmd) = on_success {
-        // #4499 — then the crawl, as v1's crawl-delta did: launchd's crawler
-        // job (its own identity; the workflow claims none) rebuilds the code
-        // units and dependsOn edges the blast radius reads, every land
+    if let Some(cmd) = handlers.success {
         // #4186 reopen — a failed model run turns this handler red (athena-land
-        // exits 1) and still crawls; /cws reads its result line onto the card's
-        // line. No shell variables: dagu expands $NAME in a command itself.
+        // exits 1); /cws reads its result line onto the card's line. No shell
+        // variables: dagu expands $NAME in a command itself.
+        // #4499/#4821 — the crawl that rebuilds the code units the blast radius
+        // reads runs from the land's exit handler (LAND_EXIT), pass or fail.
         // #4515 — the athena pipeline's own success command (MODEL_THEN_WERK)
         // rides the same slot.
         out.push_str(&format!("  success:\n    command: '{cmd}'\n"));
@@ -634,7 +649,7 @@ pub fn generate(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>> {
     // go half routes the go)
     let card_end = rows.iter().position(|r| r.executor == "human").unwrap_or(rows.len());
     let mut out = String::new();
-    preamble(&mut out, &format!("werk v2 — pipeline {pipeline}, generated from the graph"), CARD_QUEUE, &["CARD", "ROLE"], &fail_routes_in(&rows, &rows[..card_end]), None, slots_for(pipeline));
+    preamble(&mut out, &format!("werk v2 — pipeline {pipeline}, generated from the graph"), CARD_QUEUE, &["CARD", "ROLE"], &fail_routes_in(&rows, &rows[..card_end]), WAKE_ONLY, slots_for(pipeline));
     let mut prev: Vec<String> = Vec::new();
     let grouped = groups(&rows);
     for (g, group) in grouped.iter().enumerate() {
@@ -678,7 +693,7 @@ pub fn generate_go(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>> 
     let id = dagu_name(&rows, r);
     let prev: Vec<String> = Vec::new();
     let mut out = String::new();
-    preamble(&mut out, &format!("werk v2 — the go of pipeline {pipeline}, generated from the graph"), GO_QUEUE, &["CARD", "ROLE", "CICD_RUN"], &fail_routes_in(&rows, &rows[g..=g]), None, Slots::Installed);
+    preamble(&mut out, &format!("werk v2 — the go of pipeline {pipeline}, generated from the graph"), GO_QUEUE, &["CARD", "ROLE", "CICD_RUN"], &fail_routes_in(&rows, &rows[g..=g]), WAKE_ONLY, Slots::Installed);
     out.push_str(&format!("  - name: {id}\n"));
     out.push_str(&format!("    description: {}\n", quote(&r.label)));
     depends_on(&mut out, &prev);
@@ -735,7 +750,7 @@ pub fn generate_go_less(pipeline: &str, rows: &[Row]) -> Result<String, Vec<Stri
         if land { MODEL_LAND_QUEUE } else { CARD_QUEUE },
         &["CARD", "ROLE"],
         &fail_routes(&rows),
-        (pipeline == MODEL_PIPELINE).then_some(MODEL_THEN_WERK),
+        Handlers { success: (pipeline == MODEL_PIPELINE).then_some(MODEL_THEN_WERK), exit: RUN_FINISHED },
         slots_for(pipeline),
     );
     let mut prev: Vec<String> = Vec::new();
@@ -942,7 +957,7 @@ pub fn generate_land(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>
         return Err(vec!["no human go in the rows: nothing to land".to_string()]);
     };
     let mut out = String::new();
-    preamble(&mut out, &format!("werk v2 — the land of pipeline {pipeline}, generated from the graph"), LAND_QUEUE, &["CARD", "ROLE", "ACCEPTER"], &fail_routes_in(&rows, &rows[go + 1..]), Some(LAND_THEN_MODEL), Slots::Installed);
+    preamble(&mut out, &format!("werk v2 — the land of pipeline {pipeline}, generated from the graph"), LAND_QUEUE, &["CARD", "ROLE", "ACCEPTER"], &fail_routes_in(&rows, &rows[go + 1..]), Handlers { success: Some(LAND_THEN_MODEL), exit: LAND_EXIT }, Slots::Installed);
     // #4691 — a human step after the go is a role's (Borg Queen proves the
     // land the way a navigator greens a pair): it names who answers and how
     let errs: Vec<String> = rows[go + 1..].iter().filter(|r| r.executor == "human")

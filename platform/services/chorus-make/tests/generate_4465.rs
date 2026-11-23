@@ -217,7 +217,7 @@ fn a_successful_land_hands_its_commit_to_athena_and_only_the_land_does() {
     // #4494 — the land event triggers athena (#4177); v2's land never passed
     // through the old MCP server's werk-merge, so #4496's model never reached the store.
     let land = generate_land("cicd", &cicd()).unwrap();
-    assert!(land.contains("  success:\n    command: '${CHORUS_HOME}/platform/scripts/pair proven ${CARD}; ${CHORUS_HOME}/platform/scripts/athena-land ${CARD} ${ROLE} || { ${CHORUS_HOME}/platform/scripts/crawl-detached.sh; exit 1; }; ${CHORUS_HOME}/platform/scripts/crawl-detached.sh'\n"), "{land}");
+    assert!(land.contains("  success:\n    command: '${CHORUS_HOME}/platform/scripts/pair proven ${CARD}; ${CHORUS_HOME}/platform/scripts/athena-land ${CARD} ${ROLE}'\n"), "{land}");
     // #4499 — every land rebuilds the code units the blast radius reads
     // NEGATIVE PROOF: the card half never deploys a model (nothing has landed)
     let card = generate("cicd", &cicd()).unwrap();
@@ -311,4 +311,20 @@ fn the_demo_step_starts_the_cards_own_demo_file() {
     let plain = generate("cicd", &rows).unwrap();
     let step = plain.split("  - name: ").find(|s| s.starts_with("skill-werk-demo-pipeline\n")).unwrap();
     assert!(step.contains("    action: dag.run\n    with:\n      dag: demo\n") && !step.contains(" start "), "{step}");
+}
+
+/// #4821 — the land crawls from its exit handler, so a land that merged and then
+/// stopped unproven at borg-verify-in-prod (dagu: failure, then exit) still
+/// crawls. NEGATIVE PROOF: no other handler carries the crawl, and the card and
+/// go halves never crawl (nothing has landed there).
+#[test]
+fn every_land_crawls_from_its_exit_handler_pass_or_fail() {
+    let land = generate_land("cicd", &cicd()).unwrap();
+    let handlers = land.split("steps:\n").next().unwrap();
+    let exit = handlers.split("  exit:\n").nth(1).expect("the land has an exit handler");
+    let exit = exit.lines().next().unwrap();
+    assert!(exit.ends_with("; ${CHORUS_HOME}/platform/scripts/crawl-detached.sh'"), "{exit}");
+    assert_eq!(handlers.matches("crawl-detached.sh").count(), 1, "{handlers}");
+    assert!(!generate("cicd", &cicd()).unwrap().contains("crawl-detached"));
+    assert!(!generate_go("cicd", &cicd()).unwrap().contains("crawl-detached"));
 }
