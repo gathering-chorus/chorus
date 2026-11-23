@@ -6700,9 +6700,9 @@
       "version": "1",
       "vertebra": "building",
       "source": "chorus-principal",
-      "description": "chorus-principal sweep: after it checks the pane, a Presence that still reads reachability unknown is sent one message from system, once per run; its delivery makes the Presence reachable (#4925 round 5).",
+      "description": "chorus-principal sweep: after it checks the pane, a Presence that still reads reachability unknown is sent one message from system, once per run and pane; its delivery makes the Presence reachable (#4925 round 5).",
       "fields": {
-        "run": "The run the message is for",
+        "run": "The address the message is for: the run and its pane",
         "outcome": "queued (sent in its own process), sent, or failed with the error",
         "role": "The role"
       }

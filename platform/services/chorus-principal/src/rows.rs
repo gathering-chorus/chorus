@@ -151,23 +151,27 @@ pub fn is_pane_id(pane: &str) -> bool {
     pane.len() > 1 && pane.starts_with('%') && pane[1..].chars().all(|c| c.is_ascii_digit())
 }
 
-/// #4889 — the role's pane moved (a restarted tmux pane keeps the run alive): the
-/// presence takes the pane the role's tmux session shows now. None when the pane is
-/// not a tmux pane id (%N) or is already the one recorded. The principal stays the
-/// only writer of a Presence; pulse only reads it, and a dead pane fails loudly there.
 /// #4925 round 5 (Silas 11-23 10:29) — the run a first message is due for. A Presence
 /// starts reachability "unknown" and only a delivered turn makes it reachable; the sweep
 /// (after it has checked the pane) sends the role one message from system, once per run.
-/// Due when the Presence reads unknown (or no reachability) and `sent_for` (the run the
-/// last first message went to) is not this run. Pure.
+/// Due when the Presence reads unknown (or no reachability) and `sent_for` (the address
+/// the last first message went to) is not this one. The address is "<run> <pane>": a pane
+/// move resets the Presence to unknown (repaned_presence), so the moved pane is due once
+/// too (code review, run 0352eJJlAfE7t8yzRh328D). Pure.
 pub fn first_message_due(presence: &Value, sent_for: Option<&str>) -> Option<String> {
     let reach = presence.get("reachability").and_then(|v| v.as_str()).unwrap_or("");
     if !(reach.is_empty() || reach == "unknown") { return None; }
     let run = presence.get("presenceOf").and_then(|v| v.as_str()).filter(|r| !r.is_empty())?;
-    if sent_for.map(str::trim) == Some(run) { return None; }
-    Some(run.to_string())
+    let pane = presence.get("pane").and_then(|v| v.as_str()).unwrap_or("");
+    let key = format!("{run} {pane}").trim().to_string();
+    if sent_for.map(str::trim) == Some(key.as_str()) { return None; }
+    Some(key)
 }
 
+/// #4889 — the role's pane moved (a restarted tmux pane keeps the run alive): the
+/// presence takes the pane the role's tmux session shows now. None when the pane is
+/// not a tmux pane id (%N) or is already the one recorded. The principal stays the
+/// only writer of a Presence; pulse only reads it, and a dead pane fails loudly there.
 pub fn repaned_presence(mut presence: Value, pane: &str, tty: &str) -> Option<Value> {
     presence.get("name")?;
     if !is_pane_id(pane) || presence.get("pane").and_then(|p| p.as_str()) == Some(pane) { return None; }
@@ -524,14 +528,15 @@ mod first_message_4925 {
 
     #[test]
     fn an_unknown_presence_is_due_once_per_run() {
-        let p = json!({"presenceOf": "run-a", "reachability": "unknown"});
-        assert_eq!(first_message_due(&p, None), Some("run-a".into()));
-        assert_eq!(first_message_due(&json!({"presenceOf": "run-a"}), None), Some("run-a".into()), "no reachability yet is unknown");
-        // NEGATIVE: the run it already went to is never sent again
-        assert_eq!(first_message_due(&p, Some("run-a")), None);
-        assert_eq!(first_message_due(&p, Some("run-a\n")), None, "a marker's trailing newline is the same run");
-        // a new run is due again
-        assert_eq!(first_message_due(&json!({"presenceOf": "run-b", "reachability": "unknown"}), Some("run-a")), Some("run-b".into()));
+        let p = json!({"presenceOf": "run-a", "pane": "%1", "reachability": "unknown"});
+        assert_eq!(first_message_due(&p, None), Some("run-a %1".into()));
+        assert_eq!(first_message_due(&json!({"presenceOf": "run-a"}), None), Some("run-a".into()), "no reachability or pane yet");
+        // NEGATIVE: the address it already went to is never sent again
+        assert_eq!(first_message_due(&p, Some("run-a %1")), None);
+        assert_eq!(first_message_due(&p, Some("run-a %1\n")), None, "a marker's trailing newline is the same address");
+        // a new run is due again, and so is a moved pane in the same run (repane resets it to unknown)
+        assert_eq!(first_message_due(&json!({"presenceOf": "run-b", "pane": "%1", "reachability": "unknown"}), Some("run-a %1")), Some("run-b %1".into()));
+        assert_eq!(first_message_due(&json!({"presenceOf": "run-a", "pane": "%2", "reachability": "unknown"}), Some("run-a %1")), Some("run-a %2".into()));
     }
 
     #[test]
