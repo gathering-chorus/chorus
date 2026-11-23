@@ -2150,21 +2150,25 @@ pub fn passes_watermarks(log: &str) -> Vec<String> {
 
 /// Lands (first-parent commits on main) that no crawl pass ever covered. A land
 /// is covered when some later pass's watermark has it as an ancestor — a pass
-/// that walked HEAD after the land saw its files. The relation is injected so
-/// the rule is testable without a repo.
+/// that walked HEAD after the land saw its files. #4925 round 5: the commits the
+/// watermarks reach are read ONCE (`reach`: one `git rev-list` over all of them)
+/// and each land is a lookup. It was one `git merge-base` per (land, watermark):
+/// on 11-23, 462 lands x 433 watermarks, ~100k git calls and ~1600 s, past the
+/// nightly's 1200 s budget and growing with every land and every pass. `lands`
+/// is (full hash, the name it is reported by). The read is injected so the rule
+/// is testable without a repo.
 pub fn uncovered_lands(
-    lands: &[String],
+    lands: &[(String, String)],
     watermarks: &[String],
-    is_ancestor: &dyn Fn(&str, &str) -> bool,
+    reach: &dyn Fn(&[String]) -> std::collections::HashSet<String>,
 ) -> Vec<String> {
+    let reached = reach(watermarks);
     lands
         .iter()
-        .filter(|land| {
-            !watermarks
-                .iter()
-                .any(|w| land.as_str() == w.as_str() || is_ancestor(land, w))
+        .filter(|(full, short)| {
+            !reached.contains(full) && !watermarks.iter().any(|w| w == short || w == full)
         })
-        .cloned()
+        .map(|(_, short)| short.clone())
         .collect()
 }
 
@@ -2286,21 +2290,50 @@ mod project_4199 {
 
     // NEGATIVE PROOF (#3734): a land after the last pass is uncovered and named;
     // a land an earlier or equal watermark descends from is covered.
+    // linear history: L1 -> W1 -> L2 -> L3 ; a watermark reaches itself and all before it
+    fn reach_of(order: &'static [&'static str]) -> impl Fn(&[String]) -> std::collections::HashSet<String> {
+        move |wms: &[String]| {
+            let top = wms.iter().filter_map(|w| order.iter().position(|x| x == w)).max();
+            order.iter().take(top.map_or(0, |t| t + 1)).map(|x| format!("{x}-full")).collect()
+        }
+    }
+    fn lands(v: &[&str]) -> Vec<(String, String)> {
+        v.iter().map(|x| (format!("{x}-full"), x.to_string())).collect()
+    }
     #[test]
     fn negative_proof_a_land_no_pass_walked_is_uncovered() {
-        // linear history: L1 -> W1 -> L2 -> L3 ; passes recorded W1 and L2
-        let order = ["L1", "W1", "L2", "L3"];
-        let anc = |a: &str, b: &str| {
-            let ia = order.iter().position(|x| *x == a);
-            let ib = order.iter().position(|x| *x == b);
-            matches!((ia, ib), (Some(x), Some(y)) if x < y)
-        };
-        let missing = uncovered_lands(&s(&["L1", "L2", "L3"]), &s(&["W1", "L2"]), &anc);
+        // passes recorded W1 and L2
+        let reach = reach_of(&["L1", "W1", "L2", "L3"]);
+        let missing = uncovered_lands(&lands(&["L1", "L2", "L3"]), &s(&["W1", "L2"]), &reach);
         assert_eq!(missing, s(&["L3"]));
         assert!(
-            uncovered_lands(&s(&["L1", "L2"]), &s(&["W1", "L2"]), &anc).is_empty(),
+            uncovered_lands(&lands(&["L1", "L2"]), &s(&["W1", "L2"]), &reach).is_empty(),
             "control: both covered"
         );
+        // a watermark the repo no longer has reaches nothing: the land stays uncovered
+        assert_eq!(uncovered_lands(&lands(&["L3"]), &s(&["gone"]), &reach), s(&["L3"]));
+        // a land that IS a watermark is covered even when the read reaches nothing (code review)
+        let none = |_: &[String]| std::collections::HashSet::new();
+        assert!(uncovered_lands(&lands(&["L2"]), &s(&["L2"]), &none).is_empty());
+        assert_eq!(uncovered_lands(&lands(&["L2"]), &s(&["L1"]), &none), s(&["L2"]), "control: not a watermark, not reached");
+    }
+
+    // NEGATIVE PROOF (#4925 round 5): the check reads the repo once, however many lands
+    // and passes there are. The old rule asked git once per (land, watermark): on 11-23,
+    // 462 x 433 took ~1600 s and timed the nightly's crawler-validate out.
+    #[test]
+    fn negative_proof_the_lossless_check_reads_git_once_not_per_pair() {
+        let calls = std::cell::Cell::new(0usize);
+        let reach = |wms: &[String]| {
+            calls.set(calls.get() + 1);
+            wms.iter().map(|w| format!("{w}-full")).collect::<std::collections::HashSet<_>>()
+        };
+        let ls: Vec<(String, String)> = (0..462).map(|i| (format!("w{i}-full"), format!("l{i}"))).collect();
+        let wms: Vec<String> = (0..433).map(|i| format!("w{i}")).collect();
+        let unc = uncovered_lands(&ls, &wms, &reach);
+        assert_eq!(calls.get(), 1, "one read of the repo, not one per pair");
+        assert_eq!(unc.len(), 462 - 433, "the lands no watermark reaches are named");
+        assert_eq!(unc.first().map(String::as_str), Some("l433"));
     }
 
     #[test]

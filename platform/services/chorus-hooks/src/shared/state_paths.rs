@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! Centralized path constants for chorus-hooks (#2076, #1308).
 //! Every hardcoded path in the codebase should reference these constants.
 //! CHORUS_ROOT env var is the single source of truth for the repo root path.

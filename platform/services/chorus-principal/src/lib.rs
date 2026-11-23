@@ -2239,7 +2239,19 @@ fn refresh_pane(ctx: &Ctx, role: &str) {
             return;
         }
     };
+    // #4925 round 5 (Silas 11-23 10:29) — after the pane is checked, a Presence still
+    // unknown gets its first delivery: one message from system, once per run
+    let sent = PathBuf::from(&ctx.identity_dir).join(role).join("first-message.run");
+    let due = rows::first_message_due(&p, fs::read_to_string(&sent).ok().as_deref());
     repane(ctx, role, p, &pane, &tty);
+    if let Some(run) = due {
+        if first_message(ctx, role, &run) {
+            // the dir may not exist on Jeff's side yet (Silas review): without it every sweep resends
+            if let Err(e) = sent.parent().map_or(Ok(()), fs::create_dir_all).and_then(|_| fs::write(&sent, &run)) {
+                eprintln!("chorus-principal: {sent:?} not written ({e}); the next sweep sends again");
+            }
+        }
+    }
 }
 
 /// #4889 — write the pane the role really runs in onto its Presence, when it moved.
@@ -2375,11 +2387,27 @@ fn off(ctx: &Ctx, role: &str, from_exit: bool) -> i32 {
         return 0;
     }
     let st = ctx.read_state(role);
-    // #4328 — the run ends (and its presence goes unreachable) before the session closes
-    end_run(ctx, role, "logout");
+    // #4925 round 5 (Jeff 11-23 08:10, measured 11-22 15:55) — Jeff's logout of a role
+    // found no login: the role's login lives in its own account's home (0700), so his
+    // read was Unknown, nothing closed (session ""), and the role's next start resumed
+    // its old row. The door lets only the row's owner end it, so the role's own account
+    // closes its own login (`close-own`); the pane is still stopped here, in his tmux.
     let closed = match &st {
-        LoginState::Recorded { session, .. } => Some((session.clone(), close_row(ctx, role, session))),
-        _ => None,
+        LoginState::Recorded { session, .. } => {
+            // #4328 — the run ends (and its presence goes unreachable) before the session closes
+            end_run(ctx, role, "logout");
+            Some((session.clone(), close_row(ctx, role, session)))
+        }
+        _ => match ctx.run_as.as_deref().filter(|a| *a != env::var("USER").unwrap_or_default()) {
+            Some(acct) => {
+                let r = close_as_owner(ctx, role, acct);
+                // #4925 round 5 (code review 3) — the hop never ran (no answer line): the
+                // caller still ends the run, so the Presence is retired with the pane
+                if matches!(&r, Some((s, Err(_))) if s.is_empty()) { end_run(ctx, role, "logout"); }
+                r
+            }
+            None => { end_run(ctx, role, "logout"); None }
+        },
     };
     ctx.write_state(role, &LoginState::Closed);
     let how = if from_exit { "exit" } else { "off" };
@@ -2405,6 +2433,52 @@ fn off(ctx: &Ctx, role: &str, from_exit: bool) -> i32 {
         None => println!("{} logged out: stopped; it had no recorded login to close", role),
     }
     0
+}
+
+/// #4925 round 5 — `close-own <role>`, run as the role's own account: end its run and
+/// close its own recorded login through the door (only the owner may), print the
+/// session name. No pane is touched: the pane lives in the caller's tmux.
+fn close_own(ctx: &Ctx, role: &str) -> i32 {
+    // #4328 — the run ends (and its presence goes unreachable) first, login or not (Kade review 3)
+    end_run(ctx, role, "logout");
+    let LoginState::Recorded { session, .. } = ctx.read_state(role) else { println!("none"); return 0 };
+    match close_row(ctx, role, &session) {
+        Ok(()) => {
+            // the caller's logout logs session.logout once, with this session (code review 10)
+            ctx.write_state(role, &LoginState::Closed);
+            println!("closed {}", session);
+            0
+        }
+        Err(why) => { println!("refused {} {}", session, why); 1 }
+    }
+}
+
+/// The caller (Jeff) asks the role's own account to close its login. `None`: it had none.
+fn close_as_owner(ctx: &Ctx, role: &str, acct: &str) -> Option<(String, Result<(), String>)> {
+    let exe = env::current_exe().ok()?.to_string_lossy().to_string();
+    let own = format!("CHORUS_IDENTITY_DIR={}/{}/.chorus/identity", envd("AWAKE_ACCOUNT_HOMES", "/Users"), acct);
+    let pass = |k: &str, v: String| format!("{}={}", k, v);
+    let args = vec!["-n".to_string(), "-u".into(), acct.into(), "-H".into(), "env".into(), own,
+        pass("CHORUS_ROOT", ctx.root.clone()), pass("CHORUS_API_URL", ctx.api.clone()),
+        pass("CHORUS_ENDED_BY", env::var("CHORUS_ENDED_BY").unwrap_or_default()),
+        pass("CHORUS_TRACE_ID", env::var("CHORUS_TRACE_ID").unwrap_or_default()),
+        exe, "close-own".into(), role.into()];
+    let out = match Command::new(&ctx.sudo).args(&args).output() {
+        Ok(o) => o,
+        Err(e) => return Some((String::new(), Err(format!("could not run as {}: {}", acct, e)))),
+    };
+    let text = String::from_utf8_lossy(&out.stdout).to_string();
+    for line in text.lines() {
+        if line.trim() == "none" { return None; }
+        if let Some(s) = line.strip_prefix("closed ") { return Some((s.trim().to_string(), Ok(()))); }
+        if let Some(rest) = line.strip_prefix("refused ") {
+            let (s, why) = rest.split_once(' ').unwrap_or((rest, ""));
+            return Some((s.to_string(), Err(why.to_string())));
+        }
+    }
+    // neither closed, refused nor none: sudo ran something else, or nothing (Kade review 4)
+    let e = String::from_utf8_lossy(&out.stderr);
+    Some((String::new(), Err(format!("{} gave no answer on its own login (exit {:?}): {}", acct, out.status.code(), e.trim()))))
 }
 
 /// #4997 — is the role's Session row open in the store? Read from the open-sessions listing
@@ -2511,6 +2585,34 @@ fn start_role(ctx: &mut Ctx, role: &str, attach: bool, by_person: bool) -> Resul
         }
     }
     on(ctx, role, attach)
+}
+
+/// #4925 round 5 (Jeff 11-23 09:13; Silas 10:29) — a Presence starts "unknown" and only a
+/// delivered turn makes it reachable (rows.rs is_delivery). The sweep, after it checks the
+/// pane, sends that first delivery: one message from system (the sweep runs as Jeff; a
+/// message under the role's name from his account would be a spoof), so 4895 only reads.
+/// It runs in its own process group so a hung send never stalls the sweep; the harness
+/// sets AWAKE_NUDGE_SYNC=1 to read the call without racing it. true: sent or queued.
+fn first_message(ctx: &Ctx, role: &str, run: &str) -> bool {
+    let bin = envd("AWAKE_NUDGE_BIN", "chorus-hook-shim");
+    let text = "[presence] this message checks your pane is reached; no reply needed.";
+    let args = ["nudge-send", "system", role, text];
+    let (ok, outcome) = if envd("AWAKE_NUDGE_SYNC", "0") != "1" {
+        use std::os::unix::process::CommandExt;
+        use std::process::Stdio;
+        match Command::new(&bin).args(args).process_group(0)
+            .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn() {
+            Ok(_) => (true, "queued".to_string()),
+            Err(e) => (false, format!("failed error={}", e)),
+        }
+    } else {
+        match sh(&bin, &args) {
+            Ok(_) => (true, "sent".to_string()),
+            Err(e) => (false, format!("failed error={}", e.trim())),
+        }
+    };
+    ctx.spine(&["presence.first_message", role, &format!("run={}", run), &format!("outcome={}", outcome)]);
+    ok
 }
 
 /// `up [--windows]` — after a reboot: all roles, each through start_role, one line.
@@ -2666,7 +2768,8 @@ pub fn run(args: &[String]) -> i32 {
                 // the SessionEnd hook (--from-exit) runs inside a session that is
                 // already logged in; it never waits on the identity API
                 let from_exit = args.iter().any(|a| a == "--from-exit");
-                if !from_exit { if let Err(why) = principal_gate(&ctx, &r) { eprintln!("chorus-principal: REFUSED — {}", why); return 2; } }
+                // #4925 round 5 — the gate also names the role's own account, which closes its login
+                if !from_exit { match principal_gate(&ctx, &r) { Ok(acct) => ctx.run_as = acct, Err(why) => { eprintln!("chorus-principal: REFUSED — {}", why); return 2; } } }
                 // #4412 — a person ends it (/exit ends only the run, #4406)
                 if !from_exit {
                     match person_signed_in(&ctx) {
@@ -2676,6 +2779,16 @@ pub fn run(args: &[String]) -> i32 {
                 }
                 off(&ctx, &r, args.iter().any(|a| a == "--from-exit"))
             }
+            Err(c) => c,
+        },
+        // #4925 round 5 (code review 8) — an agent session may not close its own login (#4412):
+        // close-own is the hop a person's logout makes as the role's account, never a role's own verb
+        "close-own" => match name_arg(1) {
+            Ok(r) if env::var("CLAUDECODE").map(|v| !v.is_empty()).unwrap_or(false) => {
+                eprintln!("chorus-principal: REFUSED — close-own is the hop a person's logout makes as {}'s account; an agent session cannot run it (#4412)", r);
+                2
+            }
+            Ok(r) => close_own(&ctx, &r),
             Err(c) => c,
         },
         "login" | "on" => {

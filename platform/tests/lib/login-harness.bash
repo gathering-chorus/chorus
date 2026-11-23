@@ -212,6 +212,9 @@ echo "relay \$*" >> "$T/relay.log"
 echo "projected: graph=4 keys, +1 -0 (relay allowlist = allow-set projection)"
 EOS
   printf '#!/bin/bash\necho "$*" >> "%s/spine.log"\n' "$T" > "$T/bin/chorus-log"
+  # #4925 round 5 — a new run or moved pane sends the role its first message; a test never
+  # reaches the real nudge path, the call is only recorded
+  printf '#!/bin/bash\necho "$*" >> "%s/nudge.log"\n' "$T" > "$T/bin/nudge"
   printf '#!/bin/bash\necho "osascript $*" >> "%s/osa.log"\n' "$T" > "$T/bin/osascript"
   printf '#!/bin/bash\necho "open $*" >> "%s/open.log"\n' "$T" > "$T/bin/open"
   chmod +x "$T/bin/"*
@@ -238,6 +241,7 @@ login_harness_env() {
   export AWAKE_VSCODE_DIR="$T/vscode" CHORUS_PRINCIPAL_BIN="/h/.chorus/bin/chorus-principal"
   export AWAKE_SUDO="$T/bin/sudo" AWAKE_ACCOUNT_HOMES="$T/homes"
   export AWAKE_LAUNCHCTL="$T/bin/launchctl"
+  export AWAKE_NUDGE_BIN="$T/bin/nudge" AWAKE_NUDGE_SYNC=1
   export CHORUS_LOG_FILE="$T/spine-read.log"
   unset TMUX CLAUDECODE CHORUS_ROLE AWAKE_ROLE_DIR
 }
