@@ -19,18 +19,31 @@ pub const WANT_CALLS: usize = 200;
 #[allow(dead_code)]
 pub const MAX_TAIL_BYTES: u64 = 64 * 1024 * 1024;
 
-/// The calls in the log's end: `max` bytes first, doubled while fewer than `want` calls came
-/// back and the read did not reach the start, up to `cap` bytes.
+/// The calls in the log's end: `max` bytes first, then each further chunk read ONCE, going
+/// backwards (code review, run 0352ghk5: re-reading from scratch at every doubling cost ~124 MB
+/// on a quiet log), until `want` calls came back, the log's start, or `cap` bytes in all.
 #[allow(dead_code)]
 pub fn tail_calls(path: &str, max: u64, want: usize, cap: u64) -> Result<Vec<Call>, String> {
-    let size = std::fs::metadata(path).map_err(|e| format!("spine log {path} unreadable: {e}"))?.len();
-    let mut n = max.min(cap).max(1);
+    let mut f = std::fs::File::open(path).map_err(|e| format!("spine log {path} unreadable: {e}"))?;
+    let size = f.metadata().map_err(|e| format!("spine log {path}: {e}"))?.len();
+    let mut from = size; // bytes [from, size) are held in `held`
+    let mut held: Vec<u8> = Vec::new();
+    let mut chunk = max.min(cap).max(1);
     loop {
-        let got = calls(&tail(path, n)?);
-        if got.len() >= want || n >= size || n >= cap {
+        let start = from.saturating_sub(chunk).max(size.saturating_sub(cap));
+        let mut buf = vec![0u8; (from - start) as usize];
+        f.seek(SeekFrom::Start(start)).map_err(|e| format!("spine log {path}: {e}"))?;
+        f.read_exact(&mut buf).map_err(|e| format!("spine log {path}: {e}"))?;
+        buf.extend_from_slice(&held);
+        held = buf;
+        from = start;
+        let text = String::from_utf8_lossy(&held);
+        let whole = if from == 0 { &text[..] } else { text.split_once('\n').map(|(_, r)| r).unwrap_or("") };
+        let got = calls(whole);
+        if got.len() >= want || from == 0 || size - from >= cap {
             return Ok(got);
         }
-        n = (n.saturating_mul(2)).min(cap);
+        chunk = chunk.saturating_mul(2);
     }
 }
 

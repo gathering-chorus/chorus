@@ -107,3 +107,30 @@ fn a_busy_log_still_yields_its_last_call_and_the_read_stops_at_the_cap() {
     // an unreadable log stays an error (unmeasured), never an empty list
     assert!(spine_log::tail_calls("/nonexistent/chorus.log", small, 200, 2 * small).is_err());
 }
+
+/// #4925 round 6 (code review, run 0352ghk5): the widening read takes each chunk once. A log
+/// with no call reads to its start and stops there (not on to the cap), and finds nothing.
+#[test]
+fn a_log_with_no_call_is_read_to_its_start_once_and_yields_nothing() {
+    let d = dir("nocall");
+    let p = d.join("chorus.log");
+    let mut f = std::fs::File::create(&p).unwrap();
+    for _ in 0..3000 { writeln!(f, "{}", line("context.inject.request", "kade", "00.000-0500")).unwrap(); }
+    drop(f);
+    let size = std::fs::metadata(&p).unwrap().len();
+    let path = p.to_str().unwrap();
+    // NEGATIVE: the whole log, start reached, nothing found; a cap far above the size changes nothing
+    assert!(spine_log::tail_calls(path, 1024, 200, 64 * 1024 * 1024).unwrap().is_empty());
+    assert!(size < 64 * 1024 * 1024);
+    // the call at the very start of a log is found once the read reaches it, whatever the chunking
+    let p2 = d.join("first.log");
+    let mut g = std::fs::File::create(&p2).unwrap();
+    writeln!(g, "{}", action("2026-11-23T04:00:03.000-0500", "kade", "started", "c9", "s1", "")).unwrap();
+    writeln!(g, "{}", action("2026-11-23T04:00:04.000-0500", "kade", "ended", "c9", "s1", "ok")).unwrap();
+    for _ in 0..3000 { writeln!(g, "{}", line("context.inject.request", "kade", "00.000-0500")).unwrap(); }
+    drop(g);
+    for chunk in [100u64, 1024, 7777, 1 << 20] {
+        let got = spine_log::tail_calls(p2.to_str().unwrap(), chunk, 200, 64 * 1024 * 1024).unwrap();
+        assert_eq!(got.len(), 1, "chunk {chunk}: {got:?}");
+    }
+}
