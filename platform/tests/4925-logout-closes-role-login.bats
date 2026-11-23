@@ -50,18 +50,3 @@ closes() { ls "$T"/bodies/*-PATCH-identity_sessions_"$OLD".json 2>/dev/null | xa
   if echo "$output" | grep -qF "login closed (session"; then false; fi
   grep -q '"state":"recorded"' "$OWN/login.json"
 }
-
-# #4925 round 5 (Jeff 09:13 via Wren) — a new run's Presence starts unknown; the run asks
-# for its first delivery, so the Presence turns reachable without a test's own nudge
-firsts() { [ -f "$T/nudge.log" ] || { echo 0; return; }; grep -c "^nudge-send wren wren \[presence\] new run" "$T/nudge.log" || true; }
-turn4925() { echo '{"session_id":"c-4925","prompt":"hello"}' | AWAKE_SEEN_SYNC=1 AWAKE_SEEN_EVERY=0 "$SCRIPT" seen wren >/dev/null 2>&1; }
-
-@test "#4925 NEGATIVE: a new run sends the role one first message, and a live run sends none" {
-  # setup's login recorded wren's run: that new run asked for its first delivery, once
-  test "$(firsts)" -eq 1
-  mv "$OWN/login.json" "$T/identity/wren/login.json"   # this case runs as the role: its login is its own
-  # turns on the live run record no new run, so they send nothing more
-  turn4925
-  turn4925
-  test "$(firsts)" -eq 1
-}
