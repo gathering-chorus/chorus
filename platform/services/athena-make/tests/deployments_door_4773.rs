@@ -10,7 +10,7 @@ use std::os::unix::fs::PermissionsExt;
 const GRAPH: &str = "urn:chorus:domains:cicd";
 
 fn deployment_table() -> RouteTable {
-    RouteTable {
+    RouteTable { iri_fields: vec![],
         unbounded: vec![],
         write_authority: String::new(),
         domain: "cicd".into(),

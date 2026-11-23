@@ -13,7 +13,7 @@
 
 use crate::model::ClassDef;
 use crate::store::{Row, RowStore, Where};
-use crate::spine_log::{calls, tail, Call};
+use crate::spine_log::{tail_calls, Call};
 use serde_json::json;
 pub use crate::spine_log::TAIL_BYTES;
 
@@ -48,7 +48,8 @@ pub struct SpineRows {
 
 impl SpineRows {
     fn all(&self, class: &ClassDef) -> Result<Vec<Row>, String> {
-        Ok(calls(&tail(&self.path, self.max)?).iter().map(|c| row(class, c)).collect())
+        // #4925 round 6 — widen the read until it holds a page of calls (capped)
+        Ok(tail_calls(&self.path, self.max, crate::spine_log::WANT_CALLS, crate::spine_log::MAX_TAIL_BYTES)?.iter().map(|c| row(class, c)).collect())
     }
     fn page(rows: Vec<Row>, limit: usize, offset: usize) -> (Vec<Row>, usize) {
         let total = rows.len();

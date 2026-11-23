@@ -414,6 +414,11 @@ pub struct RouteTable {
     /// sh:in. The DAL enforces these; until this card nothing published them, so
     /// a generated create could not produce a legal value for an enum field.
     pub allowed_values: Vec<String>,
+    /// #4925 round 6 (Wren, measured 11-23) — properties the shape constrains to an IRI
+    /// (sh:nodeKind sh:IRI) with neither sh:class nor sh:datatype, e.g. WaitingOn.waitsFor.
+    /// `fields` reads them "plain", so the manifest told a runner to send a word and the door
+    /// refused it ("is not a valid xsd:@iri"). Only the test manifest reads this list.
+    pub iri_fields: Vec<String>,
     pub repo_target: String,     // #3488 — repo land location for generated artifacts, from chorus:repoTarget (or class-keyed default)
     pub exposure: Vec<(String, String)>, // #3506/ADR-048 §3 — field localname → exposure level (public|internal|secret), PROJECTED from chorus:exposure. Unmarked = hidden (fail-closed).
     pub instances_graph: String, // #3570 — the kind's instance HOME graph (the domains.* spine): chorus:instancesGraph override, else urn:chorus:domains:<domain>, else urn:chorus:instances (back-compat). Threaded into every serve read.
@@ -1273,6 +1278,14 @@ pub fn generate(class_local: &str) -> R<RouteTable> {
     }
     allowed_values.sort();
     allowed_values.dedup();
+    // #4925 round 6 — the IRI-valued literals: nodeKind IRI, no class, no datatype
+    let q_iri = format!(
+        "PREFIX sh: <http://www.w3.org/ns/shacl#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?v WHERE {{ GRAPH <{g}> {{ <{c}> rdfs:subClassOf* ?tc . ?s sh:targetClass ?tc ; sh:property ?p . ?p sh:path ?path ; sh:nodeKind sh:IRI . FILTER(isIRI(?path)) FILTER NOT EXISTS {{ ?p sh:class ?cl }} FILTER NOT EXISTS {{ ?p sh:datatype ?dt }} BIND(REPLACE(STR(?path), '.*#', '') AS ?v) }} }} ORDER BY ?v",
+        g = ONTOLOGY_GRAPH, c = class
+    );
+    let mut iri_fields: Vec<String> = select_v(&sparql_json(&q_iri)?);
+    iri_fields.sort();
+    iri_fields.dedup();
     fields.sort();
     fields.dedup();
     if fields.is_empty() {
@@ -1465,7 +1478,7 @@ pub fn generate(class_local: &str) -> R<RouteTable> {
             None => r,
         })
         .collect();
-Ok(RouteTable { domain: domain_of.clone().unwrap_or_default(), base_path, class, fields, routes, secured, mandatory, write_required, unbounded, allowed_values, repo_target, exposure, instances_graph, tree_edges, tree_order, write_authority, model_version })
+Ok(RouteTable { domain: domain_of.clone().unwrap_or_default(), base_path, class, fields, routes, secured, mandatory, write_required, unbounded, allowed_values, iri_fields, repo_target, exposure, instances_graph, tree_edges, tree_order, write_authority, model_version })
 }
 
 /// #3660 — route emission for the tree read: ONE route iff the shape declares
@@ -3330,7 +3343,7 @@ mod unbounded_edges_4222 {
     use super::*;
 
     fn table(fields: Vec<&str>, unbounded: Vec<&str>) -> RouteTable {
-        RouteTable {
+        RouteTable { iri_fields: vec![],
             unbounded: unbounded.into_iter().map(String::from).collect(),
             write_authority: String::new(),
             domain: String::new(),
@@ -3498,7 +3511,7 @@ mod bounds_closedshape_tests {
     /// NEGATIVE PROOF: a body that tries to set a stamp is named and refused.
     #[test]
     fn the_door_stamps_the_write_and_refuses_a_body_stamp() {
-        let table = RouteTable { unbounded: vec![], domain: String::new(), base_path: String::new(),
+        let table = RouteTable { iri_fields: vec![], unbounded: vec![], domain: String::new(), base_path: String::new(),
             class: "https://jeffbridwell.com/chorus#Document".into(),
             fields: vec!["docTitle".into(), "docHref".into(), "changedAt".into(), "changedIn".into(), "docState".into(), "ownedBy|edge:Role".into()],
             routes: vec![], secured: vec![], mandatory: vec![], write_required: vec![], allowed_values: vec![], repo_target: String::new(), exposure: vec![],
@@ -3522,7 +3535,7 @@ mod bounds_closedshape_tests {
         assert_eq!(version_stamp(&vt, Some("junk")), Some(("writeCount".to_string(), "1".to_string())));
         assert_eq!(body_sets_a_stamp(r#"{"name":"d5","writeCount":"9"}"#).as_deref(), Some("writeCount"));
         // a class without the stamp fields gets none
-        let plain = RouteTable { unbounded: vec![], domain: String::new(), base_path: String::new(),
+        let plain = RouteTable { iri_fields: vec![], unbounded: vec![], domain: String::new(), base_path: String::new(),
             class: "https://jeffbridwell.com/chorus#Card".into(), fields: vec!["label".into()],
             routes: vec![], secured: vec![], mandatory: vec![], write_required: vec![], allowed_values: vec![], repo_target: String::new(), exposure: vec![],
             instances_graph: "urn:chorus:instances".into(), tree_edges: vec![], tree_order: None, write_authority: String::new(), model_version: "unclassified".into(),
@@ -3573,7 +3586,7 @@ mod bounds_closedshape_tests {
 
     #[test]
     fn verified_owner_uses_the_shape_declared_edge_and_ignores_body_owner() {
-        let mut table = RouteTable { unbounded: vec![], domain: String::new(), base_path: String::new(),
+        let mut table = RouteTable { iri_fields: vec![], unbounded: vec![], domain: String::new(), base_path: String::new(),
             class: format!("{}Domain", NS),
             fields: vec![
                 "comment|datatype:string".into(),
@@ -3633,7 +3646,7 @@ mod bounds_closedshape_tests {
     /// check ran on body keys and the body's ownedBy is stripped.
     #[test]
     fn required_owner_is_satisfied_by_the_verified_caller_not_the_body() {
-        let table = |fields: Vec<&str>| RouteTable { unbounded: vec![], domain: String::new(), base_path: String::new(),
+        let table = |fields: Vec<&str>| RouteTable { iri_fields: vec![], unbounded: vec![], domain: String::new(), base_path: String::new(),
             class: format!("{}LogSource", NS),
             fields: fields.into_iter().map(String::from).collect(),
             routes: vec![], secured: vec![], mandatory: vec![],
@@ -4617,6 +4630,8 @@ pub fn tests_manifest(t: &RouteTable) -> String {
                         if n2 != n { return None; }
                         rest.strip_prefix("datatype:").map(|d| d.to_string())
                     });
+                    // #4925 round 6 — an IRI-valued literal is an anyURI to a runner (it sends a urn)
+                    let dt = dt.or_else(|| t.iri_fields.iter().any(|f| f == n).then(|| "anyURI".to_string()));
                     let dt_json = match &dt {
                         Some(d) => format!(", \"datatype\": \"{}\"", json_escape(d)),
                         None => String::new(),
@@ -5905,7 +5920,7 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
     // GET /schema/domain
     if path.starts_with("/schema/") {
         meta.route = "schema".into();
-        let t = RouteTable { unbounded: table.unbounded.clone(), allowed_values: table.allowed_values.clone(), domain: table.domain.clone(), base_path: table.base_path.clone(), class: table.class.clone(), fields: table.fields.clone(), routes: table.routes.clone(), secured: table.secured.clone(), mandatory: table.mandatory.clone(), write_required: table.write_required.clone(), repo_target: table.repo_target.clone(), exposure: table.exposure.clone(), instances_graph: table.instances_graph.clone(), tree_edges: vec![], tree_order: None, write_authority: String::new(), model_version: table.model_version.clone() };
+        let t = RouteTable { unbounded: table.unbounded.clone(), allowed_values: table.allowed_values.clone(), iri_fields: table.iri_fields.clone(), domain: table.domain.clone(), base_path: table.base_path.clone(), class: table.class.clone(), fields: table.fields.clone(), routes: table.routes.clone(), secured: table.secured.clone(), mandatory: table.mandatory.clone(), write_required: table.write_required.clone(), repo_target: table.repo_target.clone(), exposure: table.exposure.clone(), instances_graph: table.instances_graph.clone(), tree_edges: vec![], tree_order: None, write_authority: String::new(), model_version: table.model_version.clone() };
         return (200, routes_json(&t));
     }
     // GET /openapi.json — the generated OpenAPI 3.1 spec (#3453, #3520). Another
@@ -7366,7 +7381,7 @@ mod tests {
     use super::*;
 
     fn widget_table(write_required: &[&str], exposure: &[(&str, &str)]) -> RouteTable {
-        RouteTable {
+        RouteTable { iri_fields: vec![],
             class: format!("{}Widget", NS),
             fields: write_required.iter().map(|f| format!("{f}|datatype:string")).collect(),
             routes: vec![
@@ -7460,6 +7475,24 @@ mod tests {
         assert_eq!(prepare_linked_creates(&dup, &linked_tables(), "silas", "", &both_graphs()).err().unwrap().0, 409);
     }
 
+    /// #4925 round 6 (Wren, measured 11-23) — NEGATIVE PROOF: an IRI-valued literal
+    /// (nodeKind IRI, no class, no datatype; WaitingOn.waitsFor) is published as anyURI, so
+    /// the walk sends a urn and not a word the door refuses. A plain literal beside it gets
+    /// no datatype. Without the iri_fields branch the first assertion fails.
+    #[test]
+    fn an_iri_valued_literal_is_published_as_any_uri() {
+        let mut t = widget_table(&["label"], &[]);
+        t.fields = vec!["label|plain".into(), "waitsFor|plain".into()];
+        t.write_required = vec!["label".into(), "waitsFor".into()];
+        t.iri_fields = vec!["waitsFor".into()];
+        let m = tests_manifest(&t);
+        assert!(m.contains("{ \"field\": \"waitsFor\", \"kind\": \"literal\", \"datatype\": \"anyURI\""), "{m}");
+        assert!(!m.contains("\"field\": \"label\", \"kind\": \"literal\", \"datatype\""), "a plain literal gets no datatype: {m}");
+        // control: without the list, waitsFor is a plain word again (the 11-23 refusal)
+        t.iri_fields.clear();
+        assert!(!tests_manifest(&t).contains("\"waitsFor\", \"kind\": \"literal\", \"datatype\": \"anyURI\""));
+    }
+
     /// #4282 — NEGATIVE PROOF: a field the read hides (secret, or unmarked on an
     /// annotated shape) must not be asked for on read-back. Service's
     /// implementationPlan (secret) and docState (unmarked) came back MISSING
@@ -7499,7 +7532,7 @@ mod tests {
     /// nothing.
     #[test]
     fn manifest_delete_matches_openapi() {
-        let t = RouteTable {
+        let t = RouteTable { iri_fields: vec![],
             class: format!("{}Widget", NS),
             fields: vec!["label|datatype:string".into()],
             routes: vec![
@@ -7952,7 +7985,7 @@ mod tests {
     // codes from the same table, which is the whole defect.
     #[test]
     fn versioned_and_bare_paths_resolve_identically() {
-        let t = RouteTable { unbounded: vec![], domain: String::new(), base_path: String::new(),
+        let t = RouteTable { iri_fields: vec![], unbounded: vec![], domain: String::new(), base_path: String::new(),
             class: format!("{}Domain", NS),
             fields: vec!["label|plain".into()],
             routes: vec!["GET /domains".into()],
@@ -8247,7 +8280,7 @@ mod tests {
     fn page_html_is_a_generated_projection_on_system_css() {
         // #3420: page_html emits the SHELL of the real Athena domain page anatomy on the
         // #3415 design system; the shared /js/domain-renderer.js fills the mount points.
-        let t = RouteTable { unbounded: vec![], domain: String::new(), base_path: String::new(),
+        let t = RouteTable { iri_fields: vec![], unbounded: vec![], domain: String::new(), base_path: String::new(),
             class: format!("{}Domain", NS),
             fields: vec!["label|plain".into(), "status|datatype:string".into()],
             routes: vec!["GET /domains".into()],
@@ -8284,7 +8317,7 @@ mod tests {
         assert_eq!(page_html(&t), page_html(&t));
         // #3420 AC6 — the breadcrumb/title are CLASS-projected (the generalization path for
         // services/roles), not a hardcoded "Domain". Prove it with a different class.
-        let svc = page_html(&RouteTable { unbounded: vec![], domain: String::new(), base_path: String::new(),
+        let svc = page_html(&RouteTable { iri_fields: vec![], unbounded: vec![], domain: String::new(), base_path: String::new(),
             class: format!("{}Service", NS),
             fields: vec![],
             routes: vec![],
@@ -8314,7 +8347,7 @@ mod tests {
     // === #3453 — serve the generated OpenAPI spec + human view ===
 
     fn openapi_fixture() -> RouteTable {
-        RouteTable { unbounded: vec![], write_authority: String::new(), domain: String::new(), base_path: String::new(),
+        RouteTable { iri_fields: vec![], unbounded: vec![], write_authority: String::new(), domain: String::new(), base_path: String::new(),
             class: format!("{}Domain", NS),
             fields: vec!["comment".into(), "label".into()],
             mandatory: vec!["label".into()], // #3520 — exercises the `required` projection
@@ -8459,7 +8492,7 @@ mod tests {
     // shape left to pin.
 
     fn t4158(domain: &str, class_local: &str) -> RouteTable {
-        RouteTable {
+        RouteTable { iri_fields: vec![],
             unbounded: vec![],
             domain: domain.to_string(),
             base_path: domain_path(domain, class_local),
@@ -8824,7 +8857,7 @@ mod tests {
     /// owner was a bare string, and a data rename to 0 refilled within four minutes.
     #[test]
     fn a_silent_shape_still_stamps_a_literal_owner() {
-        let table = |fields: Vec<String>| RouteTable {
+        let table = |fields: Vec<String>| RouteTable { iri_fields: vec![],
             unbounded: vec![],
             domain: String::new(), base_path: String::new(),
             class: "https://jeffbridwell.com/chorus#LogSource".into(),
@@ -9039,7 +9072,7 @@ mod tests {
 
     #[test]
     fn routes_json_is_deterministic() {
-        let t = RouteTable { unbounded: vec![], domain: String::new(), base_path: String::new(),
+        let t = RouteTable { iri_fields: vec![], unbounded: vec![], domain: String::new(), base_path: String::new(),
             class: format!("{}Domain", NS),
             fields: vec!["comment".into(), "label".into()],
             routes: vec!["GET /domains".into()],
@@ -9104,7 +9137,7 @@ mod tests {
     fn routes_json_publishes_the_mandatory_floor() {
         // AC4/AC5 — the floor is part of the published /schema contract so the page
         // meter sources completeness from the MODEL (severing the Athena-v1 dependency).
-        let t = RouteTable { unbounded: vec![], domain: String::new(), base_path: String::new(),
+        let t = RouteTable { iri_fields: vec![], unbounded: vec![], domain: String::new(), base_path: String::new(),
             class: format!("{}Domain", NS),
             fields: vec!["label".into(), "comment".into()],
             routes: vec!["GET /domains".into()],
@@ -9138,7 +9171,7 @@ mod tests {
 
     #[test]
     fn unknown_route_404s_and_teaches_routes() {
-        let t = RouteTable { unbounded: vec![], domain: String::new(), base_path: String::new(), class: format!("{}Domain", NS), fields: vec![], routes: vec!["GET /domains".into()], secured: vec![], mandatory: vec![], write_required: vec![], allowed_values: vec![], repo_target: String::new(), exposure: vec![], instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, write_authority: String::new(), model_version: "unclassified".to_string() };
+        let t = RouteTable { iri_fields: vec![], unbounded: vec![], domain: String::new(), base_path: String::new(), class: format!("{}Domain", NS), fields: vec![], routes: vec!["GET /domains".into()], secured: vec![], mandatory: vec![], write_required: vec![], allowed_values: vec![], repo_target: String::new(), exposure: vec![], instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, write_authority: String::new(), model_version: "unclassified".to_string() };
         let (code, body) = handle("/nope", &t);
         assert_eq!(code, 404);
         assert!(body.contains("GET /domains"));
@@ -9246,7 +9279,7 @@ mod tests {
     // shape/ontology graph (Silas's scope-trap). And it carries the new claims.
     #[test]
     fn dal_emit_scopes_to_instance_graph_and_mints_scoped_token() {
-        let t = RouteTable { unbounded: vec![], domain: String::new(), base_path: String::new(),
+        let t = RouteTable { iri_fields: vec![], unbounded: vec![], domain: String::new(), base_path: String::new(),
             class: format!("{}Test", NS),
             fields: vec!["filePath|datatype:string".into()],
             routes: vec!["PUT /tests".into()],
@@ -9368,7 +9401,7 @@ mod dispatch_effective_3845 {
     use super::*;
 
     fn table(class: &str) -> RouteTable {
-        RouteTable { unbounded: vec![], write_authority: String::new(), domain: String::new(), base_path: String::new(),
+        RouteTable { iri_fields: vec![], unbounded: vec![], write_authority: String::new(), domain: String::new(), base_path: String::new(),
             class: format!("https://jeffbridwell.com/chorus#{class}"),
             fields: vec![],
             routes: vec![],

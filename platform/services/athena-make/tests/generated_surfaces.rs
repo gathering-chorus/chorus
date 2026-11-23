@@ -6,7 +6,7 @@
 use athena_make::{mcp_binding, tests_manifest, RouteTable};
 
 fn fixture() -> RouteTable {
-    RouteTable { unbounded: vec![], write_authority: String::new(), domain: String::new(), base_path: String::new(),
+    RouteTable { iri_fields: vec![], unbounded: vec![], write_authority: String::new(), domain: String::new(), base_path: String::new(),
         class: "https://jeffbridwell.com/chorus#Domain".into(),
         fields: vec![
             "label|datatype:string".into(),

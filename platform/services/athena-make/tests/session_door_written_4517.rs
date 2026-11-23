@@ -12,7 +12,7 @@ use athena_make::{handle_write_scoped, RouteTable, NS};
 const GRAPH: &str = "urn:chorus:domains:identity";
 
 fn table(write_authority: &str) -> RouteTable {
-    RouteTable { unbounded: vec![], write_authority: write_authority.into(), domain: String::new(), base_path: String::new(),
+    RouteTable { iri_fields: vec![], unbounded: vec![], write_authority: write_authority.into(), domain: String::new(), base_path: String::new(),
         class: format!("{NS}Session"), fields: vec!["channel|datatype:string".into(), "ownedBy|edge:Principal".into()],
         routes: vec![], secured: vec![], mandatory: vec![], write_required: vec![], allowed_values: vec![],
         repo_target: String::new(), exposure: vec![], instances_graph: GRAPH.into(), tree_edges: vec![], tree_order: None,

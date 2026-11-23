@@ -11,14 +11,19 @@ DAGU="${DAGU_URL:-http://localhost:8526}"
 # prints "spread_s phase_s slowest_s" for the newest finished demo run, or why it cannot
 measure() {
   python3 - "$DAGU" <<'PY'
-import json, os, sys, urllib.request
+import json, os, sys, time, urllib.request
 from datetime import datetime
 base = sys.argv[1]
-# DAGU_FIXTURE: one JSON file {path: answer} stands in for dagu (the negative proof)
+# DAGU_FIXTURE: one JSON file {path: answer} stands in for dagu (the negative proof); its keys
+# carry no fromDate, the one value that changes every run
 fx = os.environ.get("DAGU_FIXTURE")
-get = (lambda p: json.load(open(fx))[p]) if fx else (lambda p: json.load(urllib.request.urlopen(base + p, timeout=10)))
+get = (lambda p: json.load(open(fx))[p.split("&fromDate=")[0]]) if fx else (lambda p: json.load(urllib.request.urlopen(base + p, timeout=10)))
 reviews = ["skill-werk-demo-gate-quality", "skill-werk-demo-gate-arch", "skill-werk-demo-gate-code"]
-for run in get("/api/v1/dag-runs?name=demo&limit=20")["dagRuns"]:
+# #4925 round 6: dagu lists only TODAY's runs unless told a fromDate. At 03:00 no demo has run
+# yet today, so the nightly read "no finished demo run" every night (11-23: 0 of 0; with a
+# 7-day window, 20). The window is the last 14 days.
+since = int(time.time()) - 14 * 86400
+for run in get(f"/api/v1/dag-runs?name=demo&limit=20&fromDate={since}")["dagRuns"]:
     d = get(f"/api/v1/dag-runs/demo/{run['dagRunId']}")
     nodes = {n["step"]["name"]: n for n in d.get("dagRunDetails", d)["nodes"]}
     t = lambda s: datetime.fromisoformat(s) if s and s != "-" else None
@@ -61,6 +66,32 @@ verdict() {
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   why="$(verdict "$output")"
   [[ "$why" == *"started 161s apart"* && "$why" == *"review phase 344s"* ]] || { echo "serial run not caught: $output / $why"; return 1; }
+}
+
+@test "#4925 round 6 NEGATIVE: the run list asks dagu for a window, so a day with no demo yet still measures" {
+  # a stub dagu that, like the real one, lists only today's runs unless fromDate is given
+  T="$BATS_TEST_TMPDIR"; port="$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1])')"
+  cat > "$T/dagu.py" <<'PY'
+import http.server, json, sys
+n = lambda s, a, b: {"step": {"name": s}, "startedAt": a, "finishedAt": b}
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path.startswith("/api/v1/dag-runs?"):
+            body = {"dagRuns": [{"dagRunId": "y1"}] if "fromDate=" in self.path else []}
+        else:
+            body = {"nodes": [n("skill-werk-demo-gate-quality", "2026-11-22T10:00:00-05:00", "2026-11-22T10:02:00-05:00"),
+                              n("skill-werk-demo-gate-arch", "2026-11-22T10:00:05-05:00", "2026-11-22T10:01:00-05:00"),
+                              n("skill-werk-demo-gate-code", "2026-11-22T10:00:09-05:00", "2026-11-22T10:03:00-05:00")]}
+        b = json.dumps(body).encode(); self.send_response(200); self.end_headers(); self.wfile.write(b)
+    def log_message(self, *a): pass
+http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
+PY
+  python3 "$T/dagu.py" "$port" & pid=$!
+  for _ in 1 2 3 4 5 6 7 8 9 10; do curl -s "http://127.0.0.1:$port/x" >/dev/null 2>&1 && break; sleep 0.2; done
+  DAGU_URL="http://127.0.0.1:$port"; DAGU="$DAGU_URL" run measure
+  kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null || true
+  [ "$status" -eq 0 ] || { echo "yesterday's demo was not found: $output"; return 1; }
+  echo "$output" | grep -q " y1$" || { echo "$output"; return 1; }
 }
 
 @test "AC1 model-first (Kade 10:11, row 84): chorus-make graph demo, from the prod rows, makes exactly demo.yaml" {

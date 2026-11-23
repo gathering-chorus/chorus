@@ -8,24 +8,31 @@
 set -u
 API="${CHORUS_ATHENA_URL:-http://localhost:3360}"
 WINDOW="${SESSION_SEEN_WINDOW_SECS:-300}"
+# #4517 AC6: a turn no longer writes lastSeenAt; a session is seen when the newer of
+# lastSeenAt and the role's last action on its stream (pulse's roles view) is after its start.
+ROLES_URL="${SESSION_LIVE_ROLES_URL:-http://localhost:3340/api/chorus/context/roles}"
 [ $# -gt 0 ] || set -- silas wren kade
 # SESSION_LIVE_FIXTURE=<dir> reads sessions.json runs.json presences.json contexts.json
 # from a directory instead of the API (#4351: the negative proofs run on fixtures).
 if [ -n "${SESSION_LIVE_FIXTURE:-}" ]; then
   fetch() { case "$1" in identity/sessions) cat "$SESSION_LIVE_FIXTURE/sessions.json";; identity/sessionruns) cat "$SESSION_LIVE_FIXTURE/runs.json";;
-            identity/presences) cat "$SESSION_LIVE_FIXTURE/presences.json";; memory/contexts) cat "$SESSION_LIVE_FIXTURE/contexts.json";; esac; }
+            identity/presences) cat "$SESSION_LIVE_FIXTURE/presences.json";; memory/contexts) cat "$SESSION_LIVE_FIXTURE/contexts.json";;
+            roles) cat "$SESSION_LIVE_FIXTURE/roles.json";; esac; }
 else
-  fetch() { curl -sf --max-time 10 "$API/v1/$1?limit=5000"; }
+  fetch() { if [ "$1" = roles ]; then curl -sf --max-time 10 "$ROLES_URL"; else curl -sf --max-time 10 "$API/v1/$1?limit=5000"; fi; }
 fi
-S=$(fetch identity/sessions) && R=$(fetch identity/sessionruns) && P=$(fetch identity/presences) && C=$(fetch memory/contexts) \
-  || { echo "UNMEASURED: $API did not answer; nothing was checked"; exit 2; }
+S=$(fetch identity/sessions) && R=$(fetch identity/sessionruns) && P=$(fetch identity/presences) && C=$(fetch memory/contexts) && A=$(fetch roles) \
+  || { echo "UNMEASURED: $API or $ROLES_URL did not answer; nothing was checked"; exit 2; }
 python3 - "$WINDOW" "$@" <<PY
 import json, sys, datetime as dt
 S, R, P, C = (json.loads(x)["data"] for x in (r'''$S''', r'''$R''', r'''$P''', r'''$C'''))
+ACT = {r.get("name"): r.get("lastActivity") or "" for r in json.loads(r'''$A''')["data"]["roles"]}
 window = int(sys.argv[1]); roles = sys.argv[2:]
 now = dt.datetime.now(dt.timezone.utc)
 def t(s):
     try: return dt.datetime.strptime(s, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=dt.timezone.utc)
+    except Exception: pass
+    try: return dt.datetime.strptime(s, "%Y-%m-%dT%H:%M:%S.%f%z").astimezone(dt.timezone.utc)
     except Exception: return None
 bad = 0
 def line(ok, role, what):
@@ -44,13 +51,14 @@ for role in roles:
     line(s.get("sessionState") == "open", role, f"newest session {name} is open (state {s.get('sessionState')!r})")
     line(s.get("actsAs") in ("role-" + role, role), role, f"it acts as role-{role} (actsAs {s.get('actsAs')!r})")
     line(bool(t(s.get("startedAt", ""))), role, f"it says when it started (startedAt {s.get('startedAt')!r})")
-    seen = t(s.get("lastSeenAt", ""))
+    stamps = [x for x in (t(s.get("lastSeenAt", "")), t(ACT.get(role, ""))) if x]
+    seen = max(stamps) if stamps else None
     age = int((now - seen).total_seconds()) if seen else None
     # #4351: a role idle at 4am is not a broken login. Red only when the session was
     # never seen, or its last-seen is older than its own start (the seen hook never
     # wrote). Idle past the window is reported, not failed.
     started = t(s.get("startedAt", "")) or t(s.get("issuedAt", ""))
-    line(seen is not None and started is not None and seen >= started, role, f"the seen hook has written (lastSeenAt {s.get('lastSeenAt')!r})")
+    line(seen is not None and started is not None and seen >= started, role, f"seen since it started (lastSeenAt {s.get('lastSeenAt')!r}, last action {ACT.get(role, '')!r})")
     if age is not None and age > window:
         print(f"INFO {role}: idle {age}s (over {window}s; not a failure)")
     # edges read back as the target's full local name (session-<name>, session-run-<name>)

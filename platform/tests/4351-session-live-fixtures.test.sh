@@ -10,8 +10,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CHECK="$ROOT/platform/scripts/session-live-check"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 pass=0; fail=0
-mk() { # $1 dir, $2 lastSeenAt, $3 with-run (1/0), $4 with-probe (1/0)
+mk() { # $1 dir, $2 lastSeenAt, $3 with-run (1/0), $4 with-probe (1/0), $5 stream's last action (default none)
   mkdir -p "$1"
+  printf '{"data":{"roles":[{"name":"kade","lastActivity":"%s"}]}}' "${5:-}" > "$1/roles.json"
   probe=""; [ "$4" = 1 ] && probe=',{"name":"zz-probe-20260923t193502z-session","ownedBy":"principal-kade","sessionState":"zz probe","startedAt":"zz","actsAs":"zz"}'
   printf '{"data":[{"name":"kade-abc","ownedBy":"principal-kade","sessionState":"open","actsAs":"role-kade","startedAt":"2026-09-26T16:32:05Z","lastSeenAt":"%s"}%s]}' "$2" "$probe" > "$1/sessions.json"
   if [ "$3" = 1 ]; then printf '{"data":[{"name":"kade-run1","runOf":"session-kade-abc"}]}' > "$1/runs.json"; else echo '{"data":[]}' > "$1/runs.json"; fi
@@ -24,5 +25,10 @@ mk "$TMP/idle" "2026-09-26T21:00:00Z" 1 1;  ok "idle for hours with a probe row 
 grep -q "kade-abc" "$TMP/out" && { echo "PASS the real login row was judged, not the probe"; pass=$((pass+1)); } || { echo "FAIL the probe row was judged"; fail=$((fail+1)); }
 mk "$TMP/norun" "2026-09-26T21:00:00Z" 0 0; ok "negative proof: a login with no live run reads red" "$(run "$TMP/norun")" 1
 mk "$TMP/unseen" "2026-09-26T10:00:00Z" 1 0; ok "negative proof: a seen hook that never wrote since start reads red" "$(run "$TMP/unseen")" 1
+# #4517 AC6 (#4925 round 6): a turn no longer writes lastSeenAt. A session whose lastSeenAt is
+# older than its start but whose role acted on its stream since then is seen (the 11-23 red).
+mk "$TMP/ac6" "2026-09-20T10:00:00Z" 1 0 "2026-09-26T12:40:00.000-0400"; ok "a stream action after the start reads seen, whatever lastSeenAt says" "$(run "$TMP/ac6")" 0
+mk "$TMP/ac6old" "2026-09-20T10:00:00Z" 1 0 "2026-09-26T12:00:00.000-0400"; ok "negative proof: lastSeenAt and the last action both before the start read red" "$(run "$TMP/ac6old")" 1
+mkdir -p "$TMP/noroles"; mk "$TMP/noroles" "2026-09-26T21:00:00Z" 1 0; rm "$TMP/noroles/roles.json"; ok "negative proof: an unreadable roles view is UNMEASURED, not a pass" "$(run "$TMP/noroles")" 2
 echo "=== Results: $pass passed, $fail failed ==="
 [ "$fail" -eq 0 ]

@@ -10,6 +10,30 @@ use std::io::{Read, Seek, SeekFrom};
 #[allow(dead_code)]
 pub const TAIL_BYTES: u64 = 4 * 1024 * 1024;
 
+/// #4925 round 6 (Wren, measured 11-23): a busy night writes more than TAIL_BYTES of other
+/// events after the last call (5.9 MB by 04:50), so one 4 MiB read held no call and the Streams
+/// route answered "no recent call". The read widens until it holds WANT_CALLS calls or reaches
+/// the log's start, never past MAX_TAIL_BYTES (a whole ~700 MB log froze the API once).
+#[allow(dead_code)]
+pub const WANT_CALLS: usize = 200;
+#[allow(dead_code)]
+pub const MAX_TAIL_BYTES: u64 = 64 * 1024 * 1024;
+
+/// The calls in the log's end: `max` bytes first, doubled while fewer than `want` calls came
+/// back and the read did not reach the start, up to `cap` bytes.
+#[allow(dead_code)]
+pub fn tail_calls(path: &str, max: u64, want: usize, cap: u64) -> Result<Vec<Call>, String> {
+    let size = std::fs::metadata(path).map_err(|e| format!("spine log {path} unreadable: {e}"))?.len();
+    let mut n = max.min(cap).max(1);
+    loop {
+        let got = calls(&tail(path, n)?);
+        if got.len() >= want || n >= size || n >= cap {
+            return Ok(got);
+        }
+        n = (n.saturating_mul(2)).min(cap);
+    }
+}
+
 /// The log's last `max` bytes as text, without the partial first line. A missing or
 /// unreadable log is an error (unmeasured), never an empty list that reads as "no work".
 pub fn tail(path: &str, max: u64) -> Result<String, String> {
