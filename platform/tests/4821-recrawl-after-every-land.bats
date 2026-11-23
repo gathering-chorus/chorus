@@ -10,13 +10,15 @@
 
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 LAND="$ROOT/platform/pipelines/cicd-land.yaml"
+# every generated land (chorus-make generate_land): the ones whose success ends the pair
+lands() { grep -l "platform/scripts/pair proven" "$ROOT"/platform/pipelines/*-land.yaml; }
 
 # prints the command of handler $2 in pipeline file $1
 handler() { awk -v h="  $2:" '$0==h{getline; sub(/^    command: /,""); print; exit}' "$1"; }
 # the crawl runs from exit, and from no other handler
 crawls_on_every_outcome() {
   handler "$1" exit | grep -qF 'platform/scripts/crawl-detached.sh' || return 1
-  for h in success failure abort; do
+  for h in success failure abort cancel; do
     if handler "$1" "$h" | grep -qF 'crawl-detached'; then return 1; fi
   done
 }
@@ -25,6 +27,15 @@ crawls_on_every_outcome() {
   test -f "$LAND"
   handler "$LAND" exit | grep -qF 'run-finished' || { handler "$LAND" exit; return 1; }   # control: the parse found the exit handler
   crawls_on_every_outcome "$LAND" || { sed -n '/^handler_on:/,/^steps:/p' "$LAND"; return 1; }
+}
+
+@test "#4821 every generated land crawls from exit (cicd-land and borg-prove-land alike)" {
+  n=0
+  for f in $(lands); do
+    n=$((n + 1))
+    crawls_on_every_outcome "$f" || { echo "$f"; sed -n '/^handler_on:/,/^steps:/p' "$f"; return 1; }
+  done
+  test "$n" -ge 2 || { echo "found $n generated lands"; return 1; }   # control: the glob found both
 }
 
 @test "#4821 NEGATIVE: a land that crawls only on success (the old shape) is caught" {

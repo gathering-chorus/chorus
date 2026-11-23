@@ -242,12 +242,17 @@ pub const MODEL_THEN_WERK: &str = "${CHORUS_HOME}/platform/scripts/werk-v2 ${CAR
 /// #4888 (Jeff 11-04 14:37: #4887's land woke nobody) — the one wake a run sends,
 /// from dagu's exit handler, pass or fail: run-finished tells the owner and a
 /// paired card's driver and navigator through ops-nudge. Failure handlers only route.
-pub const RUN_FINISHED: &str = "  exit:\n    command: '${CHORUS_HOME}/platform/scripts/run-finished ${CARD} ${ROLE} ${DAG_NAME} ${DAG_RUN_ID}'\n";
+macro_rules! run_finished {
+    () => {
+        "${CHORUS_HOME}/platform/scripts/run-finished ${CARD} ${ROLE} ${DAG_NAME} ${DAG_RUN_ID}"
+    };
+}
+pub const RUN_FINISHED: &str = concat!("  exit:\n    command: '", run_finished!(), "'\n");
 
-/// What every werk-style land does when it succeeds: the pair ends, then athena-land.
 /// #4752 — a cicd or land red goes back to the card's pair first (`pair routed`
 /// exits 1 when the card has none, and the builder's nudge or route runs).
 pub const PAIR_ROUTED: &str = "${CHORUS_HOME}/platform/scripts/pair routed ${CARD} ${DAG_NAME} ${DAG_RUN_ID} || ";
+/// What every werk-style land does when it succeeds: the pair ends, then athena-land.
 /// #4752 — the land succeeded only after borg-prove recorded it proven in prod:
 /// the card's pair ends there (Jeff 10-30: "pair ends when card is in prod").
 pub const LAND_THEN_MODEL: &str = "${CHORUS_HOME}/platform/scripts/pair proven ${CARD}; ${CHORUS_HOME}/platform/scripts/athena-land ${CARD} ${ROLE}";
@@ -256,8 +261,10 @@ pub const LAND_THEN_MODEL: &str = "${CHORUS_HOME}/platform/scripts/pair proven $
 /// unproven at borg-verify-in-prod skipped it (#4772, #4805 on 10-31; #4925 three
 /// times on 11-23), and the crawler stayed out of sync with git until someone
 /// kickstarted it by hand. crawl-detached hands the crawl to launchd and leaves a
-/// running pass alone, so a land that merged nothing costs one idle start.
-pub const LAND_EXIT: &str = "  exit:\n    command: '${CHORUS_HOME}/platform/scripts/run-finished ${CARD} ${ROLE} ${DAG_NAME} ${DAG_RUN_ID}; ${CHORUS_HOME}/platform/scripts/crawl-detached.sh'\n";
+/// running pass alone, so a land that merged nothing costs one idle start. Both
+/// scripts exit 0 by design (a failed kickstart is said, never fails the land), so
+/// the handler's status is unchanged.
+pub const LAND_EXIT: &str = concat!("  exit:\n    command: '", run_finished!(), "; ${CHORUS_HOME}/platform/scripts/crawl-detached.sh'\n");
 
 fn sorted(rows: &[Row]) -> Result<Vec<Row>, Vec<String>> {
     let errs = check(rows);
