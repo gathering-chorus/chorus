@@ -1889,6 +1889,7 @@ fn record_run_stamped(ctx: &Ctx, role: &str, session: &str, l: &Live, conversati
         }
     };
     let presence = create_row(ctx, role, "identity/presences", "presence", rows::presence_row(role, &slug(&format!("{}-presence-{}", role, stamp)), &run, &l.pane, &l.tty, &host_account, rows::session_channel(env::var("CHORUS_SESSION_CHANNEL").ok().as_deref()).unwrap_or("pane")));
+    if presence.is_some() { first_message(ctx, role, "new run"); }
     let context = create_row(ctx, role, "memory/contexts", "context", rows::boot_context_row(role, &slug(&format!("{}-boot-{}", role, stamp)), &run, &started));
     ctx.spine(&["session.run.recorded", role, &format!("session={}", session), &format!("run={}", run),
         &format!("previous={}", previous.unwrap_or_default()), &format!("presence={}", presence.unwrap_or_default()), &format!("context={}", context.unwrap_or_default())]);
@@ -2248,6 +2249,7 @@ fn repane(ctx: &Ctx, role: &str, presence: Value, pane: &str, tty: &str) {
     if let Some(np) = rows::repaned_presence(presence, pane, tty) {
         let ok = put_row(ctx, role, "identity/presences", "presence", &np);
         ctx.spine(&["presence.pane.refreshed", role, &format!("was={}", was), &format!("now={}", pane), &format!("written={}", ok)]);
+        if ok { first_message(ctx, role, "pane moved"); }
     }
 }
 
@@ -2567,6 +2569,20 @@ fn start_role(ctx: &mut Ctx, role: &str, attach: bool, by_person: bool) -> Resul
         }
     }
     on(ctx, role, attach)
+}
+
+/// #4925 round 5 (Jeff 11-23 09:13, via Wren) — a Presence starts "unknown" and only a
+/// delivered turn makes it reachable (rows.rs is_delivery). Every writer of an unknown
+/// Presence (a new run, a moved pane) asks for that first delivery here: one message to
+/// the role itself, on the normal nudge path, so the next turn is a delivery and 4895 only
+/// reads. A send that fails is named on the spine, never retried.
+fn first_message(ctx: &Ctx, role: &str, why: &str) {
+    let bin = envd("AWAKE_NUDGE_BIN", "chorus-hook-shim");
+    let text = format!("[presence] {}: this message checks your pane is reached; no reply needed.", why);
+    match sh(&bin, &["nudge-send", role, role, &text]) {
+        Ok(_) => ctx.spine(&["presence.first_message.sent", role, &format!("why={}", why)]),
+        Err(e) => ctx.spine(&["presence.first_message.failed", role, &format!("why={}", why), &format!("error={}", e.trim())]),
+    }
 }
 
 /// `up [--windows]` — after a reboot: all roles, each through start_role, one line.

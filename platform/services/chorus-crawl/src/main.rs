@@ -4240,24 +4240,34 @@ fn print_graph_vs_project(
                 &[
                     "log",
                     "--first-parent",
-                    "--format=%h %s",
+                    "--format=%H %h %s",
                     &format!("{first}..{head}"),
                 ],
                 root,
             )
             .unwrap_or_default();
-            let lands: Vec<String> = raw
+            // (full, short) of each land: the subject starts with '#'
+            let lands: Vec<(String, String)> = raw
                 .lines()
-                .filter(|l| {
-                    l.split_once(' ')
-                        .map(|(_, s)| s.starts_with('#'))
-                        .unwrap_or(false)
+                .filter_map(|l| {
+                    let mut it = l.splitn(3, ' ');
+                    match (it.next(), it.next(), it.next()) {
+                        (Some(full), Some(short), Some(subj)) if subj.starts_with('#') => {
+                            Some((full.to_string(), short.to_string()))
+                        }
+                        _ => None,
+                    }
                 })
-                .map(|l| l.split_whitespace().next().unwrap_or("").to_string())
                 .collect();
-            let anc =
-                |a: &str, b: &str| sh("git", &["merge-base", "--is-ancestor", a, b], root).is_ok();
-            let unc = uncovered_lands(&lands, &wms, &anc);
+            // #4925 round 5 — one rev-list over every watermark, not one merge-base per pair
+            let reach = |wms: &[String]| -> std::collections::HashSet<String> {
+                let mut args = vec!["rev-list", "--ignore-missing"];
+                args.extend(wms.iter().map(String::as_str));
+                sh("git", &args, root)
+                    .map(|out| out.lines().map(|l| l.trim().to_string()).collect())
+                    .unwrap_or_default()
+            };
+            let unc = uncovered_lands(&lands, &wms, &reach);
             (lands.len(), unc)
         }
         None => (0, Vec::new()),

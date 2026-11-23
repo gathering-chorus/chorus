@@ -138,7 +138,11 @@ hop_and_judge() {
     return
   fi
   # a copy of kade's session folder whose settings add a hook that refuses every tool
-  d="$BATS_TEST_TMPDIR/kade"; cp -R "$ROOT/roles/kade" "$d"
+  # #4925 round 5 (Wren, measured 11-23 08:12): the role folders are setgid (group chorus);
+  # cp -R re-applies that mode, a role account may not set it on a copy whose group is the
+  # tmp dir's, and cp exits non-zero. Copy the contents, not the modes.
+  d="$BATS_TEST_TMPDIR/kade"; mkdir "$d"
+  (cd "$ROOT/roles/kade" && tar cf - .) | tar xpf - -C "$d" --no-same-permissions
   python3 - "$d/.claude/settings.json" <<'PY'
 import json, sys
 p = sys.argv[1]; s = json.load(open(p))
