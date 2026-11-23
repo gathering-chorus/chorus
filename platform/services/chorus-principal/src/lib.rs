@@ -2246,7 +2246,10 @@ fn refresh_pane(ctx: &Ctx, role: &str) {
     repane(ctx, role, p, &pane, &tty);
     if let Some(run) = due {
         if first_message(ctx, role, &run) {
-            if let Err(e) = fs::write(&sent, &run) { eprintln!("chorus-principal: {sent:?} not written ({e}); the next sweep sends again"); }
+            // the dir may not exist on Jeff's side yet (Silas review): without it every sweep resends
+            if let Err(e) = sent.parent().map_or(Ok(()), fs::create_dir_all).and_then(|_| fs::write(&sent, &run)) {
+                eprintln!("chorus-principal: {sent:?} not written ({e}); the next sweep sends again");
+            }
         }
     }
 }
