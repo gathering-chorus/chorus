@@ -50,3 +50,23 @@ closes() { ls "$T"/bodies/*-PATCH-identity_sessions_"$OLD".json 2>/dev/null | xa
   if echo "$output" | grep -qF "login closed (session"; then false; fi
   grep -q '"state":"recorded"' "$OWN/login.json"
 }
+
+@test "#4925 NEGATIVE: an agent session cannot run close-own, so a role never ends its own login without a person (#4412)" {
+  mv "$OWN/login.json" "$T/identity/wren/login.json"   # as if run by wren's own account
+  CLAUDECODE=1 run "$SCRIPT" close-own wren
+  test "$status" -eq 2
+  echo "$output" | grep -qF "an agent session cannot run it"
+  test "$(closes)" -eq 0
+  grep -q '"state":"recorded"' "$T/identity/wren/login.json"
+}
+
+@test "#4925 NEGATIVE: a logout whose own-account hop cannot run still ends the role's run" {
+  # the gate's sudo probe passes; only the close-own hop fails, as an unreachable binary would
+  mv "$T/bin/sudo" "$T/bin/sudo-real"
+  printf '#!/bin/bash\ncase " $* " in *" close-own "*) echo "sudo: unable to execute" >&2; exit 1 ;; esac\nexec "%s/bin/sudo-real" "$@"\n' "$T" > "$T/bin/sudo"
+  chmod +x "$T/bin/sudo"
+  run "$SCRIPT" logout wren
+  test "$status" -eq 0
+  echo "$output" | grep -qF "could not be closed"
+  grep -q "^session.run.ended wren" "$T/spine.log"
+}

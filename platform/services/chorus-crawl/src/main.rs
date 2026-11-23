@@ -4263,9 +4263,14 @@ fn print_graph_vs_project(
             let reach = |wms: &[String]| -> std::collections::HashSet<String> {
                 let mut args = vec!["rev-list", "--ignore-missing"];
                 args.extend(wms.iter().map(String::as_str));
-                sh("git", &args, root)
-                    .map(|out| out.lines().map(|l| l.trim().to_string()).collect())
-                    .unwrap_or_default()
+                match sh("git", &args, root) {
+                    Ok(out) => out.lines().map(|l| l.trim().to_string()).collect(),
+                    // (code review) never silent: every land then reads uncovered, and this says why
+                    Err(e) => {
+                        println!("chorus-crawl: lossless UNMEASURED — git rev-list over {} watermark(s) failed: {}", wms.len(), e.trim());
+                        std::collections::HashSet::new()
+                    }
+                }
             };
             let unc = uncovered_lands(&lands, &wms, &reach);
             (lands.len(), unc)

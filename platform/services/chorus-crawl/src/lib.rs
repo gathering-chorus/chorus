@@ -2312,6 +2312,10 @@ mod project_4199 {
         );
         // a watermark the repo no longer has reaches nothing: the land stays uncovered
         assert_eq!(uncovered_lands(&lands(&["L3"]), &s(&["gone"]), &reach), s(&["L3"]));
+        // a land that IS a watermark is covered even when the read reaches nothing (code review)
+        let none = |_: &[String]| std::collections::HashSet::new();
+        assert!(uncovered_lands(&lands(&["L2"]), &s(&["L2"]), &none).is_empty());
+        assert_eq!(uncovered_lands(&lands(&["L2"]), &s(&["L1"]), &none), s(&["L2"]), "control: not a watermark, not reached");
     }
 
     // NEGATIVE PROOF (#4925 round 5): the check reads the repo once, however many lands

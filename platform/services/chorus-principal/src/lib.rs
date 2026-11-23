@@ -1889,7 +1889,6 @@ fn record_run_stamped(ctx: &Ctx, role: &str, session: &str, l: &Live, conversati
         }
     };
     let presence = create_row(ctx, role, "identity/presences", "presence", rows::presence_row(role, &slug(&format!("{}-presence-{}", role, stamp)), &run, &l.pane, &l.tty, &host_account, rows::session_channel(env::var("CHORUS_SESSION_CHANNEL").ok().as_deref()).unwrap_or("pane")));
-    if presence.is_some() { first_message(ctx, role, "new run"); }
     let context = create_row(ctx, role, "memory/contexts", "context", rows::boot_context_row(role, &slug(&format!("{}-boot-{}", role, stamp)), &run, &started));
     ctx.spine(&["session.run.recorded", role, &format!("session={}", session), &format!("run={}", run),
         &format!("previous={}", previous.unwrap_or_default()), &format!("presence={}", presence.unwrap_or_default()), &format!("context={}", context.unwrap_or_default())]);
@@ -2240,7 +2239,16 @@ fn refresh_pane(ctx: &Ctx, role: &str) {
             return;
         }
     };
+    // #4925 round 5 (Silas 11-23 10:29) — after the pane is checked, a Presence still
+    // unknown gets its first delivery: one message from system, once per run
+    let sent = PathBuf::from(&ctx.identity_dir).join(role).join("first-message.run");
+    let due = rows::first_message_due(&p, fs::read_to_string(&sent).ok().as_deref());
     repane(ctx, role, p, &pane, &tty);
+    if let Some(run) = due {
+        if first_message(ctx, role, &run) {
+            if let Err(e) = fs::write(&sent, &run) { eprintln!("chorus-principal: {sent:?} not written ({e}); the next sweep sends again"); }
+        }
+    }
 }
 
 /// #4889 — write the pane the role really runs in onto its Presence, when it moved.
@@ -2249,7 +2257,6 @@ fn repane(ctx: &Ctx, role: &str, presence: Value, pane: &str, tty: &str) {
     if let Some(np) = rows::repaned_presence(presence, pane, tty) {
         let ok = put_row(ctx, role, "identity/presences", "presence", &np);
         ctx.spine(&["presence.pane.refreshed", role, &format!("was={}", was), &format!("now={}", pane), &format!("written={}", ok)]);
-        if ok { first_message(ctx, role, "pane moved"); }
     }
 }
 
@@ -2389,7 +2396,13 @@ fn off(ctx: &Ctx, role: &str, from_exit: bool) -> i32 {
             Some((session.clone(), close_row(ctx, role, session)))
         }
         _ => match ctx.run_as.as_deref().filter(|a| *a != env::var("USER").unwrap_or_default()) {
-            Some(acct) => close_as_owner(ctx, role, acct),
+            Some(acct) => {
+                let r = close_as_owner(ctx, role, acct);
+                // #4925 round 5 (code review 3) — the hop never ran (no answer line): the
+                // caller still ends the run, so the Presence is retired with the pane
+                if matches!(&r, Some((s, Err(_))) if s.is_empty()) { end_run(ctx, role, "logout"); }
+                r
+            }
             None => { end_run(ctx, role, "logout"); None }
         },
     };
@@ -2428,8 +2441,8 @@ fn close_own(ctx: &Ctx, role: &str) -> i32 {
     let LoginState::Recorded { session, .. } = ctx.read_state(role) else { println!("none"); return 0 };
     match close_row(ctx, role, &session) {
         Ok(()) => {
+            // the caller's logout logs session.logout once, with this session (code review 10)
             ctx.write_state(role, &LoginState::Closed);
-            ctx.spine(&["session.logout", role, &format!("session={}", session), "how=own-account"]);
             println!("closed {}", session);
             0
         }
@@ -2571,33 +2584,32 @@ fn start_role(ctx: &mut Ctx, role: &str, attach: bool, by_person: bool) -> Resul
     on(ctx, role, attach)
 }
 
-/// #4925 round 5 (Jeff 11-23 09:13, via Wren) — a Presence starts "unknown" and only a
-/// delivered turn makes it reachable (rows.rs is_delivery). Every writer of an unknown
-/// Presence (a new run, a moved pane) asks for that first delivery here: one message to
-/// the role itself, on the normal nudge path, so the next turn is a delivery and 4895 only
-/// reads. A send that fails is named on the spine, never retried.
-fn first_message(ctx: &Ctx, role: &str, why: &str) {
+/// #4925 round 5 (Jeff 11-23 09:13; Silas 10:29) — a Presence starts "unknown" and only a
+/// delivered turn makes it reachable (rows.rs is_delivery). The sweep, after it checks the
+/// pane, sends that first delivery: one message from system (the sweep runs as Jeff; a
+/// message under the role's name from his account would be a spoof), so 4895 only reads.
+/// It runs in its own process group so a hung send never stalls the sweep; the harness
+/// sets AWAKE_NUDGE_SYNC=1 to read the call without racing it. true: sent or queued.
+fn first_message(ctx: &Ctx, role: &str, run: &str) -> bool {
     let bin = envd("AWAKE_NUDGE_BIN", "chorus-hook-shim");
-    let text = format!("[presence] {}: this message checks your pane is reached; no reply needed.", why);
-    let args = ["nudge-send", role, role, text.as_str()];
-    // record_run also runs in establish, on the start hook: a hung send must never stall
-    // the start or the turn, so it runs in its own process group (as stamp_seen does).
-    // The harness sets AWAKE_NUDGE_SYNC=1 so its tests read the call without racing it.
-    if envd("AWAKE_NUDGE_SYNC", "0") != "1" {
+    let text = "[presence] this message checks your pane is reached; no reply needed.";
+    let args = ["nudge-send", "system", role, text];
+    let (ok, outcome) = if envd("AWAKE_NUDGE_SYNC", "0") != "1" {
         use std::os::unix::process::CommandExt;
         use std::process::Stdio;
-        let outcome = match Command::new(&bin).args(args).process_group(0)
+        match Command::new(&bin).args(args).process_group(0)
             .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn() {
-            Ok(_) => "queued".to_string(),
-            Err(e) => format!("failed error={}", e),
-        };
-        ctx.spine(&["presence.first_message", role, &format!("why={}", why), &format!("outcome={}", outcome)]);
-        return;
-    }
-    match sh(&bin, &args) {
-        Ok(_) => ctx.spine(&["presence.first_message", role, &format!("why={}", why), "outcome=sent"]),
-        Err(e) => ctx.spine(&["presence.first_message", role, &format!("why={}", why), &format!("outcome=failed error={}", e.trim())]),
-    }
+            Ok(_) => (true, "queued".to_string()),
+            Err(e) => (false, format!("failed error={}", e)),
+        }
+    } else {
+        match sh(&bin, &args) {
+            Ok(_) => (true, "sent".to_string()),
+            Err(e) => (false, format!("failed error={}", e.trim())),
+        }
+    };
+    ctx.spine(&["presence.first_message", role, &format!("run={}", run), &format!("outcome={}", outcome)]);
+    ok
 }
 
 /// `up [--windows]` — after a reboot: all roles, each through start_role, one line.
@@ -2766,7 +2778,16 @@ pub fn run(args: &[String]) -> i32 {
             }
             Err(c) => c,
         },
-        "close-own" => match name_arg(1) { Ok(r) => close_own(&ctx, &r), Err(c) => c },
+        // #4925 round 5 (code review 8) — an agent session may not close its own login (#4412):
+        // close-own is the hop a person's logout makes as the role's account, never a role's own verb
+        "close-own" => match name_arg(1) {
+            Ok(r) if env::var("CLAUDECODE").map(|v| !v.is_empty()).unwrap_or(false) => {
+                eprintln!("chorus-principal: REFUSED — close-own is the hop a person's logout makes as {}'s account; an agent session cannot run it (#4412)", r);
+                2
+            }
+            Ok(r) => close_own(&ctx, &r),
+            Err(c) => c,
+        },
         "login" | "on" => {
             let r = match name_arg(1) { Ok(r) => r, Err(c) => return c };
             if let Some(why) = caller_refusal(&r, "start") { eprintln!("chorus-principal: REFUSED — {}", why); eprintln!("  nothing was started."); return 2; }
