@@ -23,9 +23,9 @@ handler_on:
   failure:
     command: '${CHORUS_HOME}/platform/scripts/pair routed ${CARD} ${DAG_NAME} ${DAG_RUN_ID} || ${CHORUS_HOME}/platform/scripts/borg-prove route ${CARD} ${ROLE} ${DAG_RUN_ID} skill-borg-verify-in-prod=value-stream-step-borg-surface || true'
   exit:
-    command: '${CHORUS_HOME}/platform/scripts/run-finished ${CARD} ${ROLE} ${DAG_NAME} ${DAG_RUN_ID}'
+    command: '${CHORUS_HOME}/platform/scripts/run-finished ${CARD} ${ROLE} ${DAG_NAME} ${DAG_RUN_ID}; ${CHORUS_HOME}/platform/scripts/crawl-detached.sh'
   success:
-    command: '${CHORUS_HOME}/platform/scripts/pair proven ${CARD}; ${CHORUS_HOME}/platform/scripts/athena-land ${CARD} ${ROLE} || { ${CHORUS_HOME}/platform/scripts/crawl-detached.sh; exit 1; }; ${CHORUS_HOME}/platform/scripts/crawl-detached.sh'
+    command: '${CHORUS_HOME}/platform/scripts/pair proven ${CARD}; ${CHORUS_HOME}/platform/scripts/athena-land ${CARD} ${ROLE}'
 steps:
   - name: skill-borg-verify-in-prod
     description: "borg-verify-in-prod"
