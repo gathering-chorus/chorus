@@ -9,7 +9,7 @@
 # Covers: platform/tests/lib/live_anchor.py, platform/tests/4807-inject-unanswered-prod.test.sh,
 #         platform/tests/4766-streams-tab-live.bats, platform/tests/4991-streams-every-role-live.bats,
 #         platform/tests/alert-loudest-three-are-rows-live.bats, platform/tests/4895-every-role-reachable.bats,
-#         platform/tests/4985-quiet-role-keeps-tile-live.bats, platform/tests/nudge-health.bats
+#         platform/tests/4985-quiet-role-keeps-tile-live.bats
 
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 LIB="$ROOT/platform/tests/lib/live_anchor.py"
@@ -84,11 +84,28 @@ teardown() { [ -n "${LOKI_PID:-}" ] && { kill "$LOKI_PID" 2>/dev/null; wait "$LO
   [[ "$output" != *"# skip"* ]] || { echo "$output"; return 1; }
 }
 
+# the test files that read pulse through the caged PULSE_URL's live default
+# (this guard file is left out: its NEGATIVE case writes the very pattern it looks for, #3725)
+caged_reads() { grep -lE '\$\{PULSE_URL:-https?://(localhost|127\.0\.0\.1):3475' "$1"/*.bats "$1"/*.sh 2>/dev/null | grep -v '/4915-live-anchor\.bats$' || true; }
+
+# #4925 round 6: nudge-health.bats left this list in #4925 round 1, when its live cases moved
+# to 4895 and it became hermetic (a curl stub, no pulse read); the list held a file that no
+# longer reads pulse, and the check went red on it. The live readers are named; every other
+# test file is swept for the caged default, so a new live reader cannot slip past the list.
 @test "#4915 round 5: no live suite reads pulse through the caged PULSE_URL" {
   local f
-  for f in 4895-every-role-reachable.bats 4985-quiet-role-keeps-tile-live.bats nudge-health.bats; do
+  for f in 4895-every-role-reachable.bats 4985-quiet-role-keeps-tile-live.bats; do
     [ -f "$ROOT/platform/tests/$f" ] || { echo "missing $f: the check would pass on nothing"; return 1; }
     grep -q 'PULSE_LIVE_URL' "$ROOT/platform/tests/$f" || { echo "$f does not read PULSE_LIVE_URL"; return 1; }
-    ! grep -nE '\$\{PULSE_URL:-' "$ROOT/platform/tests/$f" || return 1
   done
+  out="$(caged_reads "$ROOT/platform/tests")"
+  [ -z "$out" ] || { echo "reads pulse through the caged PULSE_URL: $out"; return 1; }
+}
+
+@test "#4925 round 6 NEGATIVE: a test that reads pulse through the caged PULSE_URL is found" {
+  d="$BATS_TEST_TMPDIR/tests"; mkdir -p "$d"
+  echo 'curl -sf "${PULSE_URL:-http://localhost:3475}/api/where/wren"' > "$d/new-live.bats"
+  echo 'curl -sf "${PULSE_LIVE_URL:-http://localhost:3475}/api/where/wren"' > "$d/good-live.bats"
+  echo 'PULSE_URL=http://127.0.0.1:9 run thing' > "$d/caged-on-purpose.bats"
+  test "$(caged_reads "$d")" = "$d/new-live.bats"
 }

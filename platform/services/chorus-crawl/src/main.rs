@@ -926,6 +926,55 @@ fn registers_cases(path: &str) -> bool {
     !path.contains("platform/services/shared/") && !path.contains("/tests/fixtures/") && !path.contains("/templates/")
 }
 
+/// #4925 round 6 — the files whose case rows go: the ones git removed, and every file the
+/// graph still names that the rules no longer register (a positive fact about the path, so a
+/// delta deletes them too, not only a complete walk). Sorted, once each. Pure.
+fn retired_case_files<'a>(
+    removed_by_git: &[String],
+    graph_files: impl Iterator<Item = &'a str>,
+    registers: &dyn Fn(&str) -> bool,
+) -> Vec<String> {
+    let mut out: Vec<String> = removed_by_git.to_vec();
+    out.extend(graph_files.filter(|f| !registers(f)).map(String::from));
+    out.sort();
+    out.dedup();
+    out
+}
+
+#[cfg(test)]
+mod retired_case_files_4925 {
+    use super::{registers_cases, retired_case_files};
+
+    #[test]
+    fn negative_proof_a_template_still_in_the_graph_is_retired_and_a_real_suite_is_not() {
+        let graph = [
+            "designing/services/athena-gen/templates/door_tests.rs",
+            "designing/services/athena-gen/templates/door_tests.rs",
+            "platform/tests/4925-first-message-reachable.bats",
+        ];
+        let got = retired_case_files(&["platform/tests/gone.bats".to_string()], graph.into_iter(), &registers_cases);
+        assert_eq!(got, vec![
+            "designing/services/athena-gen/templates/door_tests.rs".to_string(),
+            "platform/tests/gone.bats".to_string(),
+        ]);
+        // control: with every file registered, only git's removals are retired (the old behaviour)
+        assert_eq!(retired_case_files(&[], graph.into_iter(), &|_| true), Vec::<String>::new());
+    }
+
+    #[test]
+    fn negative_proof_the_plan_deletes_a_retired_files_rows_on_a_delta() {
+        use chorus_crawl::cases::{plan_cases, CaseAction, CaseInGraph};
+        use chorus_crawl::TreeRead;
+        let g = CaseInGraph { name: "t1".into(), file: "designing/services/athena-gen/templates/spine_tests.rs".into(), case: "c".into(), fields: vec![] };
+        let retired = retired_case_files(&[], std::iter::once(g.file.as_str()), &registers_cases);
+        let acts = plan_cases(&[], &[], &retired, std::slice::from_ref(&g), TreeRead::Scoped);
+        assert!(acts.iter().any(|a| matches!(a, CaseAction::Delete { name, .. } if name == "t1")), "{acts:?}");
+        // the old call (git removals only) kept it on a delta
+        let old = plan_cases(&[], &[], &[], std::slice::from_ref(&g), TreeRead::Scoped);
+        assert!(old.is_empty(), "{old:?}");
+    }
+}
+
 #[cfg(test)]
 mod registers_cases_4131 {
     use super::registers_cases;
@@ -3051,10 +3100,13 @@ fn main() {
     } else {
         TreeRead::Partial
     };
+    // #4925 round 6 — a file the rules stopped registering (a generator template, round 1) is
+    // never parsed again, so a delta never deleted its rows: 47 "no result" every night.
+    let retired = retired_case_files(&removed_by_git, case_graph.iter().map(|g| g.file.as_str()), &registers_cases);
     let case_actions = cases::plan_cases(
         &parsed.desired,
         &parsed.parsed_files,
-        &removed_by_git,
+        &retired,
         &case_graph,
         case_read,
     );

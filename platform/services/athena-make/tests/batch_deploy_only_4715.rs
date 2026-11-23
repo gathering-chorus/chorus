@@ -9,7 +9,7 @@
 use athena_make::{batch_deploy_refusal, handle_batch_checked, RouteTable, NS};
 
 fn table(class: &str, write_authority: &str) -> RouteTable {
-    RouteTable { unbounded: vec![], write_authority: write_authority.into(), domain: String::new(), base_path: String::new(),
+    RouteTable { iri_fields: vec![], unbounded: vec![], write_authority: write_authority.into(), domain: String::new(), base_path: String::new(),
         class: format!("{NS}{class}"), fields: vec!["comment|datatype:string".into()], routes: vec![],
         secured: vec![], mandatory: vec![], write_required: vec![], allowed_values: vec![], repo_target: String::new(),
         exposure: vec![], instances_graph: "urn:chorus:domains:identity".into(), tree_edges: vec![], tree_order: None,

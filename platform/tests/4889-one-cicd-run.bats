@@ -22,13 +22,23 @@ cicd_runs() { grep -oE 'cicd run [0-9]+' <<<"$1" | head -1 | grep -oE '[0-9]+$';
 # AC10 holds for a /cws line: it names exactly one cicd run
 one_run() { [ "$(cicd_runs "$1")" = 1 ]; }
 
+# #4925 round 6 (Wren 11-23 11:58, the call Jeff left to her): a card that lands in rounds is
+# measured per round. From /cws <card>'s run table: the cicd runs started after the land before
+# the newest one, up to the newest land. A card's first land counts from its first run.
+round_runs() {
+  awk '$1=="cicd-land"{land[++n]=NR} $1=="cicd"{cicd[NR]=1} END{
+    if (n==0) exit; lo=(n>1)?land[n-1]:0; c=0
+    for (r in cicd) if (r+0>lo && r+0<land[n]) c++
+    print c }' <<<"$1"
+}
+
 @test "AC10 (after land): the newest card to land needed one cicd run" {
   n="$(newest_card)"
   [ -n "$n" ] || { echo "no card commit on origin/main"; return 1; }
-  line="$(python3 "$ROOT/platform/scripts/chorus-werk-status" "$n" 2>&1 | head -1)"
-  runs="$(cicd_runs "$line")"
-  [ -n "$runs" ] || { echo "no cicd run count for #$n: $line"; return 1; }
-  one_run "$line" || { echo "#$n needed $runs cicd runs: $line"; return 1; }
+  table="$(python3 "$ROOT/platform/scripts/chorus-werk-status" "$n" 2>&1)"
+  runs="$(round_runs "$table")"
+  [ -n "$runs" ] || { echo "no land in #$n's run table: $(head -1 <<<"$table")"; return 1; }
+  [ "$runs" = 1 ] || { echo "#$n's newest round needed $runs cicd runs: $(head -1 <<<"$table")"; return 1; }
 }
 
 @test "negative proof: a card that needed two cicd runs reads 2, not 1" {
@@ -39,6 +49,21 @@ one_run() { [ "$(cicd_runs "$1")" = 1 ]; }
   ! one_run '#4900 kade  landed  (09:00) · cicd run 2' || return 1
   ! one_run '#4902 kade  waiting' || return 1
   one_run '#4901 kade  landed  (09:00) · cicd run 1' || return 1   # control
+}
+
+@test "#4925 round 6 NEGATIVE: a round is counted from the land before it, not the card's whole life" {
+  tbl='  pipeline           run  start        finish  result      step
+  cicd                 1  11-22 10:33  10:49   failed
+  cicd                 2  11-22 10:50  11:22   succeeded
+  cicd-land            1  11-22 12:34  12:35   succeeded
+  cicd                 3  11-22 12:59  13:18   succeeded
+  cicd-land            2  11-22 14:33  14:34   failed'
+  [ "$(round_runs "$tbl")" = 1 ] || { echo "round 2 read $(round_runs "$tbl")"; return 1; }
+  # the same card's first land counts from its first run: 2, so red
+  first="$(head -4 <<<"$tbl")"
+  [ "$(round_runs "$first")" = 2 ] || { echo "first land read $(round_runs "$first")"; return 1; }
+  # no land at all reads nothing, never a pass
+  [ -z "$(round_runs "$(head -3 <<<"$tbl")")" ]
 }
 
 @test "the newest card is the last card commit on main, past non-card commits" {

@@ -10,6 +10,43 @@ use std::io::{Read, Seek, SeekFrom};
 #[allow(dead_code)]
 pub const TAIL_BYTES: u64 = 4 * 1024 * 1024;
 
+/// #4925 round 6 (Wren, measured 11-23): a busy night writes more than TAIL_BYTES of other
+/// events after the last call (5.9 MB by 04:50), so one 4 MiB read held no call and the Streams
+/// route answered "no recent call". The read widens until it holds WANT_CALLS calls or reaches
+/// the log's start, never past MAX_TAIL_BYTES (a whole ~700 MB log froze the API once).
+#[allow(dead_code)]
+pub const WANT_CALLS: usize = 200;
+#[allow(dead_code)]
+pub const MAX_TAIL_BYTES: u64 = 64 * 1024 * 1024;
+
+/// The calls in the log's end: `max` bytes first, then each further chunk read ONCE, going
+/// backwards (code review, run 0352ghk5: re-reading from scratch at every doubling cost ~124 MB
+/// on a quiet log), until `want` calls came back, the log's start, or `cap` bytes in all.
+#[allow(dead_code)]
+pub fn tail_calls(path: &str, max: u64, want: usize, cap: u64) -> Result<Vec<Call>, String> {
+    let mut f = std::fs::File::open(path).map_err(|e| format!("spine log {path} unreadable: {e}"))?;
+    let size = f.metadata().map_err(|e| format!("spine log {path}: {e}"))?.len();
+    let mut from = size; // bytes [from, size) are held in `held`
+    let mut held: Vec<u8> = Vec::new();
+    let mut chunk = max.min(cap).max(1);
+    loop {
+        let start = from.saturating_sub(chunk).max(size.saturating_sub(cap));
+        let mut buf = vec![0u8; (from - start) as usize];
+        f.seek(SeekFrom::Start(start)).map_err(|e| format!("spine log {path}: {e}"))?;
+        f.read_exact(&mut buf).map_err(|e| format!("spine log {path}: {e}"))?;
+        buf.extend_from_slice(&held);
+        held = buf;
+        from = start;
+        let text = String::from_utf8_lossy(&held);
+        let whole = if from == 0 { &text[..] } else { text.split_once('\n').map(|(_, r)| r).unwrap_or("") };
+        let got = calls(whole);
+        if got.len() >= want || from == 0 || size - from >= cap {
+            return Ok(got);
+        }
+        chunk = chunk.saturating_mul(2);
+    }
+}
+
 /// The log's last `max` bytes as text, without the partial first line. A missing or
 /// unreadable log is an error (unmeasured), never an empty list that reads as "no work".
 pub fn tail(path: &str, max: u64) -> Result<String, String> {

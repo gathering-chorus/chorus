@@ -3,7 +3,7 @@
 #
 # Reads the live store through athena-make and answers, per role, whether its
 # login is really recorded: an open session that acts as the role, one live run,
-# one presence, a boot context, and a seen hook that has written (idle is not red, #4351). Read only.
+# one presence and a boot context (idle is not red, #4351; lastSeenAt is not checked, #4517 AC6). Read only.
 # Exit 0 all green · 1 any check failed · 2 UNMEASURED (the API did not answer).
 set -u
 API="${CHORUS_ATHENA_URL:-http://localhost:3360}"
@@ -44,15 +44,13 @@ for role in roles:
     line(s.get("sessionState") == "open", role, f"newest session {name} is open (state {s.get('sessionState')!r})")
     line(s.get("actsAs") in ("role-" + role, role), role, f"it acts as role-{role} (actsAs {s.get('actsAs')!r})")
     line(bool(t(s.get("startedAt", ""))), role, f"it says when it started (startedAt {s.get('startedAt')!r})")
+    # #4517 AC6 (#4925 round 6): a turn no longer writes lastSeenAt, so "seen since it
+    # started" has no writer and is not checked. A live login is proven below: one live run,
+    # its presence, its boot context. Idle is still reported, never failed (#4351).
     seen = t(s.get("lastSeenAt", ""))
     age = int((now - seen).total_seconds()) if seen else None
-    # #4351: a role idle at 4am is not a broken login. Red only when the session was
-    # never seen, or its last-seen is older than its own start (the seen hook never
-    # wrote). Idle past the window is reported, not failed.
-    started = t(s.get("startedAt", "")) or t(s.get("issuedAt", ""))
-    line(seen is not None and started is not None and seen >= started, role, f"the seen hook has written (lastSeenAt {s.get('lastSeenAt')!r})")
     if age is not None and age > window:
-        print(f"INFO {role}: idle {age}s (over {window}s; not a failure)")
+        print(f"INFO {role}: idle {age}s by lastSeenAt (over {window}s; not a failure)")
     # edges read back as the target's full local name (session-<name>, session-run-<name>)
     same = lambda edge, n: bool(edge) and (edge == n or edge.endswith("-" + n))
     live = [r for r in R if same(r.get("runOf"), name) and not r.get("runEndedAt")]

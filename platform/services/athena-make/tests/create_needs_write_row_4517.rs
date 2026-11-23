@@ -10,7 +10,7 @@ use athena_make::{create_refusal, handle_write_scoped, RouteTable, WriteOp};
 const GRAPH: &str = "urn:chorus:domains:policies";
 
 fn table() -> RouteTable {
-    RouteTable { unbounded: vec![], write_authority: String::new(), domain: String::new(), base_path: String::new(),
+    RouteTable { iri_fields: vec![], unbounded: vec![], write_authority: String::new(), domain: String::new(), base_path: String::new(),
         class: "https://jeffbridwell.com/chorus#Policy".into(),
         fields: vec!["comment|datatype:string".into(), "ownedBy|edge:Principal".into()],
         routes: vec!["GET /policies".into()],
