@@ -6694,6 +6694,19 @@
         "role": "Sender"
       }
     },
+    "presence.first_message": {
+      "producer": "identity",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "chorus-principal",
+      "description": "chorus-principal: a new run or a moved pane wrote a Presence that reads reachability unknown, so the role is sent one message to itself; its delivery makes the Presence reachable (#4925 round 5).",
+      "fields": {
+        "why": "new run, or pane moved",
+        "outcome": "queued (sent in its own process), sent, or failed with the error",
+        "role": "The role"
+      }
+    },
     "presence.pane.refreshed": {
       "producer": "identity",
       "category": "fact",

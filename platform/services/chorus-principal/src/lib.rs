@@ -2579,9 +2579,24 @@ fn start_role(ctx: &mut Ctx, role: &str, attach: bool, by_person: bool) -> Resul
 fn first_message(ctx: &Ctx, role: &str, why: &str) {
     let bin = envd("AWAKE_NUDGE_BIN", "chorus-hook-shim");
     let text = format!("[presence] {}: this message checks your pane is reached; no reply needed.", why);
-    match sh(&bin, &["nudge-send", role, role, &text]) {
-        Ok(_) => ctx.spine(&["presence.first_message.sent", role, &format!("why={}", why)]),
-        Err(e) => ctx.spine(&["presence.first_message.failed", role, &format!("why={}", why), &format!("error={}", e.trim())]),
+    let args = ["nudge-send", role, role, text.as_str()];
+    // record_run also runs in establish, on the start hook: a hung send must never stall
+    // the start or the turn, so it runs in its own process group (as stamp_seen does).
+    // The harness sets AWAKE_NUDGE_SYNC=1 so its tests read the call without racing it.
+    if envd("AWAKE_NUDGE_SYNC", "0") != "1" {
+        use std::os::unix::process::CommandExt;
+        use std::process::Stdio;
+        let outcome = match Command::new(&bin).args(args).process_group(0)
+            .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn() {
+            Ok(_) => "queued".to_string(),
+            Err(e) => format!("failed error={}", e),
+        };
+        ctx.spine(&["presence.first_message", role, &format!("why={}", why), &format!("outcome={}", outcome)]);
+        return;
+    }
+    match sh(&bin, &args) {
+        Ok(_) => ctx.spine(&["presence.first_message", role, &format!("why={}", why), "outcome=sent"]),
+        Err(e) => ctx.spine(&["presence.first_message", role, &format!("why={}", why), &format!("outcome=failed error={}", e.trim())]),
     }
 }
 
