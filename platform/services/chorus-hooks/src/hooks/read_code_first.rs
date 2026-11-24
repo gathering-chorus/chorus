@@ -6,64 +6,94 @@
 //! 22% of first edits to a file came after reading the whole file; the rest followed a
 //! partial read, a shell peek, or nothing. cclsp was called 0 times in 30 days.
 //!
-//! Two rules, both at PreToolUse on an Edit or Write to an existing file in a werk:
-//! 1. The session has read the whole file: the line ranges its Read calls returned,
-//!    together, cover 1..N of the file as it is now. A shell read (cat, sed) is not a
-//!    Read and does not count. A file the session wrote itself counts as read.
-//! 2. An edit that changes a definition line (a function's name or parameters, a type's
-//!    name or header) needs a lookup of that symbol first: any cclsp or ast-grep call
-//!    (MCP, or `ast-grep` on the shell) whose input names it. Body edits are not checked.
+//! Two rules, both at PreToolUse on an Edit, MultiEdit or Write to an existing file in a
+//! werk (Claude Code, and agy's view_file / replace_file_content / write_to_file, which
+//! its AgentRuntime row maps to the same names):
+//! 1. The session has read the whole file as it is now: the line ranges its reads
+//!    returned, together, cover 1..N, and the file has not changed since (length and
+//!    mtime). A shell read (cat, sed) is not a Read and does not count. A file the
+//!    session wrote itself counts as read.
+//! 2. An edit that changes a definition (a function's name or parameters, a type's name
+//!    or header) needs a lookup of that symbol first: a cclsp or ast-grep call whose
+//!    symbol or pattern names it. The edit is applied to the whole file and the
+//!    definitions before and after are compared, so a narrow edit inside a parameter
+//!    list is seen.
 //!
 //! The rule's words come from the policy row `read-the-code-first` (the policies
-//! domain), never a copy here. A row that cannot be read refuses the edit and says so.
+//! domain), never a copy here. A missing or empty row refuses the edit and says so; a
+//! door that does not answer uses the last row it served (a blip must not lock the team
+//! out), and with none ever served, refuses.
 //!
 //! Reads and lookups are recorded live by the daemon (PostToolUse Read, PreToolUse
 //! lookup), as tdd_gate's test edits are (#3278): the transcript flushes a turn late.
 //! They are also appended to one file per session under the daemon's run dir, so a
-//! daemon restart (every land that ships chorus-hooks) does not forget them: after a
-//! restart Claude Code answers a re-read "file unchanged" with no lines, which can
-//! never count (Silas and the code review, 11-24).
+//! daemon restart does not forget them. Claude Code answers a repeated read "file
+//! unchanged" with no lines, which counts for nothing; a read with a new range returns
+//! the lines (Silas measured 11-24), and the refusal says so.
+//!
+//! Kept limits, named (Wren's read, 11-24): edits made through the shell (sed -i, a
+//! heredoc, git apply) are not gated; a session whose context was compacted still counts
+//! its earlier reads; a return-type change alone is not a changed definition (AC4 names
+//! name and parameters); an edit to a file the session wrote itself is not re-checked
+//! against later outside changes.
 
 use crate::types::{permission_deny_json, HookInput, HookResponse};
+use serde_json::Value;
 use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 pub const POLICY: &str = "read-the-code-first";
 /// agy's view_file shows at most this many lines when no range is asked for (BQ, 11-22).
+/// Only a read with no result file (not Claude Code) falls back to it.
 const AGY_VIEW_DEFAULT: usize = 800;
-/// Claude Code's Read default when neither the result nor a limit says otherwise.
-const CLAUDE_READ_DEFAULT: usize = 2000;
 const POLICY_TTL: Duration = Duration::from_secs(60);
 const MAX_LOOKUPS: usize = 500;
 const MAX_LOOKUP_CHARS: usize = 2000;
+/// The last row the door served, kept beside the session files.
+const POLICY_FILE: &str = "_policy.json";
 
 /// The policy row's words, as the door serves them.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Policy {
     pub label: String,
     pub comment: String,
 }
 
-/// (session, file key) -> the line ranges its reads returned.
-type Reads = HashMap<(String, String), Vec<(usize, usize)>>;
+/// A file's identity for staleness: its length and mtime (ns) when it was read.
+type Stamp = (u64, i64);
+
+fn stamp(path: &str) -> Option<Stamp> {
+    let m = std::fs::metadata(path).ok()?;
+    let ns = m.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?.as_nanos() as i64;
+    Some((m.len(), ns))
+}
+
+/// What a session has read of one file, and the file as it was when it read it.
+#[derive(Clone, Default)]
+struct FileReads { stamp: Option<Stamp>, ranges: Vec<(usize, usize)> }
 
 /// What each session has read, written and looked up. One per daemon (AppState).
 /// With a dir, every record is also appended to `<dir>/<session>.jsonl` and a session
 /// the daemon has not seen since it started is loaded from there first.
 #[derive(Default)]
 pub struct Ledger {
-    reads: Mutex<Reads>,
+    reads: Mutex<HashMap<(String, String), FileReads>>,
     authored: Mutex<HashSet<(String, String)>>,
     lookups: Mutex<HashMap<String, Vec<String>>>,
-    dir: Option<std::path::PathBuf>,
+    dir: Option<PathBuf>,
     loaded: Mutex<HashSet<String>>,
 }
 
 /// One line of a session's ledger file.
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(tag = "k", rename_all = "lowercase")]
-enum Entry { Read { path: String, a: usize, b: usize }, Wrote { path: String }, Lookup { text: String } }
+enum Entry {
+    Read { path: String, a: usize, b: usize, #[serde(default)] stamp: Option<Stamp> },
+    Wrote { path: String },
+    Lookup { text: String },
+}
 
 /// A session id that is safe as a file name.
 fn safe_sid(sid: &str) -> bool {
@@ -71,8 +101,8 @@ fn safe_sid(sid: &str) -> bool {
 }
 
 impl Ledger {
-    /// A ledger that survives a daemon restart. Session files older than KEEP are dropped.
-    pub fn persistent(dir: std::path::PathBuf) -> Self {
+    /// A ledger that survives a daemon restart. Files older than KEEP are dropped.
+    pub fn persistent(dir: PathBuf) -> Self {
         const KEEP: Duration = Duration::from_secs(3 * 24 * 3600);
         let _ = std::fs::create_dir_all(&dir);
         if let Ok(entries) = std::fs::read_dir(&dir) {
@@ -85,7 +115,7 @@ impl Ledger {
         Self { dir: Some(dir), ..Self::default() }
     }
 
-    fn file(&self, sid: &str) -> Option<std::path::PathBuf> {
+    fn file(&self, sid: &str) -> Option<PathBuf> {
         self.dir.as_ref().filter(|_| safe_sid(sid)).map(|d| d.join(format!("{sid}.jsonl")))
     }
 
@@ -105,18 +135,20 @@ impl Ledger {
         let Ok(text) = std::fs::read_to_string(&f) else { return };
         for e in text.lines().filter_map(|l| serde_json::from_str::<Entry>(l).ok()) {
             match e {
-                Entry::Read { path, a, b } => self.add_read(sid, &path, a, b),
+                Entry::Read { path, a, b, stamp } => self.add_read(sid, &path, a, b, stamp),
                 Entry::Wrote { path } => self.add_authored(sid, &path),
                 Entry::Lookup { text } => self.add_lookup(sid, &text),
             }
         }
     }
 
+    /// A read of lines first..=last of `path`, stamped with the file as it is now.
     pub fn record_read(&self, sid: &str, path: &str, first: usize, last: usize) {
         if sid.is_empty() || last < first { return; }
+        let s = stamp(path);
         self.load(sid);
-        self.add_read(sid, path, first, last);
-        self.persist(sid, &Entry::Read { path: path.to_string(), a: first, b: last });
+        self.add_read(sid, path, first, last, s);
+        self.persist(sid, &Entry::Read { path: path.to_string(), a: first, b: last, stamp: s });
     }
     pub fn record_authored(&self, sid: &str, path: &str) {
         if sid.is_empty() { return; }
@@ -125,7 +157,7 @@ impl Ledger {
         self.persist(sid, &Entry::Wrote { path: path.to_string() });
     }
     pub fn record_lookup(&self, sid: &str, text: &str) {
-        if sid.is_empty() || text.is_empty() { return; }
+        if sid.is_empty() || text.trim().is_empty() { return; }
         // bounded: the daemon lives for days; the newest lookups are the ones an edit needs
         let text: String = text.chars().take(MAX_LOOKUP_CHARS).collect();
         self.load(sid);
@@ -133,16 +165,18 @@ impl Ledger {
         self.persist(sid, &Entry::Lookup { text });
     }
 
-    fn add_read(&self, sid: &str, path: &str, first: usize, last: usize) {
+    fn add_read(&self, sid: &str, path: &str, first: usize, last: usize, s: Option<Stamp>) {
         if let Ok(mut m) = self.reads.lock() {
+            let r = m.entry((sid.to_string(), path.to_string())).or_default();
+            // a read of a changed file starts the count again: the old lines are not these
+            if r.stamp != s { *r = FileReads { stamp: s, ranges: Vec::new() }; }
             // kept merged, so a long session holds a few ranges per file, not every read
-            let r = m.entry((sid.to_string(), key(path))).or_default();
-            r.push((first.max(1), last));
-            *r = merged(r);
+            r.ranges.push((first.max(1), last));
+            r.ranges = merged(&r.ranges);
         }
     }
     fn add_authored(&self, sid: &str, path: &str) {
-        if let Ok(mut s) = self.authored.lock() { s.insert((sid.to_string(), key(path))); }
+        if let Ok(mut s) = self.authored.lock() { s.insert((sid.to_string(), path.to_string())); }
     }
     fn add_lookup(&self, sid: &str, text: &str) {
         if let Ok(mut m) = self.lookups.lock() {
@@ -152,28 +186,23 @@ impl Ledger {
         }
     }
 
+    /// The ranges read of `path` while it was the file it is now; none if it changed since.
     fn ranges(&self, sid: &str, path: &str) -> Vec<(usize, usize)> {
         self.load(sid);
-        self.reads.lock().ok().and_then(|m| m.get(&(sid.to_string(), key(path))).cloned()).unwrap_or_default()
+        let now = stamp(path);
+        self.reads.lock().ok()
+            .and_then(|m| m.get(&(sid.to_string(), path.to_string())).filter(|r| r.stamp == now).map(|r| r.ranges.clone()))
+            .unwrap_or_default()
     }
     fn wrote(&self, sid: &str, path: &str) -> bool {
         self.load(sid);
-        self.authored.lock().map(|s| s.contains(&(sid.to_string(), key(path)))).unwrap_or(false)
+        self.authored.lock().map(|s| s.contains(&(sid.to_string(), path.to_string()))).unwrap_or(false)
     }
     fn looked_up(&self, sid: &str, symbol: &str) -> bool {
         self.load(sid);
-        let Ok(re) = regex::Regex::new(&format!(r"\b{}\b", regex::escape(symbol))) else { return false };
+        let Ok(re) = regex::Regex::new(&format!(r"(?:^|[^\w$-]){}(?:$|[^\w$-])", regex::escape(symbol))) else { return false };
         self.lookups.lock().map(|m| m.get(sid).is_some_and(|v| v.iter().any(|t| re.is_match(t)))).unwrap_or(false)
     }
-}
-
-/// One file, wherever it is read from: a werk path and its canonical twin share a key.
-fn key(path: &str) -> String {
-    if let Some((_, rest)) = path.split_once("/chorus-werk/") {
-        return rest.split_once('/').map(|(_, rel)| rel.to_string()).unwrap_or_default();
-    }
-    let root = format!("{}/", crate::shared::state_paths::chorus_root());
-    path.strip_prefix(&root).unwrap_or(path).to_string()
 }
 
 /// A file in a card's werk: `…/chorus-werk/<role>-<card>/<path>`. Canonical, /tmp and
@@ -183,12 +212,13 @@ fn in_werk(path: &str) -> bool {
 }
 
 /// The lines a Read returned. A Claude Code result says how far it got (a token-capped
-/// read stops short); one with no line count (a re-read answered "file unchanged")
-/// returned no lines and counts for nothing. With no result file at all (agy), the range
-/// asked for: StartLine/EndLine, or offset/limit.
-pub fn read_range(input: &serde_json::Value, response: Option<&serde_json::Value>) -> Option<(usize, usize)> {
-    let num = |v: Option<&serde_json::Value>| v.and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))).map(|n| n as usize);
-    if let Some(file) = response.and_then(|r| r.get("file")) {
+/// read stops short); one with no line count (a re-read answered "file unchanged", an
+/// image) returned no lines and counts for nothing. With no result at all (agy sends
+/// none), the range asked for: StartLine/EndLine, or offset/limit, else agy's default.
+pub fn read_range(input: &Value, response: Option<&Value>) -> Option<(usize, usize)> {
+    let num = |v: Option<&Value>| v.and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))).map(|n| n as usize);
+    if let Some(r) = response.filter(|r| !r.is_null()) {
+        let file = r.get("file")?;
         let start = num(file.get("startLine")).unwrap_or(1).max(1);
         let n = num(file.get("numLines"))?;
         return Some((start, start + n.max(1) - 1));
@@ -197,7 +227,7 @@ pub fn read_range(input: &serde_json::Value, response: Option<&serde_json::Value
         return Some((s.max(1), e));
     }
     let start = num(input.get("offset")).unwrap_or(1).max(1);
-    let limit = num(input.get("limit")).unwrap_or(if input.get("AbsolutePath").is_some() { AGY_VIEW_DEFAULT } else { CLAUDE_READ_DEFAULT });
+    let limit = num(input.get("limit")).unwrap_or(AGY_VIEW_DEFAULT);
     Some((start, start + limit.max(1) - 1))
 }
 
@@ -221,31 +251,41 @@ pub fn first_unread(ranges: &[(usize, usize)], lines: usize) -> Option<usize> {
     (next <= lines).then_some(next)
 }
 
-/// Every definition in a piece of source: name -> its signature (name and parameters
-/// for a function; the header up to its body for a type), whitespace-normalized.
-pub fn definitions(src: &str, ext: &str) -> HashMap<String, String> {
+/// The language of a file: its extension, or for a script with none, its `#!` line.
+fn lang(path: &str, content: &str) -> String {
+    let base = path.rsplit('/').next().unwrap_or(path);
+    if let Some((_, e)) = base.rsplit_once('.') { return e.to_string(); }
+    let first = content.lines().next().unwrap_or("");
+    if !first.starts_with("#!") { return String::new(); }
+    if first.contains("python") { "py" } else if first.contains("node") { "js" }
+    else if first.contains("bash") || first.contains("sh") { "sh" } else { "" }.to_string()
+}
+
+/// Every definition in a piece of source, as (name, signature): name and parameters for
+/// a function, the header up to its body for a type, whitespace-normalized. A name may
+/// appear more than once (`fn new` in two impls).
+pub fn definitions(src: &str, ext: &str) -> Vec<(String, String)> {
     static RS: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     static TS: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     static PY: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     static SH: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     let re = match ext {
         "rs" => RS.get_or_init(|| regex::Regex::new(r#"(?m)^[ \t]*(?:pub(?:\([^)]*\))?\s+)?(?:(?:async|const|unsafe)\s+)*(?:extern\s+"[^"]*"\s+)?(?:fn|struct|enum|trait|type|union)\s+([A-Za-z_]\w*)"#).unwrap()),
-        "ts" | "tsx" | "js" | "mjs" | "cjs" => TS.get_or_init(|| regex::Regex::new(r"(?m)^[ \t]*(?:export\s+)?(?:default\s+)?(?:async\s+)?(?:function\s*\*?\s*([A-Za-z_$][\w$]*)|(?:class|interface|enum|type)\s+([A-Za-z_$][\w$]*)|(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?\([^)]*\)\s*(?::[^=]*)?=>)").unwrap()),
+        "ts" | "tsx" | "js" | "mjs" | "cjs" => TS.get_or_init(|| regex::Regex::new(r"(?m)^[ \t]*(?:export\s+)?(?:default\s+)?(?:async\s+)?(?:function\s*\*?\s*([A-Za-z_$][\w$]*)|(?:class|interface|enum|type)\s+([A-Za-z_$][\w$]*)|(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?\()").unwrap()),
         "py" => PY.get_or_init(|| regex::Regex::new(r"(?m)^[ \t]*(?:async\s+)?(?:def|class)\s+([A-Za-z_]\w*)").unwrap()),
-        "sh" | "bash" | "bats" | "" => SH.get_or_init(|| regex::Regex::new(r"(?m)^[ \t]*(?:function\s+)?([A-Za-z_][\w-]*)\s*\(\)").unwrap()),
-        _ => return HashMap::new(),
+        "sh" | "bash" | "bats" => SH.get_or_init(|| regex::Regex::new(r"(?m)^[ \t]*(?:function\s+)?([A-Za-z_][\w-]*)\s*\(\)").unwrap()),
+        _ => return Vec::new(),
     };
-    let mut out = HashMap::new();
-    for caps in re.captures_iter(src) {
-        let Some(name) = (1..caps.len()).find_map(|i| caps.get(i)) else { continue };
-        let start = caps.get(0).map(|m| m.start()).unwrap_or(0);
-        out.insert(name.as_str().to_string(), signature(&src[start..]));
-    }
-    out
+    re.captures_iter(src).filter_map(|caps| {
+        let name = (1..caps.len()).find_map(|i| caps.get(i))?;
+        let start = caps.get(0)?.start();
+        Some((name.as_str().to_string(), signature(&src[start..])))
+    }).collect()
 }
 
-/// From a definition's start: through its balanced parameter list (a function), or up
-/// to its body or terminator (a type). Whitespace collapsed so reflowing is no change.
+/// From a definition's start: through its balanced parameter list (a function, an arrow
+/// function), or up to its body or terminator (a type). Whitespace and a trailing comma
+/// are layout, not signature.
 fn signature(from: &str) -> String {
     let mut depth = 0i32;
     let mut end = from.len();
@@ -254,29 +294,53 @@ fn signature(from: &str) -> String {
         match c {
             '(' => { depth += 1; seen_paren = true; }
             ')' => { depth -= 1; if depth == 0 && seen_paren { end = i + 1; break; } }
+            // `const f = (a) =>`: the `=` leads to the parameters, it does not end them
+            '=' if depth == 0 && !seen_paren && {
+                let rest = from[i + 1..].trim_start();
+                rest.strip_prefix("async").unwrap_or(rest).trim_start().starts_with('(')
+            } => {}
             '{' | ';' | '=' if depth == 0 && !seen_paren => { end = i; break; }
             '\n' if depth == 0 && !seen_paren && from[..i].trim_end().ends_with(':') => { end = i; break; }
             _ => {}
         }
     }
-    // whitespace and a trailing comma are layout, not signature
     from[..end].split_whitespace().collect::<String>().replace(",)", ")")
 }
 
-/// The symbols an edit changes: defined in the old text and, in the new text, gone or
-/// with a different signature. A definition only the new text has is an addition.
+/// The symbols a change of the whole file changes: a definition in the old text whose
+/// signature the new text no longer has (gone, renamed, or different parameters). A
+/// definition only the new text has is an addition. Compared as multisets, so two
+/// same-named definitions are both checked.
 pub fn changed_symbols(old: &str, new: &str, ext: &str) -> Vec<String> {
-    let after = definitions(new, ext);
-    let mut out: Vec<String> = definitions(old, ext).into_iter()
-        .filter(|(name, sig)| after.get(name) != Some(sig))
-        .map(|(name, _)| name).collect();
+    let mut after: HashMap<(String, String), usize> = HashMap::new();
+    for d in definitions(new, ext) { *after.entry(d).or_default() += 1; }
+    let mut out: Vec<String> = Vec::new();
+    for d in definitions(old, ext) {
+        match after.get_mut(&d) {
+            Some(n) if *n > 0 => *n -= 1,
+            _ => out.push(d.0),
+        }
+    }
     out.sort();
+    out.dedup();
     out
 }
 
-fn ext_of(path: &str) -> &str {
-    let base = path.rsplit('/').next().unwrap_or(path);
-    base.rsplit_once('.').map(|(_, e)| e).unwrap_or("")
+/// The file as it will be after this call: Write's content, or the Edit / MultiEdit
+/// replacements applied to the text on disk.
+fn after_edit(tool: &str, input: &Value, current: &str) -> String {
+    let s = |v: &Value, k: &str| v.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+    let apply = |text: String, e: &Value| {
+        let (old, new) = (s(e, "old_string"), s(e, "new_string"));
+        if old.is_empty() { return text; }
+        if e.get("replace_all").and_then(Value::as_bool) == Some(true) { text.replace(&old, &new) } else { text.replacen(&old, &new, 1) }
+    };
+    match tool {
+        "Write" => s(input, "content"),
+        "MultiEdit" => input.get("edits").and_then(Value::as_array).map_or(current.to_string(),
+            |edits| edits.iter().fold(current.to_string(), apply)),
+        _ => apply(current.to_string(), input),
+    }
 }
 
 fn deny(policy: &Policy, what: String) -> HookResponse {
@@ -287,7 +351,7 @@ fn deny(policy: &Policy, what: String) -> HookResponse {
 /// The decision. `policy` is asked for the row only when the edit is one the rule governs.
 pub fn decide(input: &HookInput, ledger: &Ledger, policy: impl FnOnce() -> Result<Policy, String>) -> HookResponse {
     let tool = input.tool_name_str();
-    if tool != "Edit" && tool != "Write" { return HookResponse::allow(); }
+    if !matches!(tool, "Edit" | "Write" | "MultiEdit") { return HookResponse::allow(); }
     let path = input.get_tool_input_str("file_path");
     if !in_werk(&path) || path.contains("/target/") || path.contains("/node_modules/") {
         return HookResponse::allow();
@@ -295,28 +359,30 @@ pub fn decide(input: &HookInput, ledger: &Ledger, policy: impl FnOnce() -> Resul
     let Ok(current) = std::fs::read_to_string(&path) else {
         return HookResponse::allow(); // a new file (or not text): nothing to have read
     };
+    let Some(sid) = input.session_id.as_deref().filter(|s| !s.is_empty()) else {
+        // nothing is ever recorded without a session, so nothing could pass: say so, allow
+        tracing::warn!(gate = POLICY, file = %path, "no session id: reads cannot be counted, edit not checked");
+        return HookResponse::allow();
+    };
     let policy = match policy() {
         Ok(p) => p,
         Err(e) => return HookResponse::deny(&permission_deny_json(&format!(
             "{POLICY}: the policy could not be read ({e}), so no edit to a werk file can be checked \
              and none passes. The row is policies/{POLICY} at the door ({}).", door()))),
     };
-    let sid = input.session_id.as_deref().unwrap_or("");
     if !ledger.wrote(sid, &path) {
         let lines = current.lines().count();
         if let Some(line) = first_unread(&ledger.ranges(sid, &path), lines) {
             return deny(&policy, format!(
-                "{path} has not been read in full in this session: line {line} of {lines} was never read. \
-                 Read the whole file with the Read tool first (no offset/limit, or ranges that together \
-                 cover 1..{lines}); a shell read (cat, sed, head) does not count."));
+                "{path} has not been read in full in this session, as it is now: line {line} of {lines} \
+                 was never read (or the file changed since). Read the whole file with the Read tool first \
+                 (no offset/limit, or ranges that together cover 1..{lines}); a shell read (cat, sed, head) \
+                 does not count. If the Read answers that the file is unchanged, read it again with \
+                 offset 1 and a limit past line {lines}: that returns the lines, and they count."));
         }
     }
-    let (old, new) = if tool == "Write" {
-        (current, input.get_tool_input_str("content"))
-    } else {
-        (input.get_tool_input_str("old_string"), input.get_tool_input_str("new_string"))
-    };
-    let unasked: Vec<String> = changed_symbols(&old, &new, ext_of(&path)).into_iter()
+    let after = after_edit(tool, input.tool_input.as_ref().unwrap_or(&Value::Null), &current);
+    let unasked: Vec<String> = changed_symbols(&current, &after, &lang(&path, &current)).into_iter()
         .filter(|s| !ledger.looked_up(sid, s)).collect();
     if !unasked.is_empty() {
         return deny(&policy, format!(
@@ -327,15 +393,29 @@ pub fn decide(input: &HookInput, ledger: &Ledger, policy: impl FnOnce() -> Resul
     HookResponse::allow()
 }
 
-/// Record a lookup at PreToolUse: any cclsp or ast-grep call, or `ast-grep` on the shell.
-pub fn record_lookup(input: &HookInput, ledger: &Ledger) {
-    let tool = input.tool_name_str();
-    let sid = input.session_id.as_deref().unwrap_or("");
-    let is_lookup = tool.starts_with("mcp__cclsp__") || tool.starts_with("mcp__ast-grep__")
-        || (tool == "Bash" && input.get_tool_input_str("command").contains("ast-grep"));
-    if is_lookup {
-        ledger.record_lookup(sid, &input.tool_input.as_ref().map(|v| v.to_string()).unwrap_or_default());
+/// The part of a lookup that names what was looked up: an MCP call's symbol or pattern
+/// fields, or the arguments of a shell `ast-grep` command (paths and flags left out).
+/// Empty when the call is not a lookup.
+pub fn lookup_text(tool: &str, input: &Value) -> String {
+    const FIELDS: &[&str] = &["symbol_name", "symbolName", "symbol", "name", "query", "pattern", "rule", "yaml"];
+    if tool.starts_with("mcp__cclsp__") || tool.starts_with("mcp__ast-grep__") {
+        return FIELDS.iter().filter_map(|k| input.get(*k).and_then(Value::as_str)).collect::<Vec<_>>().join(" ");
     }
+    if tool != "Bash" { return String::new(); }
+    static SG: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let re = SG.get_or_init(|| regex::Regex::new(r"(?:^|[;&|(]\s*)ast-grep\s+([^;&|]*)").unwrap());
+    let cmd = input.get("command").and_then(Value::as_str).unwrap_or("");
+    re.captures_iter(cmd).filter_map(|c| c.get(1))
+        .flat_map(|m| m.as_str().split_whitespace())
+        .filter(|t| !t.contains('/') && !t.starts_with('-'))
+        .collect::<Vec<_>>().join(" ")
+}
+
+/// Record a lookup at PreToolUse.
+pub fn record_lookup(input: &HookInput, ledger: &Ledger) {
+    let sid = input.session_id.as_deref().unwrap_or("");
+    let text = lookup_text(input.tool_name_str(), input.tool_input.as_ref().unwrap_or(&Value::Null));
+    ledger.record_lookup(sid, &text);
 }
 
 /// Record what a finished call taught the session (PostToolUse): a Read's lines, a write's file.
@@ -346,8 +426,7 @@ pub fn record_result(input: &HookInput, ledger: &Ledger) {
     if path.is_empty() { return; }
     match input.tool_name_str() {
         "Read" => {
-            let empty = serde_json::Value::Null;
-            if let Some((a, b)) = read_range(input.tool_input.as_ref().unwrap_or(&empty), input.tool_response.as_ref()) {
+            if let Some((a, b)) = read_range(input.tool_input.as_ref().unwrap_or(&Value::Null), input.tool_response.as_ref()) {
                 ledger.record_read(sid, &path, a, b);
             }
         }
@@ -369,21 +448,33 @@ pub fn prime_policy(base: &str, p: Policy) {
     if let Ok(mut c) = POLICY_CACHE.lock() { *c = Some((base.to_string(), p, Instant::now())); }
 }
 
-/// The row from the door, cached for a minute. Only a good read is cached.
-pub fn fetch_policy(base: &str) -> Result<Policy, String> {
+/// The row from the door, cached for a minute; the last good row is also kept in
+/// `last_good` (a file). A 404 or an empty row is the row's own answer and refuses. A
+/// door that does not answer at all uses the last good row, so a blip does not lock
+/// every role out; with none ever served it refuses.
+pub fn fetch_policy(base: &str, last_good: Option<&Path>) -> Result<Policy, String> {
     if let Ok(c) = POLICY_CACHE.lock() {
         if let Some((b, p, at)) = c.as_ref() { if b == base && at.elapsed() < POLICY_TTL { return Ok(p.clone()); } }
     }
     let url = format!("{base}/v1/policies/policies/{POLICY}");
-    let body: serde_json::Value = ureq::get(&url).timeout(Duration::from_millis(1500)).call()
-        .map_err(|e| format!("GET {url}: {e}"))?
-        .into_json().map_err(|e| format!("GET {url}: {e}"))?;
-    let p = policy_from_body(&body)?;
-    if let Ok(mut c) = POLICY_CACHE.lock() { *c = Some((base.to_string(), p.clone(), Instant::now())); }
-    Ok(p)
+    match ureq::get(&url).timeout(Duration::from_millis(1500)).call() {
+        Ok(resp) => {
+            let body: Value = resp.into_json().map_err(|e| format!("GET {url}: {e}"))?;
+            let p = policy_from_body(&body)?;
+            if let Ok(mut c) = POLICY_CACHE.lock() { *c = Some((base.to_string(), p.clone(), Instant::now())); }
+            if let (Some(f), Ok(text)) = (last_good, serde_json::to_string(&p)) { let _ = std::fs::write(f, text); }
+            Ok(p)
+        }
+        Err(ureq::Error::Status(code, _)) => Err(format!("GET {url}: the door answered {code}")),
+        Err(e) => {
+            let remembered = POLICY_CACHE.lock().ok().and_then(|c| c.as_ref().filter(|(b, _, _)| b == base).map(|(_, p, _)| p.clone()))
+                .or_else(|| last_good.and_then(|f| std::fs::read_to_string(f).ok()).and_then(|t| serde_json::from_str(&t).ok()));
+            remembered.ok_or_else(|| format!("GET {url}: {e}, and no row was ever read"))
+        }
+    }
 }
 
-pub fn policy_from_body(body: &serde_json::Value) -> Result<Policy, String> {
+pub fn policy_from_body(body: &Value) -> Result<Policy, String> {
     let data = body.get("data").unwrap_or(body);
     let field = |k: &str| data.get(k).and_then(|v| v.as_str()).map(str::trim).unwrap_or("").to_string();
     let (label, comment) = (field("label"), field("comment"));
@@ -393,7 +484,8 @@ pub fn policy_from_body(body: &serde_json::Value) -> Result<Policy, String> {
 
 /// The gate the PreToolUse dispatch calls: the row comes from the door.
 pub fn check(input: &HookInput, ledger: &Ledger) -> HookResponse {
-    decide(input, ledger, || fetch_policy(&door()))
+    let last_good = ledger.dir.as_ref().map(|d| d.join(POLICY_FILE));
+    decide(input, ledger, || fetch_policy(&door(), last_good.as_deref()))
 }
 
 #[cfg(test)]
@@ -409,7 +501,7 @@ mod read_code_first_5027 {
         std::fs::write(&f, content).unwrap();
         (dir, f.to_string_lossy().into_owned())
     }
-    fn input(tool: &str, sid: &str, ti: serde_json::Value) -> HookInput {
+    fn input(tool: &str, sid: &str, ti: Value) -> HookInput {
         HookInput { tool_name: Some(tool.into()), tool_input: Some(ti), session_id: Some(sid.into()), ..Default::default() }
     }
     fn policy() -> impl FnOnce() -> Result<Policy, String> {
@@ -417,6 +509,8 @@ mod read_code_first_5027 {
     }
     fn denied(r: &HookResponse) -> Option<String> { r.stdout.clone().filter(|s| s.contains("deny")) }
     const SRC: &str = "fn a(x: u8) -> u8 {\n    x\n}\n\nfn b() {}\n";
+    /// a body edit: it changes no definition
+    fn body_edit(f: &str) -> Value { json!({"file_path": f, "old_string": "    x\n", "new_string": "    x + 1\n"}) }
 
     // ---- AC2: whole-file read ----
     #[test]
@@ -424,7 +518,7 @@ mod read_code_first_5027 {
         let (_d, f) = werk_file(SRC);
         let l = Ledger::default();
         l.record_read("s1", &f, 1, 5);
-        let r = decide(&input("Edit", "s1", json!({"file_path": f, "old_string": "    x", "new_string": "    x + 1"})), &l, policy());
+        let r = decide(&input("Edit", "s1", body_edit(&f)), &l, policy());
         assert!(denied(&r).is_none(), "{r:?}");
     }
     #[test]
@@ -433,16 +527,18 @@ mod read_code_first_5027 {
         let l = Ledger::default();
         l.record_read("s1", &f, 3, 5);
         l.record_read("s1", &f, 1, 2);
-        assert!(denied(&decide(&input("Edit", "s1", json!({"file_path": f, "old_string": "x", "new_string": "y"})), &l, policy())).is_none());
+        assert!(denied(&decide(&input("Edit", "s1", body_edit(&f)), &l, policy())).is_none());
     }
     #[test]
     fn read_code_first_hook_negative_a_partial_read_is_refused_naming_file_and_rule() {
         let (_d, f) = werk_file(SRC);
         let l = Ledger::default();
         l.record_read("s1", &f, 1, 3);
-        let msg = denied(&decide(&input("Edit", "s1", json!({"file_path": f, "old_string": "    x", "new_string": "    y"})), &l, policy()))
+        let msg = denied(&decide(&input("Edit", "s1", body_edit(&f)), &l, policy()))
             .expect("a partial read must be refused");
         assert!(msg.contains(&f) && msg.contains("line 4 of 5") && msg.contains("ROW-TEXT"), "{msg}");
+        // the refusal names the way out of a "file unchanged" answer (Silas, 11-24)
+        assert!(msg.contains("offset 1 and a limit past line 5"), "{msg}");
     }
     #[test]
     fn read_code_first_hook_negative_no_read_and_a_shell_read_are_refused() {
@@ -453,25 +549,44 @@ mod read_code_first_5027 {
         assert!(denied(&decide(&input("Write", "s1", json!({"file_path": f, "content": SRC})), &l, policy())).is_some());
         // another session's full read does not count for this one
         l.record_read("s2", &f, 1, 5);
-        assert!(denied(&decide(&input("Edit", "s1", json!({"file_path": f, "old_string": "x", "new_string": "y"})), &l, policy())).is_some());
+        assert!(denied(&decide(&input("Edit", "s1", body_edit(&f)), &l, policy())).is_some());
+    }
+    #[test]
+    fn read_code_first_hook_negative_a_file_changed_since_the_read_is_unread() {
+        // Wren F: git, sed -i or another role changed the file after the read
+        let (_d, f) = werk_file(SRC);
+        let l = Ledger::default();
+        l.record_read("s1", &f, 1, 5);
+        std::fs::write(&f, format!("{SRC}// a line someone else added\n")).unwrap();
+        assert!(denied(&decide(&input("Edit", "s1", body_edit(&f)), &l, policy())).is_some(), "a stale read must not count");
+        l.record_read("s1", &f, 1, 6);
+        assert!(denied(&decide(&input("Edit", "s1", body_edit(&f)), &l, policy())).is_none(), "a fresh read counts");
     }
     #[test]
     fn read_code_first_hook_a_token_capped_read_counts_only_what_it_returned() {
         // measured 11-24: a Read of main.rs came back 1153 of 1816 lines, truncatedByTokenCap
         let resp = json!({"type": "text", "file": {"numLines": 1153, "startLine": 1, "totalLines": 1816, "truncatedByTokenCap": true}});
         assert_eq!(read_range(&json!({"file_path": "x"}), Some(&resp)), Some((1, 1153)));
-        assert_eq!(read_range(&json!({"AbsolutePath": "x", "StartLine": 10, "EndLine": 40}), None), Some((10, 40)));
-        assert_eq!(read_range(&json!({"file_path": "x", "offset": 100, "limit": 50}), None), Some((100, 149)));
-        assert_eq!(read_range(&json!({"file_path": "x"}), None), Some((1, CLAUDE_READ_DEFAULT)));
         assert_eq!(first_unread(&[(1, 1153)], 1815), Some(1154));
+        assert_eq!(first_unread(&[(1, 1153), (1154, 1816)], 1815), None);
         // the boundary: every line but the last is still unread at the last line
         assert_eq!(first_unread(&[(1, 1814)], 1815), Some(1815));
         assert_eq!(first_unread(&[(1, 1815)], 1815), None);
-        // a re-read answered "file unchanged" returned no lines: it never counts, so a
-        // capped read followed by one cannot pass for a whole read (code review, run 2)
+    }
+    #[test]
+    fn read_code_first_hook_negative_an_unchanged_reread_counts_for_nothing() {
+        // a re-read answered "file unchanged" returned no lines, so a capped read followed
+        // by one cannot pass for a whole read (code review, run 2); an image neither
         let unchanged = json!({"type": "file_unchanged", "file": {"filePath": "x"}});
         assert_eq!(read_range(&json!({"file_path": "x"}), Some(&unchanged)), None);
-        assert_eq!(first_unread(&[(1, 1153), (1154, 1816)], 1815), None);
+        assert_eq!(read_range(&json!({"file_path": "x"}), Some(&json!({"type": "image"}))), None);
+    }
+    #[test]
+    fn read_code_first_hook_a_read_with_no_result_counts_the_range_asked_for() {
+        // agy sends no result: StartLine/EndLine, or offset/limit, or its 800-line default
+        assert_eq!(read_range(&json!({"file_path": "x", "StartLine": 10, "EndLine": 40}), None), Some((10, 40)));
+        assert_eq!(read_range(&json!({"file_path": "x", "offset": 100, "limit": 50}), None), Some((100, 149)));
+        assert_eq!(read_range(&json!({"file_path": "x"}), None), Some((1, AGY_VIEW_DEFAULT)));
     }
     #[test]
     fn read_code_first_hook_new_files_written_files_and_paths_outside_werk_pass() {
@@ -480,7 +595,7 @@ mod read_code_first_5027 {
         let new = f.replace("lib.rs", "new.rs");
         assert!(denied(&decide(&input("Write", "s1", json!({"file_path": new, "content": "x"})), &l, policy())).is_none());
         l.record_authored("s1", &f);
-        assert!(denied(&decide(&input("Edit", "s1", json!({"file_path": f, "old_string": "x", "new_string": "y"})), &l, policy())).is_none());
+        assert!(denied(&decide(&input("Edit", "s1", body_edit(&f)), &l, policy())).is_none());
         assert!(denied(&decide(&input("Edit", "s9", json!({"file_path": "/tmp/scratch.rs", "old_string": "x", "new_string": "y"})), &l, policy())).is_none());
     }
     #[test]
@@ -492,12 +607,23 @@ mod read_code_first_5027 {
         assert!(denied(&r).is_none() && !asked.get(), "a path outside the werk never reads the row");
     }
     #[test]
-    fn read_code_first_hook_a_canonical_read_counts_for_the_werk_twin() {
-        let root = crate::shared::state_paths::chorus_root();
-        assert_eq!(key(&format!("{root}/platform/x.rs")), "platform/x.rs");
-        assert_eq!(key("/a/chorus-werk/kade-5027/platform/x.rs"), "platform/x.rs");
+    fn read_code_first_hook_multiedit_is_gated_like_edit() {
+        // Wren D: MultiEdit was recorded as authored but never checked
+        let (_d, f) = werk_file(SRC);
+        let l = Ledger::default();
+        let me = json!({"file_path": f, "edits": [{"old_string": "    x\n", "new_string": "    x + 1\n"}]});
+        assert!(denied(&decide(&input("MultiEdit", "s1", me.clone()), &l, policy())).is_some(), "an unread MultiEdit must be refused");
+        l.record_read("s1", &f, 1, 5);
+        assert!(denied(&decide(&input("MultiEdit", "s1", me), &l, policy())).is_none());
     }
-
+    #[test]
+    fn read_code_first_hook_no_session_id_is_not_checked() {
+        let (_d, f) = werk_file(SRC);
+        let mut i = input("Edit", "", body_edit(&f));
+        assert!(denied(&decide(&i, &Ledger::default(), policy())).is_none());
+        i.session_id = None;
+        assert!(denied(&decide(&i, &Ledger::default(), policy())).is_none());
+    }
     #[test]
     fn read_code_first_hook_reads_survive_a_daemon_restart() {
         // Silas 11-24: the land restarts chorus-hooks; a session must keep the reads it made
@@ -505,10 +631,11 @@ mod read_code_first_5027 {
         let dir = tempfile::tempdir().unwrap();
         let before = Ledger::persistent(dir.path().to_path_buf());
         before.record_read("sess-a", &f, 1, 5);
-        before.record_lookup("sess-a", "{\"symbol_name\":\"a\"}");
+        before.record_lookup("sess-a", "a");
         let after = Ledger::persistent(dir.path().to_path_buf()); // the restarted daemon
         let edit = json!({"file_path": f, "old_string": "fn a(x: u8) -> u8 {", "new_string": "fn a(x: u16) -> u8 {"});
-        assert!(denied(&decide(&input("Edit", "sess-a", edit.clone()), &after, policy())).is_none());
+        let r = decide(&input("Edit", "sess-a", edit.clone()), &after, policy());
+        assert!(denied(&r).is_none(), "{r:?} {:?}", std::fs::read_to_string(dir.path().join("sess-a.jsonl")));
         // NEGATIVE: a ledger with no file (the old in-memory one) forgets on restart
         let forgot = Ledger::default();
         assert!(denied(&decide(&input("Edit", "sess-a", edit), &forgot, policy())).is_some());
@@ -517,13 +644,42 @@ mod read_code_first_5027 {
         assert!(!dir.path().join("../x.jsonl").exists());
     }
 
+    /// Wren C and K: Abby's and Borg Queen's real agy payloads (tests/fixtures/agy-4444),
+    /// read through the AgentRuntime row and normalized the way the runtime hook does,
+    /// are recorded and gated like Claude Code's.
+    #[test]
+    fn read_code_first_hook_agy_payloads_record_reads_and_are_gated() {
+        let (_d, f) = werk_file(SRC);
+        let table = chorus_hooks::runtime_rows::table();
+        let row = chorus_hooks::runtime_rows::row_in(&table, "agy").expect("agy row");
+        let through = |fixture: &str, moment| -> HookInput {
+            let mut raw: Value = serde_json::from_str(fixture).unwrap();
+            let args = &mut raw["toolCall"]["args"];
+            for k in ["AbsolutePath", "TargetFile"] { if args.get(k).is_some() { args[k] = json!(f); } }
+            if args.get("StartLine").is_some() { args["StartLine"] = json!(1); args["EndLine"] = json!(5); }
+            let canon = chorus_hooks::runtime_rows::canonical(row, moment, &raw).unwrap();
+            let op = chorus_hooks::runtime_tools::normalize_tools("external", canon["tool_name"].as_str().unwrap(), &canon["tool_input"], "/tmp").unwrap().remove(0);
+            serde_json::from_value(json!({"tool_name": op.tool, "tool_input": op.input, "session_id": "agy-sess"})).unwrap()
+        };
+        let edit = through(include_str!("../../tests/fixtures/agy-4444/pre-tool-use-edit.json"), chorus_hooks::runtime_rows::Moment::BeforeTool);
+        let l = Ledger::default();
+        assert_eq!(edit.tool_name_str(), "Edit");
+        assert!(denied(&decide(&edit, &l, policy())).is_some(), "an agy edit of an unread werk file must be refused");
+        let view = through(include_str!("../../tests/fixtures/agy-4444/pre-tool-use-view.json"), chorus_hooks::runtime_rows::Moment::AfterTool);
+        assert_eq!(view.tool_name_str(), "Read");
+        record_result(&view, &l);
+        let r = decide(&edit, &l, policy());
+        // read in full now; what is left is the rule's other half or nothing
+        assert!(denied(&r).is_none_or(|m| !m.contains("not been read")), "{r:?}");
+    }
+
     // ---- AC3: the rule comes from the row ----
     #[test]
     fn read_code_first_reads_policy_the_refusal_carries_the_rows_words() {
         let (_d, f) = werk_file(SRC);
         let l = Ledger::default();
         let other = || Ok(Policy { label: "L2".into(), comment: "A DIFFERENT ROW SENTENCE".into() });
-        let msg = denied(&decide(&input("Edit", "s1", json!({"file_path": f, "old_string": "x", "new_string": "y"})), &l, other)).unwrap();
+        let msg = denied(&decide(&input("Edit", "s1", body_edit(&f)), &l, other)).unwrap();
         assert!(msg.contains("A DIFFERENT ROW SENTENCE") && msg.contains("L2") && !msg.contains("ROW-TEXT"), "{msg}");
     }
     #[test]
@@ -531,11 +687,43 @@ mod read_code_first_5027 {
         let (_d, f) = werk_file(SRC);
         let l = Ledger::default();
         l.record_read("s1", &f, 1, 5); // even a fully read file: no row, no pass
-        let msg = denied(&decide(&input("Edit", "s1", json!({"file_path": f, "old_string": "x", "new_string": "y"})), &l, || Err("404".into())))
+        let msg = denied(&decide(&input("Edit", "s1", body_edit(&f)), &l, || Err("404".into())))
             .expect("an unreadable policy must refuse, never pass");
         assert!(msg.contains("could not be read") && msg.contains("404"), "{msg}");
         assert!(policy_from_body(&json!({"data": {"label": "x", "comment": ""}})).is_err());
-        assert!(fetch_policy("http://127.0.0.1:1").is_err(), "an unreachable door is an error, never a policy");
+    }
+    /// A one-shot HTTP server that answers every request with `status` and `body`.
+    fn door_answering(status: &str, body: &str) -> String {
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = l.local_addr().unwrap();
+        let reply = format!("HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+        std::thread::spawn(move || {
+            use std::io::{Read, Write};
+            for s in l.incoming().take(4).flatten() {
+                let mut s = s;
+                let mut buf = [0u8; 2048];
+                let _ = s.read(&mut buf);
+                let _ = s.write_all(reply.as_bytes());
+            }
+        });
+        format!("http://{addr}")
+    }
+    #[test]
+    fn read_code_first_reads_policy_a_door_blip_uses_the_last_good_row_and_a_404_refuses() {
+        // Wren E: a door that does not answer must not lock every role out
+        let dir = tempfile::tempdir().unwrap();
+        let keep = dir.path().join(POLICY_FILE);
+        let good = door_answering("200 OK", r#"{"data":{"label":"Read the code first","comment":"rule text"}}"#);
+        assert_eq!(fetch_policy(&good, Some(&keep)).unwrap().comment, "rule text");
+        // the door goes away: an unreachable address, a fresh process (no memory cache for it)
+        let p = fetch_policy("http://127.0.0.1:1", Some(&keep)).expect("a blip uses the last good row");
+        assert_eq!(p.comment, "rule text");
+        // NEGATIVE: never read, never served: refuse
+        let empty = tempfile::tempdir().unwrap();
+        assert!(fetch_policy("http://127.0.0.1:1", Some(&empty.path().join(POLICY_FILE))).is_err());
+        // NEGATIVE: the door answers that the row is gone: refuse, the last good row does not apply
+        let gone = door_answering("404 Not Found", r#"{"error":"not found"}"#);
+        assert!(fetch_policy(&gone, Some(&keep)).unwrap_err().contains("404"));
     }
     #[test]
     fn read_code_first_reads_policy_body_shape() {
@@ -551,6 +739,10 @@ mod read_code_first_5027 {
         // reflowing a signature is no change; adding a new definition is an addition
         assert!(changed_symbols("fn a(x: u8, y: u8)", "fn a(\n    x: u8,\n    y: u8,\n)", "rs").is_empty());
         assert!(changed_symbols("fn a() {}\n", "fn a() {}\nfn c() {}\n", "rs").is_empty());
+        // a file with no extension and no #! line has no definitions to compare
+        assert_eq!(lang("/w/Makefile", "all:\n"), "");
+        assert_eq!(lang("/w/run-finished", "#!/usr/bin/env bash\n"), "sh");
+        assert_eq!(lang("/w/land-5027-rows", "#!/usr/bin/env python3\n"), "py");
     }
     #[test]
     fn read_code_first_lsp_ast_renames_and_parameter_changes_are_found() {
@@ -560,6 +752,12 @@ mod read_code_first_5027 {
         assert_eq!(changed_symbols("export function go(a) {", "export function go(a, b) {", "ts"), ["go"]);
         assert_eq!(changed_symbols("def run(x):\n", "def run(x, y):\n", "py"), ["run"]);
         assert_eq!(changed_symbols("handler() {\n", "on_exit() {\n", "sh"), ["handler"]);
+        // an arrow function's parameters (review note, run 1)
+        assert_eq!(changed_symbols("const go = (a) => {", "const go = (a, b) => {", "ts"), ["go"]);
+        assert_eq!(changed_symbols("export const go = async (a) => {", "export const go = async (a, b) => {", "ts"), ["go"]);
+        // two same-named definitions: the second one's change is not hidden by the first
+        let old = "impl A {\n    fn new() {}\n}\nimpl B {\n    fn new(x: u8) {}\n}\n";
+        assert_eq!(changed_symbols(old, &old.replace("fn new(x: u8)", "fn new(x: u16)"), "rs"), ["new"]);
     }
     #[test]
     fn read_code_first_lsp_ast_negative_a_signature_change_without_a_lookup_is_refused() {
@@ -570,11 +768,32 @@ mod read_code_first_5027 {
         let msg = denied(&decide(&input("Edit", "s1", edit.clone()), &l, policy())).expect("an unasked signature change must be refused");
         assert!(msg.contains("definition of a ") && msg.contains("find_references"), "{msg}");
         // a lookup naming another symbol does not count
-        record_lookup(&input("mcp__cclsp__find_references", "s1", json!({"symbol_name": "ab"})), &l);
+        record_lookup(&input("mcp__cclsp__find_references", "s1", json!({"symbol_name": "ab", "file_path": "/w/a/x.rs"})), &l);
         assert!(denied(&decide(&input("Edit", "s1", edit.clone()), &l, policy())).is_some());
         // the lookup of `a` (here ast-grep on the shell) lets it through
         record_lookup(&input("Bash", "s1", json!({"command": "ast-grep -p 'a($$$)' src"})), &l);
         assert!(denied(&decide(&input("Edit", "s1", edit), &l, policy())).is_none());
+    }
+    #[test]
+    fn read_code_first_lsp_ast_negative_a_narrow_edit_inside_the_parameters_is_seen() {
+        // Wren A: "x: u8" -> "x: u16" holds no `fn`; applied to the file, it changes a()
+        let (_d, f) = werk_file(SRC);
+        let l = Ledger::default();
+        l.record_read("s1", &f, 1, 5);
+        let edit = json!({"file_path": f, "old_string": "x: u8)", "new_string": "x: u16)"});
+        let msg = denied(&decide(&input("Edit", "s1", edit), &l, policy())).expect("a narrow parameter edit must be seen");
+        assert!(msg.contains("definition of a "), "{msg}");
+    }
+    #[test]
+    fn read_code_first_lsp_ast_negative_a_lookup_counts_only_by_its_symbol_or_pattern() {
+        // Wren I: a path or an unrelated word in the call does not name the symbol
+        assert_eq!(lookup_text("mcp__cclsp__find_references", &json!({"file_path": "/run/x.rs", "symbol_name": "load"})), "load");
+        assert_eq!(lookup_text("Bash", &json!({"command": "echo ast-grep load"})), "");
+        assert_eq!(lookup_text("Bash", &json!({"command": "cd src && ast-grep -p 'load($$$)' platform/x"})), "'load($$$)'");
+        assert_eq!(lookup_text("Read", &json!({"file_path": "/a/load.rs"})), "");
+        let l = Ledger::default();
+        record_lookup(&input("mcp__cclsp__find_references", "s1", json!({"file_path": "/run/x.rs", "symbol_name": "load"})), &l);
+        assert!(!l.looked_up("s1", "run") && l.looked_up("s1", "load"));
     }
     #[test]
     fn read_code_first_lsp_ast_a_whole_file_write_that_renames_is_checked() {

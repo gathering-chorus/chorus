@@ -688,7 +688,7 @@ async fn pre_tool_use_inner(
             // step of werk-code"): no edit to a werk file the session has not read in full,
             // and no changed definition without a lookup of its callers. The rule's words
             // are the policy row read-the-code-first; an unreadable row refuses.
-            _last_module = "read_code_first".into(); let r = hooks::read_code_first::check(input, &state.read_ledger);
+            _last_module = "read_code_first".into(); let r = read_code_first_gate(state, input).await;
             if r.stdout.is_some() || r.exit_code != 0 {
                 return (_last_module.clone(), r);
             }
@@ -775,6 +775,13 @@ async fn pre_tool_use_inner(
             // ICD pre-read gate (#1684) — warn on data domain writes without context read
             hooks::icd_pre_read::check(input, state).await;
         }
+        // #5027 (Wren D) — a MultiEdit is gated like an Edit by read_code_first.
+        "MultiEdit" => {
+            _last_module = "read_code_first".into(); let r = read_code_first_gate(state, input).await;
+            if r.stdout.is_some() || r.exit_code != 0 {
+                return (_last_module.clone(), r);
+            }
+        }
         "Read" => {
             _last_module = "sensitive_paths".into(); let r = hooks::sensitive_paths::check(input).await;
             if r.stdout.is_some() {
@@ -836,6 +843,15 @@ async fn pre_tool_use_inner(
         &serde_json::json!({"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":advisory}}).to_string(),
     )).unwrap_or_else(HookResponse::allow);
     ("none".into(), response)
+}
+
+/// #5027 — the read-the-code-first gate off the async worker: it reads the file, its
+/// session ledger and (at most once a minute) the policy row over HTTP, all blocking.
+async fn read_code_first_gate(state: &AppState, input: &HookInput) -> HookResponse {
+    let (input, ledger) = (input.clone(), state.read_ledger.clone());
+    tokio::task::spawn_blocking(move || hooks::read_code_first::check(&input, &ledger)).await
+        .unwrap_or_else(|e| HookResponse::deny(&types::permission_deny_json(&format!(
+            "read-the-code-first: the check did not finish ({e}), so the edit is not let through"))))
 }
 
 /// PostToolUse — telemetry + handoff logger + observer
