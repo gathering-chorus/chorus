@@ -18,8 +18,11 @@
 //! domain), never a copy here. A row that cannot be read refuses the edit and says so.
 //!
 //! Reads and lookups are recorded live by the daemon (PostToolUse Read, PreToolUse
-//! lookup), as tdd_gate's test edits are (#3278): the transcript flushes a turn late. A
-//! daemon restart forgets them; the cost is one re-read, named in the refusal.
+//! lookup), as tdd_gate's test edits are (#3278): the transcript flushes a turn late.
+//! They are also appended to one file per session under the daemon's run dir, so a
+//! daemon restart (every land that ships chorus-hooks) does not forget them: after a
+//! restart Claude Code answers a re-read "file unchanged" with no lines, which can
+//! never count (Silas and the code review, 11-24).
 
 use crate::types::{permission_deny_json, HookInput, HookResponse};
 use std::collections::{HashMap, HashSet};
@@ -46,16 +49,91 @@ pub struct Policy {
 type Reads = HashMap<(String, String), Vec<(usize, usize)>>;
 
 /// What each session has read, written and looked up. One per daemon (AppState).
+/// With a dir, every record is also appended to `<dir>/<session>.jsonl` and a session
+/// the daemon has not seen since it started is loaded from there first.
 #[derive(Default)]
 pub struct Ledger {
     reads: Mutex<Reads>,
     authored: Mutex<HashSet<(String, String)>>,
     lookups: Mutex<HashMap<String, Vec<String>>>,
+    dir: Option<std::path::PathBuf>,
+    loaded: Mutex<HashSet<String>>,
+}
+
+/// One line of a session's ledger file.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(tag = "k", rename_all = "lowercase")]
+enum Entry { Read { path: String, a: usize, b: usize }, Wrote { path: String }, Lookup { text: String } }
+
+/// A session id that is safe as a file name.
+fn safe_sid(sid: &str) -> bool {
+    !sid.is_empty() && sid.len() <= 128 && sid.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
 }
 
 impl Ledger {
+    /// A ledger that survives a daemon restart. Session files older than KEEP are dropped.
+    pub fn persistent(dir: std::path::PathBuf) -> Self {
+        const KEEP: Duration = Duration::from_secs(3 * 24 * 3600);
+        let _ = std::fs::create_dir_all(&dir);
+        if let Ok(entries) = std::fs::read_dir(&dir) {
+            for e in entries.flatten() {
+                let old = e.metadata().and_then(|m| m.modified()).ok()
+                    .and_then(|t| t.elapsed().ok()).is_some_and(|age| age > KEEP);
+                if old { let _ = std::fs::remove_file(e.path()); }
+            }
+        }
+        Self { dir: Some(dir), ..Self::default() }
+    }
+
+    fn file(&self, sid: &str) -> Option<std::path::PathBuf> {
+        self.dir.as_ref().filter(|_| safe_sid(sid)).map(|d| d.join(format!("{sid}.jsonl")))
+    }
+
+    fn persist(&self, sid: &str, e: &Entry) {
+        use std::io::Write;
+        let Some(f) = self.file(sid) else { return };
+        let Ok(line) = serde_json::to_string(e) else { return };
+        if let Ok(mut fh) = std::fs::OpenOptions::new().create(true).append(true).open(&f) {
+            let _ = fh.write_all(format!("{line}\n").as_bytes());
+        }
+    }
+
+    /// Load a session's file once, the first time this daemon is asked about it.
+    fn load(&self, sid: &str) {
+        let first = self.loaded.lock().map(|mut l| l.insert(sid.to_string())).unwrap_or(false);
+        let Some(f) = self.file(sid).filter(|_| first) else { return };
+        let Ok(text) = std::fs::read_to_string(&f) else { return };
+        for e in text.lines().filter_map(|l| serde_json::from_str::<Entry>(l).ok()) {
+            match e {
+                Entry::Read { path, a, b } => self.add_read(sid, &path, a, b),
+                Entry::Wrote { path } => self.add_authored(sid, &path),
+                Entry::Lookup { text } => self.add_lookup(sid, &text),
+            }
+        }
+    }
+
     pub fn record_read(&self, sid: &str, path: &str, first: usize, last: usize) {
         if sid.is_empty() || last < first { return; }
+        self.load(sid);
+        self.add_read(sid, path, first, last);
+        self.persist(sid, &Entry::Read { path: path.to_string(), a: first, b: last });
+    }
+    pub fn record_authored(&self, sid: &str, path: &str) {
+        if sid.is_empty() { return; }
+        self.load(sid);
+        self.add_authored(sid, path);
+        self.persist(sid, &Entry::Wrote { path: path.to_string() });
+    }
+    pub fn record_lookup(&self, sid: &str, text: &str) {
+        if sid.is_empty() || text.is_empty() { return; }
+        // bounded: the daemon lives for days; the newest lookups are the ones an edit needs
+        let text: String = text.chars().take(MAX_LOOKUP_CHARS).collect();
+        self.load(sid);
+        self.add_lookup(sid, &text);
+        self.persist(sid, &Entry::Lookup { text });
+    }
+
+    fn add_read(&self, sid: &str, path: &str, first: usize, last: usize) {
         if let Ok(mut m) = self.reads.lock() {
             // kept merged, so a long session holds a few ranges per file, not every read
             let r = m.entry((sid.to_string(), key(path))).or_default();
@@ -63,27 +141,27 @@ impl Ledger {
             *r = merged(r);
         }
     }
-    pub fn record_authored(&self, sid: &str, path: &str) {
-        if sid.is_empty() { return; }
+    fn add_authored(&self, sid: &str, path: &str) {
         if let Ok(mut s) = self.authored.lock() { s.insert((sid.to_string(), key(path))); }
     }
-    pub fn record_lookup(&self, sid: &str, text: &str) {
-        if sid.is_empty() || text.is_empty() { return; }
-        // bounded: the daemon lives for days; the newest lookups are the ones an edit needs
-        let text: String = text.chars().take(MAX_LOOKUP_CHARS).collect();
+    fn add_lookup(&self, sid: &str, text: &str) {
         if let Ok(mut m) = self.lookups.lock() {
             let v = m.entry(sid.to_string()).or_default();
-            v.push(text);
+            v.push(text.to_string());
             if v.len() > MAX_LOOKUPS { v.remove(0); }
         }
     }
+
     fn ranges(&self, sid: &str, path: &str) -> Vec<(usize, usize)> {
+        self.load(sid);
         self.reads.lock().ok().and_then(|m| m.get(&(sid.to_string(), key(path))).cloned()).unwrap_or_default()
     }
     fn wrote(&self, sid: &str, path: &str) -> bool {
+        self.load(sid);
         self.authored.lock().map(|s| s.contains(&(sid.to_string(), key(path)))).unwrap_or(false)
     }
     fn looked_up(&self, sid: &str, symbol: &str) -> bool {
+        self.load(sid);
         let Ok(re) = regex::Regex::new(&format!(r"\b{}\b", regex::escape(symbol))) else { return false };
         self.lookups.lock().map(|m| m.get(sid).is_some_and(|v| v.iter().any(|t| re.is_match(t)))).unwrap_or(false)
     }
@@ -104,14 +182,15 @@ fn in_werk(path: &str) -> bool {
     path.split_once("/chorus-werk/").is_some_and(|(_, rest)| rest.split_once('/').is_some_and(|(slot, rel)| !slot.is_empty() && !rel.is_empty()))
 }
 
-/// The lines a Read returned: the result's own count first (a token-capped read says
-/// how far it got), then the range asked for (agy: StartLine/EndLine; Claude: offset/limit).
+/// The lines a Read returned. A Claude Code result says how far it got (a token-capped
+/// read stops short); one with no line count (a re-read answered "file unchanged")
+/// returned no lines and counts for nothing. With no result file at all (agy), the range
+/// asked for: StartLine/EndLine, or offset/limit.
 pub fn read_range(input: &serde_json::Value, response: Option<&serde_json::Value>) -> Option<(usize, usize)> {
     let num = |v: Option<&serde_json::Value>| v.and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))).map(|n| n as usize);
-    // a result with no line count (a re-read Claude Code answers "file unchanged") falls
-    // through to the range asked for: that is the range the session already holds
-    if let Some((file, n)) = response.and_then(|r| r.get("file")).and_then(|f| num(f.get("numLines")).map(|n| (f, n))) {
+    if let Some(file) = response.and_then(|r| r.get("file")) {
         let start = num(file.get("startLine")).unwrap_or(1).max(1);
+        let n = num(file.get("numLines"))?;
         return Some((start, start + n.max(1) - 1));
     }
     if let (Some(s), Some(e)) = (num(input.get("StartLine")), num(input.get("EndLine"))) {
@@ -229,8 +308,7 @@ pub fn decide(input: &HookInput, ledger: &Ledger, policy: impl FnOnce() -> Resul
             return deny(&policy, format!(
                 "{path} has not been read in full in this session: line {line} of {lines} was never read. \
                  Read the whole file with the Read tool first (no offset/limit, or ranges that together \
-                 cover 1..{lines}); a shell read (cat, sed, head) does not count. (A daemon restart \
-                 forgets earlier reads; read it once more.)"));
+                 cover 1..{lines}); a shell read (cat, sed, head) does not count."));
         }
     }
     let (old, new) = if tool == "Write" {
@@ -384,15 +462,15 @@ mod read_code_first_5027 {
         assert_eq!(read_range(&json!({"file_path": "x"}), Some(&resp)), Some((1, 1153)));
         assert_eq!(read_range(&json!({"AbsolutePath": "x", "StartLine": 10, "EndLine": 40}), None), Some((10, 40)));
         assert_eq!(read_range(&json!({"file_path": "x", "offset": 100, "limit": 50}), None), Some((100, 149)));
+        assert_eq!(read_range(&json!({"file_path": "x"}), None), Some((1, CLAUDE_READ_DEFAULT)));
         assert_eq!(first_unread(&[(1, 1153)], 1815), Some(1154));
         // the boundary: every line but the last is still unread at the last line
         assert_eq!(first_unread(&[(1, 1814)], 1815), Some(1815));
         assert_eq!(first_unread(&[(1, 1815)], 1815), None);
-        // Silas 11-24: after a hooks restart a re-read can come back "file unchanged" with no
-        // line count; the range asked for is what the session holds, so it counts
+        // a re-read answered "file unchanged" returned no lines: it never counts, so a
+        // capped read followed by one cannot pass for a whole read (code review, run 2)
         let unchanged = json!({"type": "file_unchanged", "file": {"filePath": "x"}});
-        assert_eq!(read_range(&json!({"file_path": "x"}), Some(&unchanged)), Some((1, 2000)));
-        assert_eq!(read_range(&json!({"file_path": "x", "offset": 40, "limit": 10}), Some(&unchanged)), Some((40, 49)));
+        assert_eq!(read_range(&json!({"file_path": "x"}), Some(&unchanged)), None);
         assert_eq!(first_unread(&[(1, 1153), (1154, 1816)], 1815), None);
     }
     #[test]
@@ -418,6 +496,25 @@ mod read_code_first_5027 {
         let root = crate::shared::state_paths::chorus_root();
         assert_eq!(key(&format!("{root}/platform/x.rs")), "platform/x.rs");
         assert_eq!(key("/a/chorus-werk/kade-5027/platform/x.rs"), "platform/x.rs");
+    }
+
+    #[test]
+    fn read_code_first_hook_reads_survive_a_daemon_restart() {
+        // Silas 11-24: the land restarts chorus-hooks; a session must keep the reads it made
+        let (_d, f) = werk_file(SRC);
+        let dir = tempfile::tempdir().unwrap();
+        let before = Ledger::persistent(dir.path().to_path_buf());
+        before.record_read("sess-a", &f, 1, 5);
+        before.record_lookup("sess-a", "{\"symbol_name\":\"a\"}");
+        let after = Ledger::persistent(dir.path().to_path_buf()); // the restarted daemon
+        let edit = json!({"file_path": f, "old_string": "fn a(x: u8) -> u8 {", "new_string": "fn a(x: u16) -> u8 {"});
+        assert!(denied(&decide(&input("Edit", "sess-a", edit.clone()), &after, policy())).is_none());
+        // NEGATIVE: a ledger with no file (the old in-memory one) forgets on restart
+        let forgot = Ledger::default();
+        assert!(denied(&decide(&input("Edit", "sess-a", edit), &forgot, policy())).is_some());
+        // a session id that is not a safe file name is never written to disk
+        before.record_read("../x", &f, 1, 5);
+        assert!(!dir.path().join("../x.jsonl").exists());
     }
 
     // ---- AC3: the rule comes from the row ----

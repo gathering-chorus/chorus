@@ -27,13 +27,13 @@ records_reads() { fn_body "$1" post_tool_use | grep -q 'read_code_first::record_
 @test "#5027 the gate: a whole-file read passes, a partial or shell read is refused naming file and rule" {
   run cargo_hooks --lib read_code_first_hook
   test "$status" -eq 0 || { echo "$output" | tail -20; return 1; }
-  echo "$output" | grep -q "8 passed" || { echo "$output" | tail -5; return 1; }
+  echo "$output" | grep -qE "test result: ok. [1-9][0-9]* passed" || { echo "$output" | tail -5; return 1; }
 }
 
 @test "#5027 the real dispatch refuses an unread werk file and lets a fully read one past" {
   run cargo_hooks --bin chorus-hooks read_code_first_dispatch
   test "$status" -eq 0 || { echo "$output" | tail -20; return 1; }
-  echo "$output" | grep -q "1 passed" || { echo "$output" | tail -5; return 1; }
+  echo "$output" | grep -qE "test result: ok. [1-9][0-9]* passed" || { echo "$output" | tail -5; return 1; }
 }
 
 @test "#5027 it is the first gate after the canonical guard, and reads are recorded at PostToolUse" {

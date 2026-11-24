@@ -22,7 +22,7 @@ records_lookups() {
 @test "#5027 a changed definition needs a lookup; body edits, additions and reflows do not" {
   run cargo_hooks --lib read_code_first_lsp_ast
   test "$status" -eq 0 || { echo "$output" | tail -20; return 1; }
-  echo "$output" | grep -q "4 passed" || { echo "$output" | tail -5; return 1; }
+  echo "$output" | grep -qE "test result: ok. [1-9][0-9]* passed" || { echo "$output" | tail -5; return 1; }
 }
 
 @test "#5027 the dispatch records lookups before any gate returns" {

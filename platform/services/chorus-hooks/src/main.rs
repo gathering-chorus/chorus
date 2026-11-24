@@ -1830,10 +1830,12 @@ mod emit_guard_dispatch_3945 {
         std::fs::write(&f, "fn a() {}\nfn b() {}\n").unwrap();
         let fp = f.to_string_lossy().to_string();
         let state = crate::state::AppState::new();
+        // the ledger is on disk now: a fresh session id per run, so no earlier run's read counts
+        let sid = format!("rcf-5027-dispatch-{}", uuid::Uuid::now_v7());
         let edit = HookInput {
             tool_name: Some("Edit".into()),
             tool_input: Some(json!({"file_path": fp, "old_string": "fn a() {}", "new_string": "fn a() { }"})),
-            session_id: Some("rcf-5027-dispatch".into()),
+            session_id: Some(sid.clone()),
             ..Default::default()
         };
         let (module, resp) = pre_tool_use_inner(&state, &edit).await;
@@ -1843,7 +1845,7 @@ mod emit_guard_dispatch_3945 {
             tool_name: Some("Read".into()),
             tool_input: Some(json!({"file_path": fp})),
             tool_response: Some(json!({"type": "text", "file": {"startLine": 1, "numLines": 2, "totalLines": 2}})),
-            session_id: Some("rcf-5027-dispatch".into()),
+            session_id: Some(sid.clone()),
             ..Default::default()
         };
         hooks::read_code_first::record_result(&read, &state.read_ledger);
