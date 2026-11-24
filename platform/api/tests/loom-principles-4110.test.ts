@@ -21,6 +21,9 @@ import { fetchLoomPrinciples } from '../src/handlers/loom-principles';
 
 type Row = Record<string, string>;
 
+/** #5034 — the door is given here; finding it from the graph rows is tested in handlers/loom-principles.test.ts */
+const PRINCIPLES_API = 'http://principles-api.test';
+
 /** A fake principles-api (#5017): `names` is what the collection reports, `entities` what resolves. */
 function fakeUpstream(names: string[], entities: Record<string, Row>) {
   return async (url: string | URL | Request): Promise<Response> => {
@@ -41,6 +44,7 @@ describe('#4110 loom principles — an unresolvable walk is a broken read, not a
   it('NEGATIVE PROOF: collection names rows but every entity 404s -> 502 naming the counts', async () => {
     const res = await fetchLoomPrinciples({
       fetchFn: fakeUpstream(['a', 'b', 'c'], {}) as unknown as typeof fetch,
+      owlApiUrl: PRINCIPLES_API,
     });
 
     expect(res.status).toBe(502);
@@ -52,6 +56,7 @@ describe('#4110 loom principles — an unresolvable walk is a broken read, not a
   it('a genuinely empty collection is still a valid 200, not an error', async () => {
     const res = await fetchLoomPrinciples({
       fetchFn: fakeUpstream([], {}) as unknown as typeof fetch,
+      owlApiUrl: PRINCIPLES_API,
     });
 
     expect(res.status).toBe(200);
@@ -63,6 +68,7 @@ describe('#4110 loom principles — an unresolvable walk is a broken read, not a
       fetchFn: fakeUpstream(['get-a-yield'], {
         'get-a-yield': { label: 'Obtain a yield', comment: 'c', order: '3' },
       }) as unknown as typeof fetch,
+      owlApiUrl: PRINCIPLES_API,
     });
 
     expect(res.status).toBe(200);
@@ -76,6 +82,7 @@ describe('#4110 loom principles — an unresolvable walk is a broken read, not a
       fetchFn: fakeUpstream(['here', 'gone'], {
         here: { label: 'Still here', comment: 'c', order: '1' },
       }) as unknown as typeof fetch,
+      owlApiUrl: PRINCIPLES_API,
     });
 
     expect(res.status).toBe(200);

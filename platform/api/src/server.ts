@@ -427,10 +427,14 @@ CONSTRUCT { ?s ?p ?o } WHERE {
 // address is real: 200 the model has it, 404 it does not, 502 the model could not be
 // read to say. The body is the template every time; the page draws its own note.
 const domainsView = async (req: Request, res: Response) => {
-  const status = await domainsViewStatus(
+  const { status, reason } = await domainsViewStatus(
     req.params.domain, req.params.instance, process.env.OWL_UPSTREAM || 'http://127.0.0.1:3360', fetch,
     req.socket.localPort ?? PORT, // the port that took this request: a bind on it would be a loop
   );
+  // a 502 here is an upstream that could not be read: one line naming the path and the reason
+  if (status === 502) {
+    console.error(`[chorus-api] domains-view upstream unreadable ${JSON.stringify({ path: req.path, status, reason })}`);
+  }
   res.status(status).sendFile(path.join(__dirname, '..', 'public', 'athena', 'domains-view.html'));
 };
 app.get('/domains', domainsView);

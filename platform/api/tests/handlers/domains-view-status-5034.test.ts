@@ -189,3 +189,50 @@ describe('#5034 — a model that cannot be read is 502, never a guess', () => {
     expect((await hit(app.listen(0), '/domains/domains/no-such-row')).status).toBe(404);
   });
 });
+
+describe('#5034 — a 502 from the model view is logged, with the path and the reason', () => {
+  /** the lines chorus-api wrote to its error log about the model view */
+  let lines: string[] = [];
+  let spy: jest.SpyInstance;
+
+  beforeEach(() => {
+    lines = [];
+    spy = jest.spyOn(console, 'error').mockImplementation((line: unknown) => {
+      if (String(line).includes('domains-view')) lines.push(String(line));
+    });
+  });
+  afterEach(() => {
+    spy.mockRestore();
+  });
+
+  /** the JSON the line carries after its prefix */
+  const fields = (line: string) => JSON.parse(line.slice(line.indexOf('{'))) as { path: string; status: number; reason: string };
+
+  test('athena-make down → one line naming the path and that the Domain rows could not be read', async () => {
+    process.env.OWL_UPSTREAM = 'http://127.0.0.1:1';
+    resetGeneratedApisCache();
+    expect((await hit(app.listen(0), '/domains/principles')).status).toBe(502);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain('[chorus-api] domains-view upstream unreadable');
+    expect(fields(lines[0]).path).toBe('/domains/principles');
+    expect(fields(lines[0]).status).toBe(502);
+    expect(fields(lines[0]).reason).toContain('the Domain rows could not be read');
+  });
+
+  test('the generated API of the domain down → the reason names that API, a different reason from athena-make down', async () => {
+    bind = '127.0.0.1:1';
+    resetGeneratedApisCache();
+    expect((await hit(app.listen(0), '/domains/principles/hemenway-observe')).status).toBe(502);
+    expect(lines).toHaveLength(1);
+    expect(fields(lines[0]).path).toBe('/domains/principles/hemenway-observe');
+    expect(fields(lines[0]).reason).toBe('principles-api did not answer its discovery');
+  });
+
+  test('NEGATIVE: a 200 and a 404 log nothing — the line is for an unreadable upstream only', async () => {
+    resetGeneratedApisCache();
+    expect((await hit(app.listen(0), '/domains/principles')).status).toBe(200);
+    expect((await hit(app.listen(0), '/domains/nosuch')).status).toBe(404);
+    expect((await hit(app.listen(0), '/domains/principles/no-such-row')).status).toBe(404);
+    expect(lines).toEqual([]);
+  });
+});

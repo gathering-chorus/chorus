@@ -17,7 +17,7 @@
  * RUN: ATHENA_URL=http://localhost:3340 npx playwright test proving/flows/athena-domain-true-5034.spec.cjs
  */
 const { test, expect } = require('@playwright/test');
-const { BASE, DOMAIN, openDomainPage, openModelView, doorTruth } = require('./lib/athena-page-5034.cjs');
+const { BASE, DOMAIN, openDomainPage, openModelView, doorTruth, serveOwnAthenaFiles, serveDiscoveryAsLanded } = require('./lib/athena-page-5034.cjs');
 
 /** Run in the page: what the model fold shows for each class, { kind: { cards: [names], says: 'note text'|null } }. */
 function drawnClasses() {
@@ -72,6 +72,22 @@ test.describe(`#5034 the ${DOMAIN} domain pages say only what the doors hold`, (
       if (!t.collection && s.href) wrong.push(`${t.kind}: no door lists it, yet the page links to ${s.href}`);
     }
     expect(wrong, `the Vocabulary fold disagrees with the doors:\n${wrong.join('\n')}`).toEqual([]);
+  });
+
+  test('the rows page lists every row of a served class (platform/api/public/athena/rows.js)', async ({ page }) => {
+    // rows.html?kind=<Class> is where the Vocabulary link's class can be read as a table. It
+    // dropped the /v1 from the collection discovery names, which a generated API does not answer.
+    const served = (await doorTruth(page)).filter((t) => t.held > 0);
+    expect(served.length, 'the model holds no rows for any class of this domain').toBeGreaterThan(0);
+    await serveOwnAthenaFiles(page);
+    await serveDiscoveryAsLanded(page);
+    for (const t of served) {
+      await page.goto(`${BASE}/athena/rows.html?kind=${encodeURIComponent(t.kind)}`, { waitUntil: 'domcontentloaded' });
+      // the page opens on a "loading live from the model…" placeholder (itself class "empty"): wait for it to go
+      await page.waitForFunction(() => { const m = document.getElementById('main'); return m && !/loading live from the model/.test(m.textContent); }, null, { timeout: 45_000 });
+      const drawn = await page.evaluate(() => ({ rows: document.querySelectorAll('#main table.rows tbody tr').length, says: document.querySelector('#main .err, #main .empty')?.textContent.trim() || null }));
+      expect(drawn, `rows.html?kind=${t.kind}: the model holds ${t.held} rows`).toEqual({ rows: t.held, says: null });
+    }
   });
 
   test('NEGATIVE: drawn as before the fix, the page is caught saying "Not served" over rows the door holds', async ({ page }) => {

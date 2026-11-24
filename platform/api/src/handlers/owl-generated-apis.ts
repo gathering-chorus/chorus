@@ -46,6 +46,10 @@ const RULE_PORTS = 'owl.proxy.port_range';
 const DOMAIN = /^[A-Za-z][A-Za-z0-9_-]*$/;
 const READ_TIMEOUT_MS = 3000;
 const CACHE_TTL_MS = 60_000;
+/** how long a failed map read is remembered before athena-make is asked again */
+const FAILURE_TTL_MS = 5_000;
+/** the most pages one listing may take; more than this is a failed read */
+const MAX_PAGES = 20;
 
 /**
  * Every upstream read this module makes is bounded by this: a hung athena-make or
@@ -177,13 +181,32 @@ function allowedBind(
   return null;
 }
 
-async function readRows(url: string, fetchImpl: FetchLike): Promise<Row[]> {
-  const r = await fetchImpl(url, {
-    headers: { Accept: 'application/json' },
-    signal: bounded(),
-  });
-  if (!r.ok) throw new Error(`athena-make answered HTTP ${r.status} on ${url}`);
-  return rowsOf(await r.json());
+/** athena-make's collection envelope names the next page as `links.next`, a path on the same upstream */
+const nextPage = (body: unknown): string | null => {
+  const links = isRow(body) ? body.links : undefined;
+  const next = isRow(links) ? links.next : undefined;
+  return typeof next === 'string' && next ? next : null;
+};
+
+/**
+ * Every row of an athena-make collection: the first page at `path`, then each
+ * `links.next` until there is none (the default page is 100 rows). A listing that
+ * does not end within MAX_PAGES is a failed read — never a silently short one, since
+ * a short Domain or Property listing would quietly drop a generated API or the bind rule.
+ */
+async function readRows(owlBase: string, path: string, fetchImpl: FetchLike): Promise<Row[]> {
+  const rows: Row[] = [];
+  let next: string | null = path;
+  for (let page = 0; next; page++) {
+    if (page >= MAX_PAGES) throw new Error(`athena-make ${path} did not end within ${MAX_PAGES} pages`);
+    const url = owlBase + next;
+    const r = await fetchImpl(url, { headers: { Accept: 'application/json' }, signal: bounded() });
+    if (!r.ok) throw new Error(`athena-make answered HTTP ${r.status} on ${url}`);
+    const body: unknown = await r.json();
+    rows.push(...rowsOf(body));
+    next = nextPage(body);
+  }
+  return rows;
 }
 
 /** Says a refused bind once per map read (never per request). Replaceable so a test can read it. */
@@ -199,8 +222,8 @@ export function setSkippedBindLog(log: (line: string) => void): void {
  */
 export async function readGeneratedApis(owlBase: string, fetchImpl: FetchLike, ownPort: number): Promise<GeneratedApis> {
   const [domains, properties] = await Promise.all([
-    readRows(`${owlBase}/domains`, fetchImpl),
-    readRows(`${owlBase}/properties/properties?limit=2000`, fetchImpl),
+    readRows(owlBase, '/domains', fetchImpl),
+    readRows(owlBase, '/properties/properties?limit=2000', fetchImpl),
   ]);
   const { apis, skipped, ruleProblem } = generatedApisFromRows(domains, properties, ownPort);
   if (ruleProblem) logSkipped(`[owl-proxy] bind rule unreadable, no generated API is used: ${ruleProblem}`);
@@ -213,11 +236,14 @@ export async function readGeneratedApis(owlBase: string, fetchImpl: FetchLike, o
 let cache: { owlBase: string; ownPort: number; at: number; apis: GeneratedApis } | null = null;
 /** "no map yet" has been logged since the last successful read */
 let noMapSaid = false;
+/** the last read that failed: inside FAILURE_TTL_MS of it no new read is made */
+let failed: { owlBase: string; ownPort: number; at: number } | null = null;
 
 /** Forget the cached map (tests; and nothing else needs it). */
 export function resetGeneratedApisCache(): void {
   cache = null;
   noMapSaid = false;
+  failed = null;
 }
 
 /**
@@ -228,6 +254,9 @@ export function resetGeneratedApisCache(): void {
  * `now` is the clock (epoch ms), passed in so a test controls the map's age.
  * A stale map is never served silently: each failed read logs the map's age; a failed
  * read with no map at all is logged once until a read succeeds.
+ * A failed read is remembered for FAILURE_TTL_MS: requests inside that window get the
+ * same answer (the stale map, or none) without a new read or a new log line, so an
+ * athena-make outage costs one read attempt per window, not two per request.
  */
 export async function generatedApis(
   owlBase: string,
@@ -235,25 +264,38 @@ export async function generatedApis(
   ownPort: number,
   now: number = Date.now(),
 ): Promise<GeneratedApis> {
-  const known = cache && cache.owlBase === owlBase && cache.ownPort === ownPort ? cache : null;
+  const known = cache && sameMap(cache, owlBase, ownPort) ? cache : null;
   if (known && now - known.at < CACHE_TTL_MS) return known.apis;
+  // a read failed moments ago: the same answer, with no new read and no new line
+  if (failed && sameMap(failed, owlBase, ownPort) && now - failed.at < FAILURE_TTL_MS) return lastGood(known);
   try {
     const apis = await readGeneratedApis(owlBase, fetchImpl, ownPort);
     cache = { owlBase, ownPort, at: now, apis };
     noMapSaid = false;
+    failed = null;
     return apis;
   } catch (e) {
-    const reason = e instanceof Error ? e.message : String(e);
-    if (known) {
-      // a stale map is in use: say so on every failed read, with its age (Silas: keep last-good, but never silently)
-      logSkipped(`[owl-proxy] athena-make unreadable, serving the map read ${Math.round((now - known.at) / 1000)} s ago (${reason})`);
-      return known.apis;
-    }
-    // said once, until a read succeeds: with no map every /owl request repeats this read
-    if (!noMapSaid) logSkipped(`[owl-proxy] athena-make unreadable, no map yet, no generated API is used (${reason})`);
-    noMapSaid = true;
-    return new Map();
+    failed = { owlBase, ownPort, at: now };
+    sayReadFailed(known, now, errorText(e));
+    return lastGood(known);
   }
+}
+
+const sameMap = (m: { owlBase: string; ownPort: number }, owlBase: string, ownPort: number): boolean =>
+  m.owlBase === owlBase && m.ownPort === ownPort;
+
+/** What is served when athena-make cannot be read: the last good map, or no generated API at all. */
+const lastGood = (known: { apis: GeneratedApis } | null): GeneratedApis => (known ? known.apis : new Map());
+
+/** One line per failed read attempt when a stale map is in use (with its age); once, when there is no map. */
+function sayReadFailed(known: { at: number } | null, now: number, reason: string): void {
+  if (known) {
+    // Silas: keep last-good, but never silently
+    logSkipped(`[owl-proxy] athena-make unreadable, serving the map read ${Math.round((now - known.at) / 1000)} s ago (${reason})`);
+    return;
+  }
+  if (!noMapSaid) logSkipped(`[owl-proxy] athena-make unreadable, no map yet, no generated API is used (${reason})`);
+  noMapSaid = true;
 }
 
 /**
@@ -363,6 +405,8 @@ function addGenerated(primitives: unknown[], answers: Array<{ domain: string; fo
 
 /** 200 the address names something in the model; 404 it does not; 502 the model could not be read to say. */
 export type ViewStatus = 200 | 404 | 502;
+/** the status, and for a 502 the reason the model could not be read */
+export type ViewAnswer = { status: ViewStatus; reason?: string };
 
 /**
  * #5034 — the HTTP status of a model-view address (/domains/<domain>[/<instance>]).
@@ -381,64 +425,75 @@ export async function domainsViewStatus(
   owlBase: string,
   fetchImpl: FetchLike,
   ownPort: number,
-): Promise<ViewStatus> {
-  if (!domain) return 200;
+): Promise<ViewAnswer> {
+  if (!domain) return { status: 200 };
   let row: Row | undefined;
   try {
-    row = (await readRows(`${owlBase}/domains`, fetchImpl)).find((r) => r.name === domain);
-  } catch {
-    return 502;
+    row = (await readRows(owlBase, '/domains', fetchImpl)).find((r) => r.name === domain);
+  } catch (e) {
+    return { status: 502, reason: `the Domain rows could not be read: ${errorText(e)}` };
   }
-  if (!row) return 404;
-  if (!instance) return 200;
+  if (!row) return { status: 404 };
+  if (!instance) return { status: 200 };
   return instanceStatus(row, instance, await generatedApis(owlBase, fetchImpl, ownPort), owlBase, fetchImpl);
 }
 
-/** Whether one of the Domain row's kinds has a row named `instance`: 200 yes, 404 no, 502 could not be read. */
+const errorText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+
+/** Whether one of the Domain row's kinds has a row named `instance`: 200 yes, 404 no, 502 could not be read (and why). */
 async function instanceStatus(
   row: Row,
   instance: string,
   apis: GeneratedApis,
   owlBase: string,
   fetchImpl: FetchLike,
-): Promise<ViewStatus> {
+): Promise<ViewAnswer> {
   const served = await servedKinds(apis, owlBase, fetchImpl);
-  if (!served) return 502;
+  if (typeof served === 'string') return { status: 502, reason: served };
   // this domain's own API did not answer: its kinds are missing from the list, not absent from the model
-  let undecided = served.unreachable.includes(String(row.name));
+  let undecided = served.unreachable.includes(String(row.name))
+    ? `${String(row.name)}-api did not answer its discovery`
+    : null;
   for (const kind of strings(row.definesVocabulary).map((k) => k.split(/[#/]/).pop() ?? '')) {
     const collection = served.primitives.find((p) => p.kind === kind)?.collection;
     if (typeof collection !== 'string') continue;
     const route = routeOwl(`${collection}/${encodeURIComponent(instance)}`, apis, owlBase);
     const has = await hasRow(route.target, fetchImpl);
-    if (has === true) return 200;
-    if (has === null) undecided = true;
+    if (has === true) return { status: 200 };
+    if (has !== false) undecided = `${route.upstream} could not say whether it has the ${kind} row: ${has}`;
   }
-  return undecided ? 502 : 404;
+  return undecided ? { status: 502, reason: undecided } : { status: 404 };
 }
 
-/** The merged discovery's primitives and the domains it could not ask, or null when it could not be read. */
-async function servedKinds(
+/**
+ * The merged discovery's primitives and the domains whose API could not be asked, or —
+ * as a string — the reason the discovery could not be read. One reader of "what is
+ * served" for the model view and the class atlas.
+ */
+export async function servedKinds(
   apis: GeneratedApis,
   owlBase: string,
   fetchImpl: FetchLike,
-): Promise<{ primitives: Row[]; unreachable: string[] } | null> {
+): Promise<{ primitives: Row[]; unreachable: string[] } | string> {
   try {
     const d = await mergeDiscovery('/', apis, owlBase, fetchImpl);
-    const doc = d.status === 200 ? discoveryDoc(d.body) : null;
-    return doc ? { primitives: doc.primitives.filter(isRow), unreachable: strings(doc.body.unreachable) } : null;
-  } catch {
-    return null;
+    if (d.status !== 200) return `athena-make answered HTTP ${d.status} for its discovery`;
+    const doc = discoveryDoc(d.body);
+    return doc
+      ? { primitives: doc.primitives.filter(isRow), unreachable: strings(doc.body.unreachable) }
+      : 'athena-make answered something that is not a discovery document';
+  } catch (e) {
+    return `athena-make did not answer its discovery: ${errorText(e)}`;
   }
 }
 
-/** true the upstream has the row, false it answered 404, null it could not say. */
-async function hasRow(target: string, fetchImpl: FetchLike): Promise<boolean | null> {
+/** true the upstream has the row, false it answered 404; a string (why) when it could not say. */
+async function hasRow(target: string, fetchImpl: FetchLike): Promise<boolean | string> {
   try {
     const r = await fetchImpl(target, { headers: { Accept: 'application/json' }, signal: bounded() });
     if (r.ok) return true;
-    return r.status === 404 ? false : null;
-  } catch {
-    return null;
+    return r.status === 404 ? false : `HTTP ${r.status}`;
+  } catch (e) {
+    return errorText(e);
   }
 }

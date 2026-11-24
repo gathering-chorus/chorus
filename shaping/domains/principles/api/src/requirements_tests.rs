@@ -355,3 +355,16 @@ fn negative_proof_a_listed_path_the_door_does_not_serve_is_refused() {
         assert_ne!(code, 200, "{wrong} answered 200; the discovery check could not catch a wrong listing");
     }
 }
+
+/// #5034 NEGATIVE PROOF: the discovery answers GET only. Any other method on `/` is not
+/// the discovery (a write to the root must never answer 200 with the door's listing).
+#[test]
+fn negative_proof_only_get_reads_the_discovery() {
+    let store = Mem(Mutex::new(BTreeMap::new()));
+    let public = ctx(&store);
+    for method in ["POST", "PUT", "PATCH", "DELETE"] {
+        let (code, out) = crate::route(&public, method, "/", None, "{}");
+        assert_ne!(code, 200, "{method} / answered 200: {out}");
+        assert_ne!(out["kind"], "Discovery", "{method} / answered the discovery: {out}");
+    }
+}

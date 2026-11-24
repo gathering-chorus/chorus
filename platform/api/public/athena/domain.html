@@ -73,18 +73,20 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
     // #5034 — the design doc link. The row holds either a Document row's name ("document-<name>")
     // or a file name under designing/docs. The page linked "/<value>", which answered 404 for
     // both. A Document row gives its own address (docHref); a value with neither gets words.
-    const dd = String(e.hasDesignDoc || '');
-    let ddLink = '';
-    if (/^document-/.test(dd)) {
-      const doc = await fetchJSON(`/knowledge/documents/${encodeURIComponent(dd.replace(/^document-/, ''))}`).catch(() => null);
-      const href = doc && doc.data && doc.data.docHref;
-      ddLink = href ? `<a class="edge" href="${esc(href)}">${esc(doc.data.docTitle || dd)}</a>`
-        : `${esc(dd)} <span class="empty">&mdash; the model holds no document by that name</span>`;
-    } else if (/^[\w.-]+\.html$/.test(dd)) {
-      ddLink = `<a class="edge" href="/designing/docs/${esc(dd)}">${esc(dd)}</a>`;
-    } else if (dd) {
-      ddLink = `${esc(dd)} <span class="empty">&mdash; not a document name or a design file</span>`;
-    }
+    // The edge is many-valued and may arrive with an IRI prefix (product.html reads it the same
+    // way); every address goes through basePath so it stays inside the mount.
+    const inMount = h => (typeof window.basePath === 'function' ? window.basePath(h) : h);
+    const designDocs = asArray(e.hasDesignDoc).map(v => String(v).split('#').pop().replace(/^chorus:/, '')).filter(Boolean);
+    const ddLink = (await Promise.all(designDocs.map(async dd => {
+      if (/^document-/.test(dd)) {
+        const env = await fetchJSON(`/knowledge/documents/${encodeURIComponent(dd.replace(/^document-/, ''))}`).catch(() => null);
+        const doc = env && (Array.isArray(env.data) ? env.data[0] : env.data);
+        return doc && doc.docHref ? `<a class="edge" href="${esc(inMount(doc.docHref))}">${esc(doc.docTitle || dd)}</a>`
+          : `${esc(dd)} <span class="empty">&mdash; the model holds no document by that name</span>`;
+      }
+      if (/^[\w.-]+\.html$/.test(dd)) return `<a class="edge" href="${esc(inMount('/designing/docs/' + dd))}">${esc(dd)}</a>`;
+      return `${esc(dd)} <span class="empty">&mdash; not a document name or a design file</span>`;
+    }))).join('<br>');
 
     main.innerHTML = `
 <div class="promise"><strong>purpose:</strong> ${esc(e.purpose || '')}</div>
@@ -98,7 +100,7 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
 <details class="fold" open><summary>Description <span class="src">rdfs:comment</span></summary><div class="body"><p>${esc(e.comment || '')}</p></div></details>
 <details class="fold" open><summary>Vocabulary (definesVocabulary) <span class="src">the classes this domain owns &mdash; each is a generated API</span></summary><div class="body">
 ${vocab.length ? `<table><tr><th>Class</th><th>Generated collection</th></tr>${vocabRows}</table>` : '<div class="empty">no vocabulary yet</div>'}</div></details>
-${e.hasDesignDoc ? `<details class="fold" open><summary>Design doc <span class="src">chorus:hasDesignDoc</span></summary><div class="body"><p>${ddLink}</p></div></details>` : ''}
+${ddLink ? `<details class="fold" open><summary>Design doc <span class="src">chorus:hasDesignDoc</span></summary><div class="body"><p>${ddLink}</p></div></details>` : ''}
 <details class="fold" open><summary>Gaps <span class="src">chorus:gaps from the model &middot; gap rows from the graph</span></summary><div class="body">${e.gaps ? `<p>${esc(e.gaps)}</p>` : '<p class="empty">the model names no gap for this domain</p>'}<div id="gaps-facet"></div></div></details>
 <div id="mfold-slot"></div>
 <div id="conf-slot"></div>

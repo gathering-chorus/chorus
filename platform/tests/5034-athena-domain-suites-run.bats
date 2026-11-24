@@ -52,3 +52,19 @@ cargo_wt() { env CARGO_BUILD_JOBS=2 CARGO_TARGET_DIR="$WT/target/$(id -un)" nice
     if (lib.LIVE_DISCOVERY !== false) { console.log("a card run skips the fixture"); process.exit(1); }'
   test "$status" -eq 0 || { echo "$output"; return 1; }
 }
+
+@test "#5034 the specs serve only this tree's athena files; a name that leaves the directory is refused" {
+  cd "$ROOT"
+  # NEGATIVE: ..%2F..%2Fsrc%2Fserver.ts names platform/api/src/server.ts, a file that exists,
+  # so only the directory guard (not the missing-file check) can refuse it
+  test -f platform/api/src/server.ts
+  run node -e '
+    const { ownAthenaFile } = require("./proving/flows/lib/athena-page-5034.cjs");
+    const own = ownAthenaFile("http://localhost:3340/athena/domain.html?d=principles");
+    if (!own || !own.endsWith("/platform/api/public/athena/domain.html")) { console.log("own file not served: " + own); process.exit(1); }
+    for (const u of ["http://localhost:3340/athena/..%2F..%2Fsrc%2Fserver.ts", "http://localhost:3340/athena/%2Fetc%2Fhosts"]) {
+      const got = ownAthenaFile(u);
+      if (got !== null) { console.log("served outside athena: " + u + " -> " + got); process.exit(1); }
+    }'
+  test "$status" -eq 0 || { echo "$output"; return 1; }
+}

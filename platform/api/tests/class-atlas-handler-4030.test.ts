@@ -30,7 +30,9 @@ describe('GET /api/chorus/class-atlas', () => {
   it('answers the atlas from the store, marking storeReachable and cross-domain edges', async () => {
     let asked = '';
     global.fetch = (async (url: string, init: { body: string }) => {
-      asked = url + ' ' + decodeURIComponent(init.body);
+      // #5034 — record the store query only: the served-kinds reads that follow (athena-make's
+      // rows and discovery) now pass an init too, and used to be dropped by a throw on init.body
+      if (url.startsWith('http://store.test')) asked = url + ' ' + decodeURIComponent(init.body);
       return { ok: true, status: 200, json: async () => ({ results: { bindings } }) };
     }) as unknown as typeof fetch;
     process.env.CHORUS_FUSEKI = 'http://store.test/pods';

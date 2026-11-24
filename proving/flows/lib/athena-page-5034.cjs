@@ -19,12 +19,22 @@ const DOMAIN = process.env.ATHENA_DOMAIN || 'principles';
 const PHONE = { width: 390, height: 844 };
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8' };
 
+/**
+ * The file in this tree's athena directory a request URL names, or null. Null for a name that
+ * leaves the directory (an encoded `..`, an absolute path) and for a file the tree does not have.
+ */
+function ownAthenaFile(url) {
+  const name = decodeURIComponent(new URL(url).pathname.split('/athena/')[1] || '');
+  const file = path.join(ATHENA_DIR, name);
+  return file.startsWith(ATHENA_DIR + path.sep) && fs.existsSync(file) ? file : null;
+}
+
 /** Serve /athena/<file> from this tree. A file this tree does not have is a 404, never the live copy. */
 async function serveOwnAthenaFiles(page) {
   await page.route(/\/athena\/[^?#]+\.(html|js|css)(\?.*)?$/, async (route) => {
-    const name = decodeURIComponent(new URL(route.request().url()).pathname.split('/athena/')[1] || '');
-    const file = path.join(ATHENA_DIR, name);
-    if (!file.startsWith(ATHENA_DIR + path.sep) || !fs.existsSync(file)) {
+    const file = ownAthenaFile(route.request().url());
+    if (!file) {
+      const name = new URL(route.request().url()).pathname.split('/athena/')[1] || '';
       return route.fulfill({ status: 404, contentType: 'text/plain', body: `not in this tree: athena/${name}` });
     }
     return route.fulfill({ status: 200, contentType: TYPES[path.extname(file)] || 'application/octet-stream', body: fs.readFileSync(file) });
@@ -181,4 +191,4 @@ async function deadLinks(page, hrefs) {
   return dead;
 }
 
-module.exports = { LIVE_DISCOVERY, ROOT, ATHENA_DIR, BASE, DOMAIN, PHONE, serveOwnAthenaFiles, serveOwnModelView, serveDiscoveryAsLanded, openDomainPage, openModelView, sameOriginLinks, deadLinks, doorTruth };
+module.exports = { LIVE_DISCOVERY, ROOT, ATHENA_DIR, BASE, DOMAIN, PHONE, ownAthenaFile, serveOwnAthenaFiles, serveOwnModelView, serveDiscoveryAsLanded, openDomainPage, openModelView, sameOriginLinks, deadLinks, doorTruth };

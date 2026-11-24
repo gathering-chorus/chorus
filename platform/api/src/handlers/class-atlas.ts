@@ -6,6 +6,7 @@
  * the query walks definesVocabulary, not a list in this file.
  */
 import type { Request, Response } from 'express';
+import { generatedApis, routeOwl, servedKinds, type FetchLike } from './owl-generated-apis';
 
 export interface SparqlTerm { type: string; value: string; datatype?: string }
 export interface SparqlBinding {
@@ -297,38 +298,54 @@ SELECT ?product ?domain ?class ?prop ?min ?max ?dt ?rc ?parent ?inValue ?orClass
 } }`;
 
 /**
- * #4053 — ask athena-make what it actually serves, and how many rows each
- * collection holds. Never throws: an unreachable athena-make returns [], which
- * annotateServed reads as "nothing confirmed served" — the fail-closed
- * direction. Counts are fetched in parallel and a failed count is simply
- * absent, so could-not-ask stays distinguishable from asked-and-empty.
+ * #4053 — ask what is actually served, and how many rows each collection holds.
+ * Never throws: an unreachable athena-make returns [], which annotateServed reads
+ * as "nothing confirmed served" — the fail-closed direction. Counts are fetched in
+ * parallel and a failed count is simply absent, so could-not-ask stays
+ * distinguishable from asked-and-empty.
+ *
+ * #5034 — this was a second reader of athena-make's discovery, so a kind served by
+ * a domain's own generated API (Principle) read as not served. It now reads the ONE
+ * merged discovery (servedKinds: athena-make's entries plus each generated API's),
+ * and counts each collection at the path discovery names, sent to the upstream
+ * routeOwl gives for it — athena-make, or the domain's own API — exactly as the
+ * /owl proxy would. `ownPort` is this server's port (a bind on it is never used).
  */
-export async function fetchServed(base: string): Promise<ServedInfo[]> {
+export async function fetchServed(base: string, ownPort: number, fetchImpl: FetchLike = fetch): Promise<ServedInfo[]> {
   try {
-    const r = await fetch(base + '/');
-    if (!r.ok) return [];
-    const disco = (await r.json()) as { primitives?: Array<{ kind?: string; collection?: string }> };
-    const rows = (disco.primitives ?? []).filter((p) => p.kind && p.collection) as Array<{ kind: string; collection: string }>;
-    return await Promise.all(rows.map(async (p): Promise<ServedInfo> => {
-      try {
-        // #4531 — the door counts a collection only when asked.
-        const c = await fetch(base + p.collection.replace(/^\/v1/, '') + '?limit=1&count=true');
-        if (!c.ok) return { kind: p.kind, collection: p.collection };
-        const body = (await c.json()) as { count?: number };
-        return typeof body.count === 'number'
-          ? { kind: p.kind, collection: p.collection, count: body.count }
-          : { kind: p.kind, collection: p.collection };
-      } catch {
-        return { kind: p.kind, collection: p.collection };
-      }
-    }));
+    const apis = await generatedApis(base, fetchImpl, ownPort);
+    const served = await servedKinds(apis, base, fetchImpl);
+    if (typeof served === 'string') return [];
+    const rows = served.primitives.flatMap((p): ServedInfo[] =>
+      typeof p.kind === 'string' && p.kind && typeof p.collection === 'string' && p.collection
+        ? [{ kind: p.kind, collection: p.collection }]
+        : []);
+    // #4531 — the door counts a collection only when asked.
+    return await Promise.all(rows.map((p) =>
+      withCount(p, routeOwl(`${p.collection}?limit=1&count=true`, apis, base).target, fetchImpl)));
   } catch {
     return [];
   }
 }
 
+/** The row with its collection's count when the upstream gives one; the bare row otherwise. */
+async function withCount(p: ServedInfo, url: string, fetchImpl: FetchLike): Promise<ServedInfo> {
+  try {
+    const c = await fetchImpl(url);
+    if (!c.ok) return p;
+    const body = (await c.json()) as { count?: unknown } | null;
+    return typeof body?.count === 'number' ? { ...p, count: body.count } : p;
+  } catch {
+    return p;
+  }
+}
+
+/** The port that took the request; chorus-api's configured port when the socket does not say. */
+const ownPortOf = (req: { socket?: { localPort?: number } }): number =>
+  req.socket?.localPort ?? Number.parseInt(process.env.CHORUS_API_PORT || '3340', 10);
+
 export function classAtlasHandler() {
-  return async (_req: Request, res: Response): Promise<void> => {
+  return async (req: Request, res: Response): Promise<void> => {
     const endpoint = (process.env.CHORUS_FUSEKI || 'http://localhost:3030/pods') + '/query';
     try {
       const r = await fetch(endpoint, {
@@ -353,7 +370,7 @@ export function classAtlasHandler() {
       // #4053 — the atlas answers DECLARED (the pen) and SERVED (athena-make)
       // in one payload, so a green verb becomes falsifiable on the page.
       const makeBase = process.env.OWL_API_URL || 'http://localhost:3360';
-      const served = await fetchServed(makeBase);
+      const served = await fetchServed(makeBase, ownPortOf(req));
       res.json({
         storeReachable: true,
         graph: 'urn:chorus:ontology',

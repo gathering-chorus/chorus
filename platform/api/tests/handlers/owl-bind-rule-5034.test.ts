@@ -311,10 +311,134 @@ describe('#5034 — a stale map is never served silently', () => {
   test('no map yet → no generated API, said once until a read succeeds', async () => {
     up = false;
     expect((await generatedApis(OWL, read, 3340, T0)).size).toBe(0);
-    expect((await generatedApis(OWL, read, 3340, T0 + 1_000)).size).toBe(0);
+    // a second read attempt, past the failure window: still the one line
+    expect((await generatedApis(OWL, read, 3340, T0 + 6_000)).size).toBe(0);
     expect(logged).toEqual(['[owl-proxy] athena-make unreadable, no map yet, no generated API is used (connect ECONNREFUSED)']);
     up = true;
-    expect((await generatedApis(OWL, read, 3340, T0 + 2_000)).size).toBe(1);
+    expect((await generatedApis(OWL, read, 3340, T0 + 12_000)).size).toBe(1);
     expect(logged).toHaveLength(1);
+  });
+});
+
+describe('#5034 — a failed map read is remembered for five seconds', () => {
+  const OWL = 'http://athena-make.test';
+  const T0 = 1_700_000_000_000;
+  let up = true;
+  /** how many times the Domain listing was asked for: one per read attempt */
+  let attempts = 0;
+  const read = (url: string): Promise<Response> => {
+    if (url.endsWith('/domains')) attempts += 1;
+    if (!up) return Promise.reject(new Error('connect ECONNREFUSED'));
+    const data = url.endsWith('/domains')
+      ? [{ name: 'gardens', hasProperty: ['property-gardens-server-bind'] }]
+      : [...PROD_RULE, bindRow('127.0.0.1:3393')];
+    return Promise.resolve(new Response(JSON.stringify({ data }), { status: 200 }));
+  };
+
+  beforeEach(() => {
+    up = true;
+    attempts = 0;
+    resetGeneratedApisCache();
+  });
+
+  test('with no map: many requests inside the window make one read attempt; after the window, a second', async () => {
+    up = false;
+    for (const ms of [0, 1, 500, 2_000, 4_999]) {
+      expect((await generatedApis(OWL, read, 3340, T0 + ms)).size).toBe(0);
+    }
+    expect(attempts).toBe(1);
+    await generatedApis(OWL, read, 3340, T0 + 5_000);
+    expect(attempts).toBe(2);
+  });
+
+  test('with a stale map: requests inside the window reuse it without a read, and the age line is one per attempt', async () => {
+    await generatedApis(OWL, read, 3340, T0);
+    up = false;
+    for (const ms of [61_000, 61_500, 63_000, 65_999]) {
+      expect((await generatedApis(OWL, read, 3340, T0 + ms)).get('gardens')).toBe('127.0.0.1:3393');
+    }
+    expect(attempts).toBe(2); // the first read, and one failed attempt
+    expect(logged).toEqual(['[owl-proxy] athena-make unreadable, serving the map read 61 s ago (connect ECONNREFUSED)']);
+    await generatedApis(OWL, read, 3340, T0 + 66_000);
+    expect(attempts).toBe(3);
+    expect(logged).toHaveLength(2);
+    expect(logged[1]).toContain('read 66 s ago');
+  });
+
+  test('NEGATIVE: once athena-make answers, the next attempt after the window succeeds and replaces the map — success is not held back', async () => {
+    up = false;
+    expect((await generatedApis(OWL, read, 3340, T0)).size).toBe(0);
+    up = true;
+    // inside the window the remembered failure still answers: no read is made
+    expect((await generatedApis(OWL, read, 3340, T0 + 4_000)).size).toBe(0);
+    expect(attempts).toBe(1);
+    // the first request past the window reads, and the map is there at once
+    expect((await generatedApis(OWL, read, 3340, T0 + 5_000)).get('gardens')).toBe('127.0.0.1:3393');
+    expect(attempts).toBe(2);
+    // and a success clears the failure: a fresh map is served from the cache, with no further read
+    expect((await generatedApis(OWL, read, 3340, T0 + 5_001)).size).toBe(1);
+    expect(attempts).toBe(2);
+  });
+});
+
+describe('#5034 — the map read follows every page of a listing', () => {
+  const OWL = 'http://athena-make.test';
+  const T0 = 1_700_000_000_000;
+  /** the envelope shape athena-make really answers: data, and links.next when there is more */
+  const page = (data: unknown[], next?: string) =>
+    Promise.resolve(new Response(JSON.stringify({ data, links: next ? { next } : {} }), { status: 200 }));
+  const filler = (n: number) => Array.from({ length: n }, (_, i) => ({ name: `other-${i}`, hasProperty: [] }));
+
+  beforeEach(() => {
+    resetGeneratedApisCache();
+  });
+
+  test('a Domain row on the second page and a rule row on the second Property page are both read', async () => {
+    const asked: string[] = [];
+    const read = (url: string): Promise<Response> => {
+      asked.push(url);
+      if (url === `${OWL}/domains`) return page(filler(100), '/v1/domains/domains?cursor=100&limit=100');
+      if (url === `${OWL}/v1/domains/domains?cursor=100&limit=100`) {
+        return page([{ name: 'gardens', hasProperty: ['property-gardens-server-bind'] }]);
+      }
+      if (url === `${OWL}/properties/properties?limit=2000`) {
+        return page([hostsRow('127.0.0.1'), bindRow('127.0.0.1:3393')], '/v1/properties/properties?cursor=2&limit=2000');
+      }
+      if (url === `${OWL}/v1/properties/properties?cursor=2&limit=2000`) return page([portsRow('1024-65535')]);
+      return Promise.resolve(new Response('{}', { status: 404 }));
+    };
+    expect([...(await generatedApis(OWL, read, 3340, T0))]).toEqual([['gardens', '127.0.0.1:3393']]);
+    expect(asked).toContain(`${OWL}/v1/domains/domains?cursor=100&limit=100`);
+    expect(logged).toEqual([]);
+  });
+
+  test('NEGATIVE: the same listings with the second pages unread would have no gardens and no rule — one page alone is refused', async () => {
+    // the first pages only, with no next link: what a reader that did not page would see
+    const read = (url: string): Promise<Response> =>
+      url.endsWith('/domains') ? page(filler(100)) : page([hostsRow('127.0.0.1'), bindRow('127.0.0.1:3393')]);
+    expect((await generatedApis(OWL, read, 3340, T0)).size).toBe(0);
+    expect(logged.join('\n')).toContain('no owl.proxy.port_range row');
+  });
+
+  test('NEGATIVE: a listing that never ends is a failed read, said loudly — not a short map', async () => {
+    let pages = 0;
+    const read = (url: string): Promise<Response> => {
+      if (url.includes('/properties/')) return page([...PROD_RULE, bindRow('127.0.0.1:3393')]);
+      pages += 1;
+      return page([{ name: 'gardens', hasProperty: ['property-gardens-server-bind'] }], `/v1/domains/domains?cursor=${pages}`);
+    };
+    expect((await generatedApis(OWL, read, 3340, T0)).size).toBe(0);
+    expect(pages).toBe(20);
+    expect(logged).toEqual(['[owl-proxy] athena-make unreadable, no map yet, no generated API is used (athena-make /domains did not end within 20 pages)']);
+  });
+
+  test('a page that answers non-200 partway fails the whole read', async () => {
+    const read = (url: string): Promise<Response> => {
+      if (url === `${OWL}/domains`) return page(filler(100), '/v1/domains/domains?cursor=100&limit=100');
+      if (url.includes('cursor=100')) return Promise.resolve(new Response('{}', { status: 503 }));
+      return page([...PROD_RULE, bindRow('127.0.0.1:3393')]);
+    };
+    expect((await generatedApis(OWL, read, 3340, T0)).size).toBe(0);
+    expect(logged[0]).toContain('athena-make answered HTTP 503');
   });
 });

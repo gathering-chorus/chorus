@@ -31,17 +31,12 @@ test.describe(`#5034 every link on the ${DOMAIN} domain pages leads somewhere`, 
     expect(dead, `dead links on the ops view:\n${dead.join('\n')}`).toEqual([]);
   });
 
-  test('the model view serves every class the domain declares, with a card per instance', async ({ page }) => {
-    await openModelView(page);
-    const unserved = await page.evaluate(() => [...document.querySelectorAll('[data-mf="instances"] .mfnote, [data-mf="instances"] .mferr, .mfold > .mferr')]
-      .map((n) => `${n.previousElementSibling?.tagName === 'H3' ? n.previousElementSibling.textContent + ': ' : ''}${n.textContent.trim().slice(0, 80)}`));
-    expect(unserved, `the model view could not list instances:\n${unserved.join('\n')}`).toEqual([]);
-    expect(await page.locator('a.mfcard').count(), 'no instance card was drawn').toBeGreaterThan(0);
-  });
-
+  // Whether the model view says the right thing about each class (served or not, a card per
+  // row) is the true-data suite's question (athena-domain-true-5034). Here: every link drawn.
   test('the model view has no dead link, instance cards included', async ({ page }) => {
     await openModelView(page);
     const links = await sameOriginLinks(page);
+    expect(links.length, 'the model view drew no links at all').toBeGreaterThan(5);
     const dead = await deadLinks(page, links);
     expect(dead, `dead links on the model view:\n${dead.join('\n')}`).toEqual([]);
   });
