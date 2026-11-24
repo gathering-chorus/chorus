@@ -19,6 +19,17 @@ per domain, with {domain} filled in.
               is complete only when it has none); any other check at its baseline.
   full run    a domain check runs over every domain it applies to (every Domain row when
               appliesTo is unset); the summed count holds at the row's baseline.
+
+#5033: a one-domain run can leave the whole-system checks out, so a rule can hold a complete
+domain at zero without repeating them.
+  --own         with --domain X: only the checks that are about X. A spec naming {domain}
+                holds at 0; a row whose appliesTo names X holds at its own baseline. Rows
+                with neither are left out and counted. A row whose check itself runs an own
+                lint (policy-validate ... --own) is never run here, so it cannot run itself. The rules
+                are always the whole set: the store, or POLICY_OWN_ROWS in tests. POLICIES_JSON
+                is not read, because a caller may hand it one gate's rows (the counts page does).
+  --violations  print one line per violation of a failing check ("<policy>: <violation>") and
+                nothing else, so a command check can count them. The exit codes are the same.
 Exit 0 = every check at or below its baseline; 1 = a check above it; 2 = a check
 could not run, or the policies could not be read. A check that did not run is never
 counted as passing (#3734).
@@ -75,8 +86,8 @@ def all_domains():
     return names
 
 
-def load_policies():
-    path = os.environ.get("POLICIES_JSON")
+def load_policies(own=False):
+    path = os.environ.get("POLICY_OWN_ROWS" if own else "POLICIES_JSON")
     try:
         if path:
             body = json.load(open(path))
@@ -159,7 +170,8 @@ def write_prom(measured, gate, runtime=False, domain=None):
     os.replace(tmp, os.path.join(d, name))
 
 
-USAGE = "usage: policy-validate [--gate arch|data|quality|code|product|hook] [--domain <name>] [--runtime] [--prom]"
+USAGE = ("usage: policy-validate [--gate arch|data|quality|code|product|hook] [--domain <name> [--own]] "
+         "[--violations] [--runtime] [--prom]")
 KINDS = {"sparql": count_sparql, "command": count_command, "test": count_test, "runtime": count_command}
 
 
@@ -175,7 +187,8 @@ def measure(kind, spec, domains):
 
 def main(argv):
     prom, runtime = "--prom" in argv, "--runtime" in argv
-    args = [a for a in argv if a not in ("--prom", "--runtime")]
+    own, quiet = "--own" in argv, "--violations" in argv
+    args = [a for a in argv if a not in ("--prom", "--runtime", "--own", "--violations")]
     opts = {}
     while args:
         if args[0] not in ("--gate", "--domain") or len(args) < 2:
@@ -186,10 +199,17 @@ def main(argv):
     if domain is not None and not DOMAIN_NAME.match(domain):
         print(f"policy-validate: not a domain name: {domain!r}", file=sys.stderr)
         return 2
+    if own and domain is None:
+        print("policy-validate: --own needs --domain <name>\n" + USAGE, file=sys.stderr)
+        return 2
+    if own and prom:
+        # its series would carry the same names and labels as the full one-domain lint's
+        print("policy-validate: --own does not write --prom; the full one-domain lint does\n" + USAGE, file=sys.stderr)
+        return 2
     try:
-        rows = load_policies()
+        rows = load_policies(own)
     except Broken as e:
-        print(f"policy-validate: {e}")
+        print(f"policy-validate: {e}", file=sys.stderr if quiet else sys.stdout)
         return 2
     # one scratch folder per run, for counters that answer every domain in one pass (the
     # SHACL one); a full run asks them to (#5020)
@@ -200,15 +220,18 @@ def main(argv):
     else:
         os.environ.pop("POLICY_RUN_ALL_DOMAINS", None)
     try:
-        return run(rows, gate, domain, prom, runtime)
+        return run(rows, gate, domain, prom, runtime, own, quiet)
     finally:
         shutil.rmtree(run_dir, ignore_errors=True)
 
 
-def run(rows, gate, domain, prom, runtime):
+def run(rows, gate, domain, prom, runtime, own=False, quiet=False):
     every = None  # every Domain row, read once, only when a full run has a domain check
-    ran = failed = broken = 0
+    ran = failed = broken = left_out = 0
     measured = []
+    # --violations: only violation lines reach stdout; what could not run goes to stderr
+    say = (lambda *_: None) if quiet else print
+    cannot = (lambda m: print(m, file=sys.stderr)) if quiet else print
     for r in sorted(rows, key=lambda r: r.get("name", "")):
         kind, name = r.get("checkKind"), r.get("name", "?")
         if not kind or r.get("status") == "retired" or (gate and r.get("gate") != gate):
@@ -217,22 +240,28 @@ def run(rows, gate, domain, prom, runtime):
             scope = applies_to(r)
         except Broken as e:
             broken += 1
-            print(f"BROKEN {name}: {e}")
+            cannot(f"BROKEN {name}: {e}")
             continue
         if domain is not None and scope and domain not in scope:
             continue
         if (kind == "runtime") != runtime:
             if kind == "runtime":
-                print(f"SKIP {name} runtime: borg-prove runs it after the land")
+                say(f"SKIP {name} runtime: borg-prove runs it after the land")
             continue
         spec = r.get("checkSpec", "")
         per_domain = "{domain}" in spec
+        if own:
+            if "policy-validate" in spec and "--own" in spec:
+                continue  # a rule built on this lint (it runs an own lint): never run from inside one
+            if not per_domain and not scope:
+                left_out += 1
+                continue
         try:
             # the door serves integers as strings ("2"); a check with no baseline cannot gate
             base = int(r["baseline"])
         except (KeyError, TypeError, ValueError):
             broken += 1
-            print(f"BROKEN {name}: no baseline")
+            cannot(f"BROKEN {name}: no baseline")
             continue
         if domain is not None and per_domain:
             base = 0  # one domain's lint: complete only at none
@@ -250,30 +279,36 @@ def run(rows, gate, domain, prom, runtime):
             found = measure(kind, spec, targets)
         except KeyError:
             broken += 1
-            print(f"BROKEN {name}: unknown check kind {kind}")
+            cannot(f"BROKEN {name}: unknown check kind {kind}")
             continue
         except (Broken, subprocess.TimeoutExpired) as e:
             broken += 1
-            print(f"BROKEN {name}: {e}")
+            cannot(f"BROKEN {name}: {e}")
             continue
         n = len(found)
         ran += 1
         measured.append((name, r.get("gate", ""), n, base))
         if n > base:
             failed += 1
-            print(f"FAIL {name} {n} > {base} ({r.get('gate', '')})")
-            if domain is not None:
-                print(f"  rule: {r.get('label') or name}")
+            say(f"FAIL {name} {n} > {base} ({r.get('gate', '')})")
+            if quiet:
+                for v in found:
+                    print(f"{name}: {v}")
+            # a one-domain lint lists what broke; so does a full run for a row attached to
+            # named domains, so its red says which domain (#5033)
+            if domain is not None or scope:
+                say(f"  rule: {r.get('label') or name}")
                 for v in found[:10]:
-                    print(f"  - {v}")
+                    say(f"  - {v}")
                 if n > 10:
-                    print(f"  - ... {n - 10} more")
+                    say(f"  - ... {n - 10} more")
         else:
-            print(f"PASS {name} {n} <= {base}")
-    print(f"policy-validate: {ran} checks, {failed} above baseline, {broken} could not run"
-          + (f" (gate {gate})" if gate else "") + (f" (domain {domain})" if domain else ""))
+            say(f"PASS {name} {n} <= {base}")
+    where = f" (domain {domain}" + (f", own checks only: {left_out} whole-system left out" if own else "") + ")" if domain else ""
+    say(f"policy-validate: {ran} checks, {failed} above baseline, {broken} could not run"
+        + (f" (gate {gate})" if gate else "") + where)
     if domain is not None and ran == 0 and not broken:
-        print(f"policy-validate: no check applies to {domain}; an empty lint is not a pass")
+        cannot(f"policy-validate: no check applies to {domain}; an empty lint is not a pass")
         return 2
     if prom and not broken:
         write_prom(measured, "_".join(x for x in (gate, domain and f"domain_{domain}") if x) or None, runtime, domain)

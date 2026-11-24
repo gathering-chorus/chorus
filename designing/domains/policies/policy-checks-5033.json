@@ -1,0 +1,14 @@
+[
+  {
+    "name": "complete-domain-stays-complete",
+    "gate": "quality",
+    "label": "A complete domain stays complete",
+    "comment": "A domain that has reached zero on its own checks stays at zero. The domains this rule holds are the ones its appliesTo names; adding a domain is an edit to this row. For each named domain the check runs that domain's own lint (policy-validate --domain <name> --own) and every violation it prints is one violation here. Jeff 2026-11-21: principles is the first complete domain; 2026-11-23: finish principles (#5033).",
+    "status": "ratchet",
+    "baseline": "0",
+    "checkKind": "command",
+    "checkSpec": "p=platform/scripts/policy-validate; [ -x \"$p\" ] || p=\"$CHORUS_HOME/$p\"; \"$p\" --domain {domain} --own --violations",
+    "violationFixture": "platform/tests/5033-complete-domain-stays-complete.bats",
+    "appliesTo": ["principles"]
+  }
+]
