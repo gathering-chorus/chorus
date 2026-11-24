@@ -108,9 +108,10 @@ fn in_werk(path: &str) -> bool {
 /// how far it got), then the range asked for (agy: StartLine/EndLine; Claude: offset/limit).
 pub fn read_range(input: &serde_json::Value, response: Option<&serde_json::Value>) -> Option<(usize, usize)> {
     let num = |v: Option<&serde_json::Value>| v.and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))).map(|n| n as usize);
-    if let Some(file) = response.and_then(|r| r.get("file")) {
+    // a result with no line count (a re-read Claude Code answers "file unchanged") falls
+    // through to the range asked for: that is the range the session already holds
+    if let Some((file, n)) = response.and_then(|r| r.get("file")).and_then(|f| num(f.get("numLines")).map(|n| (f, n))) {
         let start = num(file.get("startLine")).unwrap_or(1).max(1);
-        let n = num(file.get("numLines"))?;
         return Some((start, start + n.max(1) - 1));
     }
     if let (Some(s), Some(e)) = (num(input.get("StartLine")), num(input.get("EndLine"))) {
@@ -384,6 +385,14 @@ mod read_code_first_5027 {
         assert_eq!(read_range(&json!({"AbsolutePath": "x", "StartLine": 10, "EndLine": 40}), None), Some((10, 40)));
         assert_eq!(read_range(&json!({"file_path": "x", "offset": 100, "limit": 50}), None), Some((100, 149)));
         assert_eq!(first_unread(&[(1, 1153)], 1815), Some(1154));
+        // the boundary: every line but the last is still unread at the last line
+        assert_eq!(first_unread(&[(1, 1814)], 1815), Some(1815));
+        assert_eq!(first_unread(&[(1, 1815)], 1815), None);
+        // Silas 11-24: after a hooks restart a re-read can come back "file unchanged" with no
+        // line count; the range asked for is what the session holds, so it counts
+        let unchanged = json!({"type": "file_unchanged", "file": {"filePath": "x"}});
+        assert_eq!(read_range(&json!({"file_path": "x"}), Some(&unchanged)), Some((1, 2000)));
+        assert_eq!(read_range(&json!({"file_path": "x", "offset": 40, "limit": 10}), Some(&unchanged)), Some((40, 49)));
         assert_eq!(first_unread(&[(1, 1153), (1154, 1816)], 1815), None);
     }
     #[test]
