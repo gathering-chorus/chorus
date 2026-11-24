@@ -67,7 +67,8 @@ PY
   echo "$output" | grep -q '^FAIL complete-domain-stays-complete 1 > 0 (quality)' || { echo "$output"; return 1; }
   # the summed per-domain row is still inside its own baseline: only the new row caught it
   echo "$output" | grep -q '^PASS per-domain 1 <= 99' || { echo "$output"; return 1; }
-  run "$PV" --domain x
+  # the full run's own output names the rule and the domain that broke it (code review, run 1)
+  echo "$output" | grep -q '  rule: A complete domain stays complete' || { echo "$output"; return 1; }
   echo "$output" | grep -q '  - x: per-domain: x: x row broken' || { echo "$output"; return 1; }
 }
 
@@ -88,10 +89,42 @@ PY
 }
 
 @test "AC2 NEGATIVE: an inner run that cannot measure is BROKEN, exit 2, never a pass" {
-  policies x "exit 7"
-  run "$PV"
+  policies x ": {domain}; exit 7"
+  # the quality gate runs only the row (per-domain is a data-gate row), so exit 2 is the row's own
+  run "$PV" --gate quality
   test "$status" -eq 2 || { echo "$output"; return 1; }
   echo "$output" | grep -q '^BROKEN complete-domain-stays-complete' || { echo "$output"; return 1; }
+  # it is the inner check that broke, said in the row's reason, not an empty inner lint
+  echo "$output" | grep -q 'BROKEN per-domain: exit 7' || { echo "$output"; return 1; }
+  if echo "$output" | grep -q 'an empty lint'; then echo "$output"; return 1; fi
+  echo "$output" | grep -q '0 checks, 0 above baseline, 1 could not run (gate quality)' || { echo "$output"; return 1; }
+}
+
+@test "After the land: the row script's dry run plans one ADD carrying appliesTo, then reads SAME once the door holds it" {
+  ROWS="$REPO/platform/scripts/policy-rows-5033"
+  echo '{"policies": []}' > "$T/live.json"
+  LAND_LIVE_JSON="$T/live.json" run python3 "$ROWS"
+  test "$status" -eq 0 || { echo "$output"; return 1; }
+  echo "$output" | grep -q '^ADD    policies/complete-domain-stays-complete' || { echo "$output"; return 1; }
+  echo "$output" | grep -q '"appliesTo": \["principles"\]' || { echo "$output"; return 1; }
+  echo "$output" | grep -q 'door writes 1 add, 0 change, 0 delete; 0 same — nothing written (dry run)' || { echo "$output"; return 1; }
+  # the door serves the link back as chorus:principles; the plan must read that as the same row
+  python3 - "$PLAN" "$T/live.json" <<'PY'
+import json, sys
+r = dict(json.load(open(sys.argv[1]))[0]); r["appliesTo"] = ["chorus:principles"]
+json.dump({"policies": [r]}, open(sys.argv[2], "w"))
+PY
+  LAND_LIVE_JSON="$T/live.json" run python3 "$ROWS"
+  test "$status" -eq 0 || { echo "$output"; return 1; }
+  echo "$output" | grep -q '^SAME   policies/complete-domain-stays-complete' || { echo "$output"; return 1; }
+  # NEGATIVE: a row attached to a different domain is a CHANGE, never SAME
+  python3 - "$PLAN" "$T/live.json" <<'PY'
+import json, sys
+r = dict(json.load(open(sys.argv[1]))[0]); r["appliesTo"] = ["chorus:policies"]
+json.dump({"policies": [r]}, open(sys.argv[2], "w"))
+PY
+  LAND_LIVE_JSON="$T/live.json" run python3 "$ROWS"
+  echo "$output" | grep -q '^CHANGE policies/complete-domain-stays-complete' || { echo "$output"; return 1; }
 }
 
 @test "AC2 NEGATIVE: the inner run never runs the row itself, attached or not" {

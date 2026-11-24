@@ -202,6 +202,10 @@ def main(argv):
     if own and domain is None:
         print("policy-validate: --own needs --domain <name>\n" + USAGE, file=sys.stderr)
         return 2
+    if own and prom:
+        # its series would carry the same names and labels as the full one-domain lint's
+        print("policy-validate: --own does not write --prom; the full one-domain lint does\n" + USAGE, file=sys.stderr)
+        return 2
     try:
         rows = load_policies(own)
     except Broken as e:
@@ -290,7 +294,9 @@ def run(rows, gate, domain, prom, runtime, own=False, quiet=False):
             if quiet:
                 for v in found:
                     print(f"{name}: {v}")
-            if domain is not None:
+            # a one-domain lint lists what broke; so does a full run for a row attached to
+            # named domains, so its red says which domain (#5033)
+            if domain is not None or scope:
                 say(f"  rule: {r.get('label') or name}")
                 for v in found[:10]:
                     say(f"  - {v}")
@@ -305,8 +311,7 @@ def run(rows, gate, domain, prom, runtime, own=False, quiet=False):
         cannot(f"policy-validate: no check applies to {domain}; an empty lint is not a pass")
         return 2
     if prom and not broken:
-        # an own lint's file is its own, so it never overwrites the full one-domain lint's (#5033)
-        write_prom(measured, "_".join(x for x in (gate, domain and f"domain_{domain}", own and "own") if x) or None, runtime, domain)
+        write_prom(measured, "_".join(x for x in (gate, domain and f"domain_{domain}") if x) or None, runtime, domain)
     return 2 if broken else 1 if failed else 0
 
 

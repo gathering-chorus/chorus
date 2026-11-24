@@ -408,6 +408,8 @@ async fn pre_tool_use(
     // gets no PostToolUse, and so gets no start: nothing is left open.
     if hook_obs::classify_decision(&result) == "allow" {
         emit_call_event(&input, "started", None).await;
+        // #5033 AC4 — the werks an allowed shell command can reach, as they are before it runs
+        before_shell(&state, &input).await;
     }
     Json(result)
 }
@@ -588,6 +590,12 @@ async fn pre_tool_use_inner(
 
     match tool.as_str() {
         "Bash" => {
+            // #5033 AC4 — a session that changed an unread werk file through the shell
+            // runs nothing more until it restores it (read_code_first's debt gate).
+            _last_module = "read_code_first".into(); let r = read_code_first_gate(state, input).await;
+            if r.stdout.is_some() || r.exit_code != 0 {
+                return (_last_module.clone(), r);
+            }
             // sparql guard
             _last_module = "sparql_guard".into(); let r = hooks::sparql_guard::check(input).await;
             if r.stderr.is_some() {
@@ -827,6 +835,14 @@ async fn pre_tool_use_inner(
                 return (_last_module.clone(), r);
             }
         }
+        // #5033 AC4 (Wren 10:15 A) — a session that owes a restore cannot commit the blind
+        // change either: the commit tools pass the same debt gate.
+        "mcp__chorus-api__werk-commit" | "mcp__chorus-api__werk-push" | "mcp__chorus-api__chorus-werk" => {
+            _last_module = "read_code_first".into(); let r = read_code_first_gate(state, input).await;
+            if r.stdout.is_some() || r.exit_code != 0 {
+                return (_last_module.clone(), r);
+            }
+        }
         // #2925 AC3: refuse daemon-runtime card-adds without a Deploy Probe section.
         "mcp__chorus-api__clearing-card" => {
             _last_module = "card_add_probe".into();
@@ -852,6 +868,21 @@ async fn read_code_first_gate(state: &AppState, input: &HookInput) -> HookRespon
     tokio::task::spawn_blocking(move || hooks::read_code_first::check(&input, &ledger)).await
         .unwrap_or_else(|e| HookResponse::deny(&types::permission_deny_json(&format!(
             "read-the-code-first: the check did not finish ({e}), so the edit is not let through"))))
+}
+
+/// #5033 AC4 — snapshot the werks an allowed shell command can reach (blocking git, off the
+/// async worker). The dispatch's own step, so a test drives the same path.
+async fn before_shell(state: &AppState, input: &HookInput) {
+    if input.tool_name_str() != "Bash" { return; }
+    let (i, l) = (input.clone(), state.read_ledger.clone());
+    let _ = tokio::task::spawn_blocking(move || hooks::read_code_first::shell_pre(&i, &l)).await;
+}
+
+/// #5033 AC4 — after a shell command: what it changed in those werks, against the snapshot.
+async fn after_shell(state: &AppState, input: &HookInput) {
+    if input.tool_name_str() != "Bash" { return; }
+    let (i, l) = (input.clone(), state.read_ledger.clone());
+    let _ = tokio::task::spawn_blocking(move || hooks::read_code_first::shell_post(&i, &l)).await;
 }
 
 /// PostToolUse — telemetry + handoff logger + observer
@@ -882,6 +913,8 @@ async fn post_tool_use(
     // #5027 — the lines a Read returned, and the files a write touched, before any
     // early return below: the read_code_first gate counts them on the next edit.
     hooks::read_code_first::record_result(&input, &state.read_ledger);
+    // #5033 AC4 — what the shell command changed in the werks it could reach
+    after_shell(&state, &input).await;
 
     // Stop-on-error gate (#1841) — block next action when previous errored
     let r = hooks::stop_on_error::check(&input, &state).await;
@@ -1869,6 +1902,50 @@ mod emit_guard_dispatch_3945 {
         hooks::read_code_first::prime_policy(&hooks::read_code_first::door(), row);
         let (module, _) = pre_tool_use_inner(&state, &edit).await;
         assert_ne!(module, "read_code_first", "a file read in full must get past the gate");
+    }
+
+    /// #5033 AC4 (Wren 10:15 G) — through the real dispatch: a shell command that changes an
+    /// unread werk file (pre_tool_use_inner allows it, before_shell, the command,
+    /// after_shell) makes the next Edit, the next shell command and a werk-commit refuse, by
+    /// read_code_first; a restore passes, and after it the edit gets past the gate.
+    #[tokio::test]
+    async fn read_code_first_shell_dispatch_refuses_after_a_blind_shell_change_5033() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("chorus-werk/kade-5033");
+        std::fs::create_dir_all(&root).unwrap();
+        let root = root.to_string_lossy().to_string();
+        std::fs::write(format!("{root}/a.rs"), "fn a() {}\nfn b() {}\n").unwrap();
+        let sh = |cmd: &str| assert!(std::process::Command::new("/bin/sh").arg("-c").arg(cmd).current_dir(&root).status().unwrap().success(), "{cmd}");
+        sh("git init -q && git -c user.email=t@t -c user.name=t add -A && git -c user.email=t@t -c user.name=t commit -qm base");
+        let state = crate::state::AppState::new();
+        let sid = format!("rcf-5033-dispatch-{}", uuid::Uuid::now_v7());
+        let call = |tool: &str, ti: serde_json::Value, id: &str| HookInput {
+            tool_name: Some(tool.into()), tool_input: Some(ti), session_id: Some(sid.clone()),
+            cwd: Some(root.clone()), tool_use_id: Some(id.into()), ..Default::default()
+        };
+        let row = hooks::read_code_first::Policy { label: "Read the code first".into(), comment: "rule".into() };
+        hooks::read_code_first::prime_policy(&hooks::read_code_first::door(), row);
+        let sed = call("Bash", json!({"command": "sed -i '' 's/a()/z()/' a.rs"}), "t1");
+        let (module, _) = pre_tool_use_inner(&state, &sed).await;
+        assert_ne!(module, "read_code_first", "no debt yet: the command runs");
+        before_shell(&state, &sed).await;
+        sh("sed -i '' 's/a()/z()/' a.rs");
+        after_shell(&state, &sed).await;
+        for (tool, ti) in [("Edit", json!({"file_path": format!("{root}/a.rs"), "old_string": "fn b() {}", "new_string": "fn b() { }"})),
+                           ("Bash", json!({"command": "ls"})),
+                           ("mcp__chorus-api__werk-commit", json!({"card": 5033, "summary": "x"}))] {
+            let (module, resp) = pre_tool_use_inner(&state, &call(tool, ti, "t2")).await;
+            assert_eq!(module, "read_code_first", "{tool} must be refused while the debt stands");
+            assert!(resp.stdout.unwrap_or_default().contains("restore --source="), "{tool}: the refusal names the restore");
+        }
+        let restore = call("Bash", json!({"command": format!("git -C {root} restore -- a.rs")}), "t3");
+        let (module, _) = pre_tool_use_inner(&state, &restore).await;
+        assert_ne!(module, "read_code_first", "the restore itself is never refused");
+        sh("git restore -- a.rs");
+        let edit = call("Edit", json!({"file_path": format!("{root}/a.rs"), "old_string": "fn b() {}", "new_string": "fn b() { }"}), "t4");
+        let (_, resp) = pre_tool_use_inner(&state, &edit).await;
+        // past the debt: what is left is #5027's own read rule (this session never read a.rs)
+        assert!(resp.stdout.unwrap_or_default().contains("has not been read in full"));
     }
 
     /// An ordinary nudge still flows — the guard is not a mute on coordination.

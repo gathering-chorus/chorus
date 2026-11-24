@@ -108,16 +108,22 @@ ONLY_X='[ "{domain}" = x ] && echo "x row broken" || true'
   if echo "$output" | grep -q 'nested'; then echo "$output"; return 1; fi
 }
 
-@test "AC1: --prom on an own lint writes its own file, not the full one-domain lint's" {
+@test "AC1 NEGATIVE: --own with --prom is refused and writes nothing; the full one-domain lint's file is untouched" {
   policies "per-domain||0|: {domain}"
-  run "$PV" --domain y --own --prom
+  run "$PV" --domain y --prom
   test "$status" -eq 0 || { echo "$output"; return 1; }
-  test -s "$T/prom/chorus_policy_domain_y_own.prom" || { ls "$T/prom"; return 1; }
-  test ! -e "$T/prom/chorus_policy_domain_y.prom" || { ls "$T/prom"; return 1; }
+  before="$(cat "$T/prom/chorus_policy_domain_y.prom")"
+  run "$PV" --domain y --own --prom
+  test "$status" -eq 2 || { echo "$output"; return 1; }
+  test "$(cat "$T/prom/chorus_policy_domain_y.prom")" = "$before" || return 1
+  test "$(ls "$T/prom" | wc -l | tr -d ' ')" -eq 1 || { ls "$T/prom"; return 1; }
 }
 
 @test "AC1 NEGATIVE: under --violations a check that cannot run is exit 2, never an empty pass" {
-  policies "per-domain||0|exit 7"
-  run "$PV" --domain x --own --violations
-  test "$status" -eq 2 || { echo "$output"; return 1; }
+  policies "per-domain||0|: {domain}; exit 7"
+  # stdout and stderr apart: what could not run is said on stderr, and stdout stays empty
+  rc=0; out="$("$PV" --domain x --own --violations 2>"$T/err")" || rc=$?
+  test "$rc" -eq 2 || { echo "rc=$rc out=$out"; cat "$T/err"; return 1; }
+  test -z "$out" || { echo "$out"; return 1; }
+  grep -q '^BROKEN per-domain' "$T/err" || { cat "$T/err"; return 1; }
 }

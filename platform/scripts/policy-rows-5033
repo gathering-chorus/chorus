@@ -36,6 +36,9 @@ def plan(_live):
 
 land.policy_rows = policy_rows  # write_ttl reads the plan through this name
 land.plan = plan
+# The door takes a Domain link as the bare name and serves it back as chorus:<name>; the
+# compare must read those as the same value, or a second run plans a CHANGE for ever.
+land.EDGE_PREFIXES = land.EDGE_PREFIXES + ("chorus:",)
 
 if __name__ == "__main__":
     sys.exit(land.main(sys.argv[1:]))

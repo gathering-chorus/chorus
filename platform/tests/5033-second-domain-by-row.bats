@@ -32,8 +32,8 @@ PY
 
 ONLY_Y='[ "{domain}" = y ] && echo "y row broken" || true'
 
-# prints every line of $1 that hard-codes a domain list for this rule: a quoted Domain name
-# from the door's list ($2..) outside a comment or docstring example
+# prints every line of $1 that holds one of the quoted Domain names $2.. (a hard-coded list
+# for this rule). Limit, named on the card: only the names passed are looked for.
 names_a_domain() {
   f="$1"; shift
   for d in "$@"; do grep -nE "[\"']${d}[\"']" "$f" || true; done
