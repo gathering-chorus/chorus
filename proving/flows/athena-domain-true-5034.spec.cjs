@@ -10,6 +10,10 @@
  *   - "Not served" appears only for a class no door lists;
  *   - the ops view's Vocabulary row links to the collection that holds those rows.
  *
+ * Page code this suite reads the drawn answer of, named so a change to any of it runs this suite:
+ *   platform/api/public/athena/model-fold.js (served / not served, one card per row),
+ *   platform/api/public/athena/domain.html (the Vocabulary fold).
+ *
  * RUN: ATHENA_URL=http://localhost:3340 npx playwright test proving/flows/athena-domain-true-5034.spec.cjs
  */
 const { test, expect } = require('@playwright/test');

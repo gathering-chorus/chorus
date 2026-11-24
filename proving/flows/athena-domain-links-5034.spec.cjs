@@ -11,6 +11,10 @@
  * The model view is one template that answers 200 for any name, so those links are opened
  * and read, never trusted on status (lib/athena-page-5034.cjs deadLinkReason).
  *
+ * Page code this suite opens and reads, named so a change to any of it runs this suite:
+ *   platform/api/public/athena/domain.html, platform/api/public/athena/domains-view.html,
+ *   platform/api/public/athena/model-fold.js (the instance cards and their links).
+ *
  * RUN: ATHENA_URL=http://localhost:3340 npx playwright test proving/flows/athena-domain-links-5034.spec.cjs
  */
 const { test, expect } = require('@playwright/test');
