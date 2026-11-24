@@ -19,7 +19,7 @@ cargo_hooks() { env CARGO_BUILD_JOBS=2 CARGO_TARGET_DIR="$HK/target/$(id -un)" n
 fn_body() { awk -v f="fn $2(" 'index($0,f){p=1} p{print} p&&/^}/{exit}' "$1"; }
 # in the Write/Edit arm, read_code_first runs right after canonical_write_guard and before every other gate
 first_after_canonical() {
-  fn_body "$1" pre_tool_use_inner | awk '/canonical_write_guard::check/{c=NR} /read_code_first_gate\(state, input\)/{if(c && !r)r=NR} /bounded_surfaces/{if(!b)b=NR} END{exit !(c && r && r>c && r<b)}'
+  fn_body "$1" pre_tool_use_inner | awk '/canonical_write_guard::check/{c=NR} /read_code_first_gate\(state, input\)/{if(!r)r=NR} /bounded_surfaces/{if(!b)b=NR} END{exit !(c && r && r>c && r<b)}'
 }
 # PostToolUse records what a Read returned
 records_reads() { fn_body "$1" post_tool_use | grep -q 'read_code_first::record_result(&input'; }

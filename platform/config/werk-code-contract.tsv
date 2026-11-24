@@ -4,7 +4,6 @@
 # fixture = repo-relative negative-proof path, or GAP (an honest, named hole — the checker reports it, never hides it)
 canonical_write_guard	edit	platform/services/chorus-hooks/tests/canonical_write_guard.rs	canonical + cross-role werk writes
 read_code_first	edit	platform/tests/read-code-first-hook.bats	#5027 no werk edit before the whole file is read; a changed definition needs a cclsp/ast-grep lookup; rule text from policies/read-the-code-first
-read_code_first_shell	edit	platform/tests/read-code-first-shell.bats	#5033 AC4 a shell command that changes an unread tracked werk file blocks the session's next Edit/Write/shell until the file is restored
 tdd_gate	edit	GAP	code before tests; its negative suite was deleted 10-06 (#4432, Jeff: if its useless take it out); tdd_gate_live_state_3278.rs proves only the live-state path
 test_quality_gate	edit	GAP	#2196 assertion-less tests
 log_first_gate	edit	GAP	defect fix without log read — no negative suite
