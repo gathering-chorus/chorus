@@ -35,7 +35,8 @@
 //! heredoc, git apply) are not gated; a session whose context was compacted still counts
 //! its earlier reads; a return-type change alone is not a changed definition (AC4 names
 //! name and parameters); an edit to a file the session wrote itself is not re-checked
-//! against later outside changes.
+//! against later outside changes; a MultiEdit is gated by this rule only, not by the
+//! Edit arm's other gates (that predates #5027; Wren 11-24: name it, do not merge).
 
 use crate::types::{permission_deny_json, HookInput, HookResponse};
 use serde_json::Value;
@@ -130,8 +131,11 @@ impl Ledger {
 
     /// Load a session's file once, the first time this daemon is asked about it.
     fn load(&self, sid: &str) {
-        let first = self.loaded.lock().map(|mut l| l.insert(sid.to_string())).unwrap_or(false);
-        let Some(f) = self.file(sid).filter(|_| first) else { return };
+        // the replay happens under the lock, so a concurrent call waits for the whole
+        // ledger instead of reading half of it (code review, run 4)
+        let Ok(mut loaded) = self.loaded.lock() else { return };
+        if !loaded.insert(sid.to_string()) { return; }
+        let Some(f) = self.file(sid) else { return };
         let Ok(text) = std::fs::read_to_string(&f) else { return };
         for e in text.lines().filter_map(|l| serde_json::from_str::<Entry>(l).ok()) {
             match e {
@@ -140,6 +144,7 @@ impl Ledger {
                 Entry::Lookup { text } => self.add_lookup(sid, &text),
             }
         }
+        drop(loaded);
     }
 
     /// A read of lines first..=last of `path`, stamped with the file as it is now.
@@ -258,7 +263,7 @@ fn lang(path: &str, content: &str) -> String {
     let first = content.lines().next().unwrap_or("");
     if !first.starts_with("#!") { return String::new(); }
     if first.contains("python") { "py" } else if first.contains("node") { "js" }
-    else if first.contains("bash") || first.contains("sh") { "sh" } else { "" }.to_string()
+    else if first.ends_with("/sh") || first.ends_with(" sh") || first.contains("bash") || first.contains("zsh") { "sh" } else { "" }.to_string()
 }
 
 /// Every definition in a piece of source, as (name, signature): name and parameters for
@@ -271,7 +276,7 @@ pub fn definitions(src: &str, ext: &str) -> Vec<(String, String)> {
     static SH: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     let re = match ext {
         "rs" => RS.get_or_init(|| regex::Regex::new(r#"(?m)^[ \t]*(?:pub(?:\([^)]*\))?\s+)?(?:(?:async|const|unsafe)\s+)*(?:extern\s+"[^"]*"\s+)?(?:fn|struct|enum|trait|type|union)\s+([A-Za-z_]\w*)"#).unwrap()),
-        "ts" | "tsx" | "js" | "mjs" | "cjs" => TS.get_or_init(|| regex::Regex::new(r"(?m)^[ \t]*(?:export\s+)?(?:default\s+)?(?:async\s+)?(?:function\s*\*?\s*([A-Za-z_$][\w$]*)|(?:class|interface|enum|type)\s+([A-Za-z_$][\w$]*)|(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?\()").unwrap()),
+        "ts" | "tsx" | "js" | "mjs" | "cjs" => TS.get_or_init(|| regex::Regex::new(r"(?m)^[ \t]*(?:export\s+)?(?:default\s+)?(?:async\s+)?(?:function\s*\*?\s*([A-Za-z_$][\w$]*)|(?:class|interface|enum|type)\s+([A-Za-z_$][\w$]*)|(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?\([^)]*\)\s*(?::[^=]*)?=>)").unwrap()),
         "py" => PY.get_or_init(|| regex::Regex::new(r"(?m)^[ \t]*(?:async\s+)?(?:def|class)\s+([A-Za-z_]\w*)").unwrap()),
         "sh" | "bash" | "bats" => SH.get_or_init(|| regex::Regex::new(r"(?m)^[ \t]*(?:function\s+)?([A-Za-z_][\w-]*)\s*\(\)").unwrap()),
         _ => return Vec::new(),
@@ -336,6 +341,9 @@ fn after_edit(tool: &str, input: &Value, current: &str) -> String {
         if e.get("replace_all").and_then(Value::as_bool) == Some(true) { text.replace(&old, &new) } else { text.replacen(&old, &new, 1) }
     };
     match tool {
+        // a patch (codex / opencode apply_patch) arrives as a Write carrying only its hunk:
+        // its old and new lines are the edit, not the whole file (code review, run 4)
+        "Write" if input.get("operation").and_then(Value::as_str) == Some("update") => apply(current.to_string(), input),
         "Write" => s(input, "content"),
         "MultiEdit" => input.get("edits").and_then(Value::as_array).map_or(current.to_string(),
             |edits| edits.iter().fold(current.to_string(), apply)),
@@ -403,11 +411,15 @@ pub fn lookup_text(tool: &str, input: &Value) -> String {
     }
     if tool != "Bash" { return String::new(); }
     static SG: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let re = SG.get_or_init(|| regex::Regex::new(r"(?:^|[;&|(]\s*)ast-grep\s+([^;&|]*)").unwrap());
+    // ast-grep as a command (line start, or after ; & | ( ), to the end of its line: a
+    // quoted pattern may hold ; or |. Flags are kept (--pattern=x names x); paths are not
+    // (Wren I: a path must not count as a lookup of the words in it).
+    let re = SG.get_or_init(|| regex::Regex::new(r"(?m)(?:^|[;&|(])\s*ast-grep\s+(.*)$").unwrap());
     let cmd = input.get("command").and_then(Value::as_str).unwrap_or("");
+    // a word that is a path (a slash, and nothing a pattern holds) is not the lookup
+    let path_like = |t: &str| t.contains('/') && !t.contains(['(', '$', '\'', '"']);
     re.captures_iter(cmd).filter_map(|c| c.get(1))
-        .flat_map(|m| m.as_str().split_whitespace())
-        .filter(|t| !t.contains('/') && !t.starts_with('-'))
+        .flat_map(|m| m.as_str().split_whitespace()).filter(|t| !path_like(t))
         .collect::<Vec<_>>().join(" ")
 }
 
@@ -436,6 +448,9 @@ pub fn record_result(input: &HookInput, ledger: &Ledger) {
 }
 
 static POLICY_CACHE: Mutex<Option<(String, Policy, Instant)>> = Mutex::new(None);
+/// When the door last failed to answer, per door: no new GET for DOOR_DOWN_TTL.
+static DOOR_DOWN: Mutex<Option<(String, Instant)>> = Mutex::new(None);
+const DOOR_DOWN_TTL: Duration = Duration::from_secs(30);
 
 /// The door the gate reads the row from.
 pub fn door() -> String {
@@ -457,6 +472,14 @@ pub fn fetch_policy(base: &str, last_good: Option<&Path>) -> Result<Policy, Stri
         if let Some((b, p, at)) = c.as_ref() { if b == base && at.elapsed() < POLICY_TTL { return Ok(p.clone()); } }
     }
     let url = format!("{base}/v1/policies/policies/{POLICY}");
+    let remembered = || POLICY_CACHE.lock().ok().and_then(|c| c.as_ref().filter(|(b, _, _)| b == base).map(|(_, p, _)| p.clone()))
+        .or_else(|| last_good.and_then(|f| std::fs::read_to_string(f).ok()).and_then(|t| serde_json::from_str(&t).ok()));
+    // a door that just failed is not asked again for a while: each edit would wait 1.5 s
+    let down = DOOR_DOWN.lock().ok().and_then(|d| d.as_ref().filter(|(b, at)| b == base && at.elapsed() < DOOR_DOWN_TTL).map(|_| ()));
+    if down.is_some() {
+        return remembered().ok_or_else(|| format!("GET {url}: the door did not answer, and no row was ever read"));
+    }
+    let mark_down = || { if let Ok(mut d) = DOOR_DOWN.lock() { *d = Some((base.to_string(), Instant::now())); } };
     match ureq::get(&url).timeout(Duration::from_millis(1500)).call() {
         Ok(resp) => {
             let body: Value = resp.into_json().map_err(|e| format!("GET {url}: {e}"))?;
@@ -465,11 +488,12 @@ pub fn fetch_policy(base: &str, last_good: Option<&Path>) -> Result<Policy, Stri
             if let (Some(f), Ok(text)) = (last_good, serde_json::to_string(&p)) { let _ = std::fs::write(f, text); }
             Ok(p)
         }
-        Err(ureq::Error::Status(code, _)) => Err(format!("GET {url}: the door answered {code}")),
+        // the row is gone (or the request is wrong): the door's own answer, it refuses
+        Err(ureq::Error::Status(code, _)) if code < 500 => Err(format!("GET {url}: the door answered {code}")),
+        // a 5xx or no answer is the door failing, not the row: the last good row stands
         Err(e) => {
-            let remembered = POLICY_CACHE.lock().ok().and_then(|c| c.as_ref().filter(|(b, _, _)| b == base).map(|(_, p, _)| p.clone()))
-                .or_else(|| last_good.and_then(|f| std::fs::read_to_string(f).ok()).and_then(|t| serde_json::from_str(&t).ok()));
-            remembered.ok_or_else(|| format!("GET {url}: {e}, and no row was ever read"))
+            mark_down();
+            remembered().ok_or_else(|| format!("GET {url}: {e}, and no row was ever read"))
         }
     }
 }
@@ -617,6 +641,24 @@ mod read_code_first_5027 {
         assert!(denied(&decide(&input("MultiEdit", "s1", me), &l, policy())).is_none());
     }
     #[test]
+    fn read_code_first_lsp_ast_negative_a_multiedit_that_renames_is_checked() {
+        let (_d, f) = werk_file(SRC);
+        let l = Ledger::default();
+        l.record_read("s1", &f, 1, 5);
+        let me = json!({"file_path": f, "edits": [{"old_string": "    x\n", "new_string": "    x + 1\n"}, {"old_string": "fn b()", "new_string": "fn c()"}]});
+        let msg = denied(&decide(&input("MultiEdit", "s1", me), &l, policy())).expect("a renaming MultiEdit must be checked");
+        assert!(msg.contains("definition of b "), "{msg}");
+    }
+    #[test]
+    fn read_code_first_lsp_ast_a_patch_write_is_applied_as_an_edit() {
+        // codex / opencode: apply_patch becomes a Write with operation=update and only the hunk
+        let (_d, f) = werk_file(SRC);
+        let l = Ledger::default();
+        l.record_read("s1", &f, 1, 5);
+        let w = json!({"file_path": f, "operation": "update", "content": "    x + 1\n", "old_string": "    x\n", "new_string": "    x + 1\n"});
+        assert!(denied(&decide(&input("Write", "s1", w), &l, policy())).is_none(), "a body hunk is not a rename of everything");
+    }
+    #[test]
     fn read_code_first_hook_no_session_id_is_not_checked() {
         let (_d, f) = werk_file(SRC);
         let mut i = input("Edit", "", body_edit(&f));
@@ -724,6 +766,20 @@ mod read_code_first_5027 {
         // NEGATIVE: the door answers that the row is gone: refuse, the last good row does not apply
         let gone = door_answering("404 Not Found", r#"{"error":"not found"}"#);
         assert!(fetch_policy(&gone, Some(&keep)).unwrap_err().contains("404"));
+        // a door that errors (5xx) is failing, not answering: the last good row stands
+        let sick = door_answering("503 Service Unavailable", "{}");
+        assert_eq!(fetch_policy(&sick, Some(&keep)).unwrap().comment, "rule text");
+    }
+    #[test]
+    fn read_code_first_reads_policy_a_down_door_is_not_asked_again_at_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let keep = dir.path().join(POLICY_FILE);
+        std::fs::write(&keep, r#"{"label":"L","comment":"kept"}"#).unwrap();
+        let dead = "http://127.0.0.1:9"; // discard port: nothing answers
+        assert_eq!(fetch_policy(dead, Some(&keep)).unwrap().comment, "kept");
+        let t = Instant::now();
+        assert_eq!(fetch_policy(dead, Some(&keep)).unwrap().comment, "kept");
+        assert!(t.elapsed() < Duration::from_millis(200), "the second call must not wait on the door");
     }
     #[test]
     fn read_code_first_reads_policy_body_shape() {
@@ -743,6 +799,10 @@ mod read_code_first_5027 {
         assert_eq!(lang("/w/Makefile", "all:\n"), "");
         assert_eq!(lang("/w/run-finished", "#!/usr/bin/env bash\n"), "sh");
         assert_eq!(lang("/w/land-5027-rows", "#!/usr/bin/env python3\n"), "py");
+        assert_eq!(lang("/w/x", "#!/bin/sh\n"), "sh");
+        assert_eq!(lang("/w/x", "#!/usr/bin/env fish-shell-thing\n"), "");
+        // a const holding a parenthesised value is not a function (code review, run 4)
+        assert!(changed_symbols("const total = (a + b);\n", "const total = (a + b + c);\n", "ts").is_empty());
     }
     #[test]
     fn read_code_first_lsp_ast_renames_and_parameter_changes_are_found() {
@@ -789,8 +849,12 @@ mod read_code_first_5027 {
         // Wren I: a path or an unrelated word in the call does not name the symbol
         assert_eq!(lookup_text("mcp__cclsp__find_references", &json!({"file_path": "/run/x.rs", "symbol_name": "load"})), "load");
         assert_eq!(lookup_text("Bash", &json!({"command": "echo ast-grep load"})), "");
-        assert_eq!(lookup_text("Bash", &json!({"command": "cd src && ast-grep -p 'load($$$)' platform/x"})), "'load($$$)'");
+        assert_eq!(lookup_text("Bash", &json!({"command": "cd src && ast-grep -p 'load($$$)' platform/x"})), "-p 'load($$$)'");
         assert_eq!(lookup_text("Read", &json!({"file_path": "/a/load.rs"})), "");
+        // an ast-grep MCP call counts by its pattern; a shell one keeps --pattern= values
+        assert_eq!(lookup_text("mcp__ast-grep__find_code", &json!({"pattern": "load($$$)", "project_folder": "/w"})), "load($$$)");
+        assert!(lookup_text("Bash", &json!({"command": "ast-grep run --pattern=load src"})).contains("--pattern=load"));
+        assert!(lookup_text("Bash", &json!({"command": "ls\nast-grep -p 'load($A); x' ."})).contains("load($A); x"));
         let l = Ledger::default();
         record_lookup(&input("mcp__cclsp__find_references", "s1", json!({"file_path": "/run/x.rs", "symbol_name": "load"})), &l);
         assert!(!l.looked_up("s1", "run") && l.looked_up("s1", "load"));

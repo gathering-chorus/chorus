@@ -28,7 +28,7 @@ PY
 @test "#5027 the refusal carries the row's words; an absent or empty row refuses and says so" {
   run cargo_hooks --lib read_code_first_reads_policy
   test "$status" -eq 0 || { echo "$output" | tail -20; return 1; }
-  echo "$output" | grep -qE "test result: ok. [1-9][0-9]* passed" || { echo "$output" | tail -5; return 1; }
+  echo "$output" | grep -q "test result: ok. 5 passed" || { echo "$output" | tail -5; return 1; }
 }
 
 @test "#5027 the hook's code holds no copy of the rule" {
