@@ -8,6 +8,8 @@
  * fixtures/5017-live-parity.json, both doors read from the pod in the same minute).
  * NEGATIVE: a path that only starts with "principles" stays on athena-make; one changed
  * field fails the comparison, naming its row.
+ * #5034 — where principles-api listens is read from athena-make's rows (the Domain's
+ * server.bind Property), not from an env var: the `make` stub serves those rows.
  */
 import { createServer, IncomingMessage, Server } from 'http';
 import type { AddressInfo } from 'net';
@@ -15,6 +17,7 @@ import type { Express } from 'express';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import app from '../../src/server';
+import { resetGeneratedApisCache } from '../../src/handlers/owl-generated-apis';
 
 type Row = Record<string, unknown>;
 type Answer = { status: number; body: { from?: string; url?: string; error?: string; data?: Row[] } };
@@ -28,11 +31,27 @@ let make: Server;
 let principles: Server;
 /** what the principles stub serves as its collection; null = echo the URL */
 let served: Row[] | null = null;
+/** #5034 — the bind the graph rows name for principles (host:port); the proxy reads it from them */
+let bind = '';
 
 function stub(name: 'make' | 'principles'): Server {
   return createServer((req: IncomingMessage, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     if (name === 'principles' && served) return res.end(JSON.stringify({ data: served }));
+    // #5034 — athena-make's rows say where principles-api listens, in their live shapes:
+    // the Domain row lists `property-<name>`, the Property row is named `<name>`
+    if (name === 'make' && req.url === '/domains') {
+      return res.end(JSON.stringify({ data: [{ name: 'principles', hasProperty: ['property-principles-server-bind'] }] }));
+    }
+    if (name === 'make' && req.url?.startsWith('/properties/properties')) {
+      return res.end(JSON.stringify({ data: [
+        { name: 'principles-server-bind', propertyKey: 'server.bind', propertyValue: bind },
+        // #5034 — the bind rule's two rows, found by propertyKey: without them no bind is used.
+        // The range starts at 1 because the "down" test below names port 1.
+        { name: 'prop-owl-proxy-allowed-hosts', propertyKey: 'owl.proxy.allowed_hosts', propertyValue: '127.0.0.1' },
+        { name: 'prop-owl-proxy-port-range', propertyKey: 'owl.proxy.port_range', propertyValue: '1-65535' },
+      ] }));
+    }
     res.end(JSON.stringify({ from: name, url: req.url }));
   });
 }
@@ -44,14 +63,15 @@ beforeAll(async () => {
   make = stub('make');
   principles = stub('principles');
   await Promise.all([listen(make), listen(principles)]);
-  // the proxy reads both upstreams per request, so setting them after import is honored
+  // the proxy reads its upstream per request, so setting it after import is honored
   process.env.OWL_UPSTREAM = base(make);
-  process.env.PRINCIPLES_UPSTREAM = base(principles);
+  bind = base(principles).replace('http://', '');
+  resetGeneratedApisCache();
 });
 
 afterAll(async () => {
   delete process.env.OWL_UPSTREAM;
-  delete process.env.PRINCIPLES_UPSTREAM;
+  resetGeneratedApisCache();
   await Promise.all([make, principles].map((s) => new Promise<void>((r) => s.close(() => r()))));
 });
 
@@ -85,14 +105,18 @@ describe('#5017 AC2 — /owl/v1/principles/* goes to principles-api', () => {
   });
 
   test('principles-api down → 502 naming principles-api, never athena-make', async () => {
-    const was = process.env.PRINCIPLES_UPSTREAM;
-    process.env.PRINCIPLES_UPSTREAM = 'http://127.0.0.1:1';
+    // #5034 — the rows now name a bind nothing listens on; the map is re-read from them
+    const was = bind;
+    bind = '127.0.0.1:1';
+    resetGeneratedApisCache();
     try {
       const r = await hit(app, '/owl/v1/principles/principles');
       expect(r.status).toBe(502);
       expect(r.body.error).toMatch(/principles-api/);
+      expect(r.body.error).not.toMatch(/athena-make/);
     } finally {
-      process.env.PRINCIPLES_UPSTREAM = was;
+      bind = was;
+      resetGeneratedApisCache();
     }
   });
 });

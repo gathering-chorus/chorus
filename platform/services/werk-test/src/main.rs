@@ -635,7 +635,7 @@ fn step_scope(ctx: &Ctx) -> Result<Option<i32>, String> {
     // #4540 — the types this plan runs; a planned type with no result reads UNMEASURED
     let mut types: Vec<String> = plan.iter().map(|c| werk_test::run_dir::check_type(c.kind).to_string()).collect();
     if werk_test::ui_plan(werk_test::ui_lane_fires(changed) || std::env::var("WERK_TEST_FULL").map(|v| v == "1").unwrap_or(false),
-                          werk_test::ui_files(&rows).len()).is_some() {
+                          werk_test::card_ui_files(&rows, changed, &|f: &str| Path::new(werk).join(f).exists()).len()).is_some() {
         types.push("ui".to_string());
     }
     types.sort();
@@ -975,7 +975,8 @@ fn step_run(ctx: &Ctx, test_type: &str) -> Result<i32, String> {
     }
     // #3920 — the browser lane: registered ui files run as ONE workspace check
     // when the diff touches a ui surface; it is the ui type's step.
-    let ui_set = werk_test::ui_files(&rows);
+    // #5034 AC5 — the card's own new specs play too, not only the registry's
+    let ui_set = werk_test::card_ui_files(&rows, changed, &|f: &str| Path::new(werk).join(f).exists());
     let ui_fired = werk_test::ui_lane_fires(changed)
         || std::env::var("WERK_TEST_FULL").map(|v| v == "1").unwrap_or(false);
     let ui_check = werk_test::ui_plan(ui_fired, ui_set.len()).filter(|_| test_type == "ui");
@@ -1830,10 +1831,7 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
             let cmd = std::env::var("WERK_TEST_PLAYWRIGHT_CMD")
                 .unwrap_or_else(|_| format!("npx --no-install playwright test --reporter=line,{}", werk_test::PLAYWRIGHT_CASE_REPORTER));
             let mut c = Command::new("bash");
-            c.arg("-c").arg(&cmd).current_dir(&root)
-                .env("CHORUS_CONTEXT", "")
-                // #4454 — the specs' own events ride the trace like every other unit's
-                .env("CHORUS_TEST_EVENTS", test_events_path(&root));
+            c.arg("-c").arg(&cmd).current_dir(&root).envs(nightly_ui_env(&root));
             // #4915 — no live default: the specs refuse the live room and, with CLEARING_URL
             // unset, start their own Clearing (#4417). Defaulting it to :3470 made every spec
             // file throw at load, so the whole leg read UNMEASURED each night (11-06).
@@ -3996,6 +3994,28 @@ mod ui_flows_env_4235 {
         // NEGATIVE PROOF: without the pin the own-Clearing fixture refuses to start
         assert!(!super::ui_flows_env("/w/x").iter().any(|(k, v)| *k == "CHORUS_ROOT" && v.is_empty()));
         assert!(env.iter().any(|(k, v)| *k == "CHORUS_CONTEXT" && v.is_empty()));
+    }
+}
+
+/// The nightly ui leg's environment. #4454: the specs' own events ride the trace
+/// like every other unit's. #5034 AC5: WERK_TEST_NIGHTLY tells a spec that stands
+/// in for an unlanded server change before the land (the Athena discovery fixture)
+/// to read the live server instead; a card run never sets it.
+fn nightly_ui_env(root: &str) -> Vec<(&'static str, String)> {
+    vec![
+        ("CHORUS_CONTEXT", String::new()),
+        ("CHORUS_TEST_EVENTS", test_events_path(root)),
+        ("WERK_TEST_NIGHTLY", "1".to_string()),
+    ]
+}
+
+#[cfg(test)]
+mod nightly_ui_env_5034 {
+    #[test]
+    fn the_nightly_says_so_and_a_card_run_does_not() {
+        assert!(super::nightly_ui_env("/w").contains(&("WERK_TEST_NIGHTLY", "1".to_string())));
+        // NEGATIVE PROOF: the card run's env must not carry it, or the fixture never applies
+        assert!(!super::ui_flows_env("/w").iter().any(|(k, _)| *k == "WERK_TEST_NIGHTLY"));
     }
 }
 

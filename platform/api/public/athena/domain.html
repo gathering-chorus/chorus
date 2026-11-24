@@ -59,8 +59,32 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
       ` &rarr; ${esc(d)}`;
 
     const vocab = asArray(e.definesVocabulary).sort();
-    const vocabRows = vocab.map(v =>
-      `<tr><td>${esc(v)}</td><td><a class="edge" href="${OWL}/${esc(v.toLowerCase())}s">:3360/${esc(v.toLowerCase())}s</a></td></tr>`).join('');
+    // #5034 — the link is the collection the model's own discovery names for the class. It was a
+    // guess (lowercase + "s"), which answered 404 for every class served under a domain path.
+    // A class discovery does not name gets words, never a link that leads nowhere.
+    const disc = vocab.length ? await fetchJSON('/').catch(() => null) : null;
+    const collOf = v => ((disc && disc.primitives) || []).find(p => p.kind === v);
+    const vocabRows = vocab.map(v => {
+      const c = collOf(v);
+      return `<tr><td>${esc(v)}</td><td>${c ? `<a class="edge" href="${OWL}${esc(c.collection)}">${esc(c.collection)}</a>`
+        : `<span class="empty">${disc ? 'not served: discovery names no collection for this class' : 'could not read discovery'}</span>`}</td></tr>`;
+    }).join('');
+
+    // #5034 — the design doc link. The row holds either a Document row's name ("document-<name>")
+    // or a file name under designing/docs. The page linked "/<value>", which answered 404 for
+    // both. A Document row gives its own address (docHref); a value with neither gets words.
+    const dd = String(e.hasDesignDoc || '');
+    let ddLink = '';
+    if (/^document-/.test(dd)) {
+      const doc = await fetchJSON(`/knowledge/documents/${encodeURIComponent(dd.replace(/^document-/, ''))}`).catch(() => null);
+      const href = doc && doc.data && doc.data.docHref;
+      ddLink = href ? `<a class="edge" href="${esc(href)}">${esc(doc.data.docTitle || dd)}</a>`
+        : `${esc(dd)} <span class="empty">&mdash; the model holds no document by that name</span>`;
+    } else if (/^[\w.-]+\.html$/.test(dd)) {
+      ddLink = `<a class="edge" href="/designing/docs/${esc(dd)}">${esc(dd)}</a>`;
+    } else if (dd) {
+      ddLink = `${esc(dd)} <span class="empty">&mdash; not a document name or a design file</span>`;
+    }
 
     main.innerHTML = `
 <div class="promise"><strong>purpose:</strong> ${esc(e.purpose || '')}</div>
@@ -74,7 +98,7 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
 <details class="fold" open><summary>Description <span class="src">rdfs:comment</span></summary><div class="body"><p>${esc(e.comment || '')}</p></div></details>
 <details class="fold" open><summary>Vocabulary (definesVocabulary) <span class="src">the classes this domain owns &mdash; each is a generated API</span></summary><div class="body">
 ${vocab.length ? `<table><tr><th>Class</th><th>Generated collection</th></tr>${vocabRows}</table>` : '<div class="empty">no vocabulary yet</div>'}</div></details>
-${e.hasDesignDoc ? `<details class="fold" open><summary>Design doc <span class="src">chorus:hasDesignDoc</span></summary><div class="body"><p><a class="edge" href="/${esc(e.hasDesignDoc)}">${esc(e.hasDesignDoc)}</a></p></div></details>` : ''}
+${e.hasDesignDoc ? `<details class="fold" open><summary>Design doc <span class="src">chorus:hasDesignDoc</span></summary><div class="body"><p>${ddLink}</p></div></details>` : ''}
 <details class="fold" open><summary>Gaps <span class="src">chorus:gaps from the model &middot; gap rows from the graph</span></summary><div class="body">${e.gaps ? `<p>${esc(e.gaps)}</p>` : '<p class="empty">the model names no gap for this domain</p>'}<div id="gaps-facet"></div></div></details>
 <div id="mfold-slot"></div>
 <div id="conf-slot"></div>

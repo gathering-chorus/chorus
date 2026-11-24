@@ -48,6 +48,7 @@ import { readRecords, renderCrawlerValidatePage, validateDir } from './handlers/
 import { loadSensors, renderSensorsSection } from './handlers/sensors-panel';
 import { findRun, buildReadout, renderReadoutText, previousFinished, type NightlyRunRecord } from './handlers/nightly-readout';
 import { fetchLoomAnalytics, LoomCardRow } from './handlers/loom-analytics';
+import { domainsViewStatus, generatedApis, mergeDiscovery, routeOwl } from './handlers/owl-generated-apis'; // #5034
 
 /** Extract a string message from an unknown error. #2463 wave 1: replaces `catch (err: any)` + `err.message`. */
 function errMsg(e: unknown): string {
@@ -422,8 +423,16 @@ CONSTRUCT { ?s ?p ?o } WHERE {
   }
 });
 
-const domainsView = (_req: Request, res: Response) =>
-  res.sendFile(path.join(__dirname, '..', 'public', 'athena', 'domains-view.html'));
+// #5034 — the template is one file for every path, so the STATUS says whether the
+// address is real: 200 the model has it, 404 it does not, 502 the model could not be
+// read to say. The body is the template every time; the page draws its own note.
+const domainsView = async (req: Request, res: Response) => {
+  const status = await domainsViewStatus(
+    req.params.domain, req.params.instance, process.env.OWL_UPSTREAM || 'http://127.0.0.1:3360', fetch,
+    req.socket.localPort ?? PORT, // the port that took this request: a bind on it would be a loop
+  );
+  res.status(status).sendFile(path.join(__dirname, '..', 'public', 'athena', 'domains-view.html'));
+};
 app.get('/domains', domainsView);
 app.get('/domains/:domain', domainsView);
 app.get('/domains/:domain/:instance', domainsView);
@@ -2542,15 +2551,20 @@ app.use('/owl', async (req: Request, res: Response) => {
   }
   // read at request time so tests can stub the upstream after import
   const owlUpstream = process.env.OWL_UPSTREAM || 'http://127.0.0.1:3360';
-  // #5017 — principles is served by its own generated API (athena-gen, :3393) at
-  // /principles/...; athena-make no longer mounts it. The public path stays /owl/v1/principles/.
+  // #5017 — a domain with its own generated API (athena-gen) is served there, at
+  // /<domain>/...; athena-make no longer mounts it. The public path stays /owl/v1/<domain>/.
+  // #5034 — which domains those are is read from the graph (Domain → server.bind
+  // Property), and the discovery document at /owl/ lists what they serve.
   const path = req.originalUrl.replace(/^\/owl/, '');
-  const principles = /^\/v1\/principles(\/|\?|$)/.test(path);
-  const target = principles
-    ? (process.env.PRINCIPLES_UPSTREAM || 'http://127.0.0.1:3393') + path.replace(/^\/v1/, '')
-    : owlUpstream + path;
+  // the port that took this request is this server's own: a bind on it is never used (a loop)
+  const apis = await generatedApis(owlUpstream, fetch, req.socket.localPort ?? PORT);
+  const route = routeOwl(path, apis, owlUpstream);
   try {
-    const r = await fetch(target, {
+    if (route.discovery && req.method === 'GET' && apis.size > 0) {
+      const d = await mergeDiscovery(path, apis, owlUpstream, fetch);
+      return res.status(d.status).type(d.contentType).send(d.body);
+    }
+    const r = await fetch(route.target, {
       headers: { Accept: String(req.headers.accept || 'application/json') },
     });
     res.status(r.status);
@@ -2558,7 +2572,7 @@ app.use('/owl', async (req: Request, res: Response) => {
     if (ct) res.type(ct);
     res.send(Buffer.from(await r.arrayBuffer()));
   } catch {
-    res.status(502).json({ error: `${principles ? 'principles-api' : 'athena-make'} unreachable through the proxy` });
+    res.status(502).json({ error: `${route.upstream} unreachable through the proxy` });
   }
 });
 

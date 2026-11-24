@@ -188,6 +188,17 @@ pub fn route(ctx: &Ctx, method: &str, url: &str, authorization: Option<&str>, bo
     if path == "/health" {
         return (200, json!({ "status": "ok", "product": PRODUCT, "productVersion": CRATE_VERSION, "apiVersion": API_VERSION }));
     }
+    // #5034 — the door lists its own collections in athena-make's discovery shape, each at
+    // the route it answers (model::route_of), so chorus-api's /owl/ merges every generated
+    // door from what the door says, never from a second copy of the naming rule. Root
+    // only: #4757 retired /<product>, and this is not a header.
+    if path == "/" && method == "GET" {
+        let primitives: Vec<Value> = CLASSES
+            .iter()
+            .map(|c| json!({ "kind": c.name, "collection": model::route_of(c), "composed": c.composed }))
+            .collect();
+        return (200, json!({ "apiVersion": API_VERSION, "service": format!("{PRODUCT}-api"), "kind": "Discovery", "count": primitives.len(), "primitives": primitives }));
+    }
     let mut parts: Vec<&str> = path.trim_matches('/').split('/').collect();
     // #4995 — a domain's crate serves /<domain>/<segment>; read it on the one dispatch
     // path below as /<domain>/<domain>/<segment>, so domain and product crates share it

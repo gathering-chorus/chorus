@@ -323,3 +323,35 @@ fn negative_proof_a_non_decimal_is_refused() {
         assert!(got.is_err(), "'{bad}' was accepted");
     }
 }
+
+/// #5034 — the door's discovery lists every class it serves, each at a route that answers.
+#[test]
+fn discovery_lists_every_collection_at_the_route_it_answers() {
+    let store = Mem(Mutex::new(BTreeMap::new()));
+    let public = ctx(&store);
+    let (code, out) = crate::route(&public, "GET", "/", None, "");
+    assert_eq!(code, 200, "{out}");
+    assert_eq!(out["kind"], "Discovery", "{out}");
+    let listed = out["primitives"].as_array().expect("primitives");
+    assert_eq!(listed.len(), CLASSES.len(), "{out}");
+    for c in CLASSES {
+        let p = listed.iter().find(|p| p["kind"] == c.name).unwrap_or_else(|| panic!("{} is not listed: {out}", c.name));
+        let at = p["collection"].as_str().expect("collection");
+        let (code, body) = crate::route(&public, "GET", at, None, "");
+        assert_eq!(code, 200, "{} is listed at {at}, which answers {body}", c.name);
+    }
+}
+
+/// NEGATIVE PROOF: the check above can tell a served route from a wrong one. The proxy's
+/// public path (/v1 + the route) is what a careless listing would say, and the door does
+/// not answer it.
+#[test]
+fn negative_proof_a_listed_path_the_door_does_not_serve_is_refused() {
+    let store = Mem(Mutex::new(BTreeMap::new()));
+    let public = ctx(&store);
+    for c in CLASSES {
+        let wrong = format!("/v1{}", crate::model::route_of(c));
+        let (code, _) = crate::route(&public, "GET", &wrong, None, "");
+        assert_ne!(code, 200, "{wrong} answered 200; the discovery check could not catch a wrong listing");
+    }
+}
