@@ -48,6 +48,7 @@ pub mod nudge_poll;
 pub mod alert_digest;
 pub mod nudge_drain; // #3218 — reliable FIFO drain off messages.db (PreToolUse + Stop)
 pub mod canonical_write_guard;
+pub mod read_code_first; // #5027 — no werk edit before the whole file (and a changed symbol's callers) is read
 pub mod card_add_probe;
 pub mod memory_pressure_guard; // #3625 — refuse Task/Agent fanout under memory pressure
 pub mod reply_delivery; // #3864 — reply.emitted at the Stop hook (delivery correlation)
