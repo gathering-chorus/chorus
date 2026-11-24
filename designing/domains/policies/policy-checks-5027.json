@@ -1,0 +1,8 @@
+[
+  {
+    "name": "read-the-code-first",
+    "gate": "code",
+    "label": "Read the code first",
+    "comment": "No edit or write to an existing file in a card's werk until this session has read the whole file with the Read tool (the lines its reads returned, together, cover the file; a shell read such as cat or sed does not count). An edit that changes a function's name or parameters, or a type's name or header, also needs a lookup of that symbol's callers first (cclsp find_references or find_definition, or an ast-grep search naming it). Jeff 2026-11-21: read the code before changing it (#5027). Enforced at the edit by chorus-hooks read_code_first."
+  }
+]

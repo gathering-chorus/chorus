@@ -442,6 +442,10 @@ async fn pre_tool_use_inner(
         }
     }
 
+    // #5027 — a cclsp / ast-grep lookup is recorded the instant it is asked for, so the
+    // read_code_first gate knows which symbols' callers this session has looked up.
+    hooks::read_code_first::record_lookup(input, &state.read_ledger);
+
     // Session init gate (all tools for Write/Edit/Bash/Read)
     let gate_result = hooks::session_init_gate::check(input, state).await;
     if let Some(ref stdout) = gate_result.stdout {
@@ -680,6 +684,14 @@ async fn pre_tool_use_inner(
             if r.stdout.is_some() || r.exit_code != 0 {
                 return (_last_module.clone(), r);
             }
+            // #5027 — werk-code's first step (Jeff 11-21: "a stop hook as the very first
+            // step of werk-code"): no edit to a werk file the session has not read in full,
+            // and no changed definition without a lookup of its callers. The rule's words
+            // are the policy row read-the-code-first; an unreadable row refuses.
+            _last_module = "read_code_first".into(); let r = read_code_first_gate(state, input).await;
+            if r.stdout.is_some() || r.exit_code != 0 {
+                return (_last_module.clone(), r);
+            }
             // #3424 — bounded surfaces: a NEW werk verb crate or role skill
             // outside the declared set is refused. Widening is legitimate and
             // cheap (edit canonical-surfaces.json in the same change); what
@@ -763,6 +775,13 @@ async fn pre_tool_use_inner(
             // ICD pre-read gate (#1684) — warn on data domain writes without context read
             hooks::icd_pre_read::check(input, state).await;
         }
+        // #5027 (Wren D) — a MultiEdit is gated like an Edit by read_code_first.
+        "MultiEdit" => {
+            _last_module = "read_code_first".into(); let r = read_code_first_gate(state, input).await;
+            if r.stdout.is_some() || r.exit_code != 0 {
+                return (_last_module.clone(), r);
+            }
+        }
         "Read" => {
             _last_module = "sensitive_paths".into(); let r = hooks::sensitive_paths::check(input).await;
             if r.stdout.is_some() {
@@ -826,6 +845,15 @@ async fn pre_tool_use_inner(
     ("none".into(), response)
 }
 
+/// #5027 — the read-the-code-first gate off the async worker: it reads the file, its
+/// session ledger and (at most once a minute) the policy row over HTTP, all blocking.
+async fn read_code_first_gate(state: &AppState, input: &HookInput) -> HookResponse {
+    let (input, ledger) = (input.clone(), state.read_ledger.clone());
+    tokio::task::spawn_blocking(move || hooks::read_code_first::check(&input, &ledger)).await
+        .unwrap_or_else(|e| HookResponse::deny(&types::permission_deny_json(&format!(
+            "read-the-code-first: the check did not finish ({e}), so the edit is not let through"))))
+}
+
 /// PostToolUse — telemetry + handoff logger + observer
 async fn post_tool_use(
     State(state): State<AppState>,
@@ -850,6 +878,10 @@ async fn post_tool_use(
     tokio::spawn(async move {
         hooks::observer::observe(&input_clone_pre, &state_clone_pre).await;
     });
+
+    // #5027 — the lines a Read returned, and the files a write touched, before any
+    // early return below: the read_code_first gate counts them on the next edit.
+    hooks::read_code_first::record_result(&input, &state.read_ledger);
 
     // Stop-on-error gate (#1841) — block next action when previous errored
     let r = hooks::stop_on_error::check(&input, &state).await;
@@ -1800,6 +1832,43 @@ mod emit_guard_dispatch_3945 {
         assert_eq!(module, "emit_guard", "the guard must be the decider, got {module}");
         let out = resp.stdout.unwrap_or_default();
         assert!(out.contains("deny"), "must deny, got: {out}");
+    }
+
+    /// #5027 — the read-the-code-first gate is on the REAL dispatch: an Edit to a werk
+    /// file this session never read is refused by read_code_first; after a Read of the
+    /// whole file (recorded the way post_tool_use records it) the same edit gets past it.
+    #[tokio::test]
+    async fn read_code_first_dispatch_refuses_an_unread_werk_file_5027() {
+        let dir = tempfile::tempdir().unwrap();
+        let werk = dir.path().join("chorus-werk/kade-5027/src");
+        std::fs::create_dir_all(&werk).unwrap();
+        let f = werk.join("x.rs");
+        std::fs::write(&f, "fn a() {}\nfn b() {}\n").unwrap();
+        let fp = f.to_string_lossy().to_string();
+        let state = crate::state::AppState::new();
+        // the ledger is on disk now: a fresh session id per run, so no earlier run's read counts
+        let sid = format!("rcf-5027-dispatch-{}", uuid::Uuid::now_v7());
+        let edit = HookInput {
+            tool_name: Some("Edit".into()),
+            tool_input: Some(json!({"file_path": fp, "old_string": "fn a() {}", "new_string": "fn a() { }"})),
+            session_id: Some(sid.clone()),
+            ..Default::default()
+        };
+        let (module, resp) = pre_tool_use_inner(&state, &edit).await;
+        assert_eq!(module, "read_code_first", "the gate must decide an unread werk edit, got {module}");
+        assert!(resp.stdout.unwrap_or_default().contains("deny"));
+        let read = HookInput {
+            tool_name: Some("Read".into()),
+            tool_input: Some(json!({"file_path": fp})),
+            tool_response: Some(json!({"type": "text", "file": {"startLine": 1, "numLines": 2, "totalLines": 2}})),
+            session_id: Some(sid.clone()),
+            ..Default::default()
+        };
+        hooks::read_code_first::record_result(&read, &state.read_ledger);
+        let row = hooks::read_code_first::Policy { label: "Read the code first".into(), comment: "rule".into() };
+        hooks::read_code_first::prime_policy(&hooks::read_code_first::door(), row);
+        let (module, _) = pre_tool_use_inner(&state, &edit).await;
+        assert_ne!(module, "read_code_first", "a file read in full must get past the gate");
     }
 
     /// An ordinary nudge still flows — the guard is not a mute on coordination.

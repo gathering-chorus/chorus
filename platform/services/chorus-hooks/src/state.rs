@@ -28,6 +28,10 @@ pub struct AppState {
     /// is never silent (the "idle" that isn't). Cleared on Stop (turn ended = truly
     /// idle). std::sync::Mutex so the sync hook paths update it without an async context.
     activity: Arc<std::sync::Mutex<std::collections::HashMap<String, Activity>>>,
+    /// #5027 — what each session has read, written and looked up, recorded live for
+    /// read_code_first (same reason as test_edits: the transcript flushes a turn late),
+    /// and kept on disk so a daemon restart does not lock sessions out.
+    pub read_ledger: Arc<crate::hooks::read_code_first::Ledger>,
 }
 
 /// #3853 — a session's current activity for the heartbeat ticker.
@@ -106,6 +110,9 @@ impl AppState {
             session_cache: SessionCache::new(),
             test_edits: Arc::new(std::sync::Mutex::new(std::collections::HashSet::new())),
             activity: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            // on disk under the daemon's run dir, so a restart keeps every session's reads
+            read_ledger: Arc::new(crate::hooks::read_code_first::Ledger::persistent(
+                PathBuf::from(crate::shared::state_paths::daemon_run_dir()).join("read-ledger"))),
             config: Arc::new(Config {
                 log_dir: repo_root.join("platform/logs"),
                 prefs_file: repo_root.join("jeff-preferences.json"),
