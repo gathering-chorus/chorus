@@ -1,0 +1,41 @@
+#!/usr/bin/env python3
+"""#5033: the complete-domain-stays-complete policy row. DRY RUN unless --apply.
+# @domain: policies
+
+One row from designing/domains/policies/policy-checks-5033.json (it ships in this land, so the
+store and the repo cannot differ). It is NOT named land-5033-rows on purpose: werk-deploy runs
+a land-<card>-rows script as the card's role, only principal-silas has Write on the policies
+graph, and a refused write stops the land. Silas runs this after the land (the card's After
+the land names the command). The door, the runner, the compare, the 403 wait and the exit
+codes are land-4960-rows' own (one implementation): this script only names a different plan.
+Exit 0 = plan printed (or applied); 1 = a write was refused; 2 = the door or the plan could not be read.
+"""
+import importlib.machinery
+import importlib.util
+import json
+import os
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+_loader = importlib.machinery.SourceFileLoader("land4960", os.path.join(HERE, "land-4960-rows"))
+_spec = importlib.util.spec_from_loader("land4960", _loader)
+land = importlib.util.module_from_spec(_spec)
+_loader.exec_module(land)
+
+PLAN = os.path.join(land.ROOT, "designing/domains/policies/policy-checks-5033.json")
+FIELDS = ("label", "comment", "gate", "status", "baseline", "checkKind", "checkSpec", "violationFixture", "appliesTo")
+
+
+def policy_rows():
+    return [("policies", r["name"], {k: r[k] for k in FIELDS}) for r in json.load(open(PLAN))]
+
+
+def plan(_live):
+    return policy_rows()
+
+
+land.policy_rows = policy_rows  # write_ttl reads the plan through this name
+land.plan = plan
+
+if __name__ == "__main__":
+    sys.exit(land.main(sys.argv[1:]))
