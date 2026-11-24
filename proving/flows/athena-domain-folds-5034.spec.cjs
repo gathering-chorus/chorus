@@ -47,7 +47,7 @@ test.describe(`#5034 every fold on the ${DOMAIN} domain page is filled or says w
   test('no fold is loading, unread, unmeasured or unrecorded', async ({ page }) => {
     const { errors } = await openDomainPage(page);
     // the conformance fold runs the domain lint (about 12 s measured); wait for its verdict
-    await page.waitForFunction(() => !/running the domain lint/.test(document.getElementById('conf-slot')?.textContent || ''), null, { timeout: 90_000 });
+    await page.waitForFunction(() => !/running the domain lint/.test(document.getElementById('conf-slot')?.textContent || ''), null, { timeout: 180_000 });   // 90 s was not enough inside the pipeline's test step (run 2, 11-24 17:21)
     await page.waitForSelector('#mfold-slot[data-mfold-ready="1"]', { timeout: 45_000 });
     const folds = await page.locator('details.fold, details.mfwrap').count();
     expect(folds, 'the page drew too few folds to be the domain page').toBeGreaterThan(10);

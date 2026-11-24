@@ -66,10 +66,12 @@ const strings = (v: unknown): string[] => {
 /** `property-principles-server-bind`, an IRI ending in it, or `principles-server-bind` → the last form */
 const propertyName = (v: string): string => (v.split(/[#/]/).pop() ?? '').replace(/^property-/, '');
 
-const rowsOf = (body: unknown): Row[] => {
-  const data = (body as { data?: unknown } | null)?.data;
-  return Array.isArray(data) ? data.filter((r): r is Row => r !== null && typeof r === 'object') : [];
-};
+/** what came back from an upstream is JSON of any shape until it is looked at */
+const isRow = (v: unknown): v is Row => v !== null && typeof v === 'object';
+/** the objects in a list, or null when the value is not a list */
+const rowsIn = (v: unknown): Row[] | null => (Array.isArray(v) ? (v as unknown[]).filter(isRow) : null);
+
+const rowsOf = (body: unknown): Row[] => rowsIn(isRow(body) ? body.data : undefined) ?? [];
 
 /** Which binds this proxy may fetch: the values of the two rule rows. */
 export type BindRule = { hosts: string[]; minPort: number; maxPort: number };
@@ -134,30 +136,45 @@ export function generatedApisFromRows(
   ownPort: number,
 ): { apis: GeneratedApis; skipped: SkippedBind[]; ruleProblem: string | null } {
   const rule = bindRuleFromRows(properties);
-  const ruleProblem = 'missing' in rule ? rule.missing : null;
-  const binds = new Map<string, { row: string; value: string }>();
+  const binds = bindRows(properties);
+  const apis: GeneratedApis = new Map();
+  const skipped: SkippedBind[] = [];
+  for (const d of domains) {
+    if (typeof d.name !== 'string' || !DOMAIN.test(d.name)) continue;
+    const bind = allowedBind(strings(d.hasProperty), binds, (value) => bindRefusal(value, rule, ownPort), skipped);
+    if (bind) apis.set(d.name, bind);
+  }
+  return { apis, skipped, ruleProblem: 'missing' in rule ? rule.missing : null };
+}
+
+type BindRow = { row: string; value: string };
+
+/** Every server.bind Property row, by its name with the `property-` prefix dropped. */
+function bindRows(properties: Row[]): Map<string, BindRow> {
+  const binds = new Map<string, BindRow>();
   for (const p of properties) {
     if (p.propertyKey !== BIND_KEY || typeof p.name !== 'string') continue;
     const value = typeof p.propertyValue === 'string' ? p.propertyValue.trim() : '';
     binds.set(propertyName(p.name), { row: p.name, value });
   }
-  const apis: GeneratedApis = new Map();
-  const skipped: SkippedBind[] = [];
-  for (const d of domains) {
-    if (typeof d.name !== 'string' || !DOMAIN.test(d.name)) continue;
-    for (const named of strings(d.hasProperty)) {
-      const bind = binds.get(propertyName(named));
-      if (!bind) continue;
-      const reason = bindRefusal(bind.value, rule, ownPort);
-      if (reason) {
-        skipped.push({ row: bind.row, reason });
-        continue;
-      }
-      apis.set(d.name, bind.value);
-      break;
-    }
+  return binds;
+}
+
+/** The first bind a Domain row names that the rule allows; each one it refuses is added to `skipped`. */
+function allowedBind(
+  named: string[],
+  binds: Map<string, BindRow>,
+  refusal: (value: string) => string | null,
+  skipped: SkippedBind[],
+): string | null {
+  for (const name of named) {
+    const bind = binds.get(propertyName(name));
+    if (!bind) continue;
+    const reason = refusal(bind.value);
+    if (!reason) return bind.value;
+    skipped.push({ row: bind.row, reason });
   }
-  return { apis, skipped, ruleProblem };
+  return null;
 }
 
 async function readRows(url: string, fetchImpl: FetchLike): Promise<Row[]> {
@@ -261,10 +278,8 @@ async function primitivesOf(bind: string, fetchImpl: FetchLike): Promise<Row[] |
       signal: bounded(),
     });
     if (!r.ok) return null;
-    const primitives = ((await r.json()) as { primitives?: unknown } | null)?.primitives;
-    return Array.isArray(primitives)
-      ? primitives.filter((p): p is Row => p !== null && typeof p === 'object')
-      : null;
+    const body: unknown = await r.json();
+    return rowsIn(isRow(body) ? body.primitives : undefined);
   } catch {
     return null;
   }
@@ -294,22 +309,44 @@ export async function mergeDiscovery(
     contentType: r.headers.get('content-type') ?? 'application/json',
     body: text,
   };
-  if (!r.ok) return asCame;
-  let doc: Row;
-  try {
-    doc = JSON.parse(text) as Row;
-  } catch {
-    return asCame;
-  }
-  if (doc === null || typeof doc !== 'object' || !Array.isArray(doc.primitives)) return asCame;
+  const doc = r.ok ? discoveryDoc(text) : null;
+  if (!doc) return asCame;
 
-  const primitives = [...(doc.primitives as Row[])];
-  const listed = new Set(primitives.map((p) => p?.kind).filter((k): k is string => typeof k === 'string'));
-  const own = primitives.length;
-  const unreachable: string[] = [];
+  const primitives: unknown[] = [...doc.primitives];
   const answers = await Promise.all(
     [...apis].map(async ([domain, bind]) => ({ domain, found: await primitivesOf(bind, fetchImpl) })),
   );
+  const unreachable = addGenerated(primitives, answers);
+  const added = primitives.length - doc.primitives.length;
+  const merged: Row = {
+    ...doc.body,
+    count: typeof doc.body.count === 'number' ? doc.body.count + added : primitives.length,
+    primitives,
+  };
+  if (unreachable.length > 0) merged.unreachable = unreachable.sort();
+  return { status: r.status, contentType: 'application/json', body: JSON.stringify(merged) };
+}
+
+/** A discovery document's body and its primitives list, or null when the text is not one. */
+function discoveryDoc(text: string): { body: Row; primitives: unknown[] } | null {
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (!isRow(body) || !Array.isArray(body.primitives)) return null;
+  return { body, primitives: body.primitives as unknown[] };
+}
+
+/**
+ * Add each generated API's primitives to the list (a kind already listed is not added
+ * again; the collection gets the public /v1 path). Returns the domains whose API gave
+ * no usable answer.
+ */
+function addGenerated(primitives: unknown[], answers: Array<{ domain: string; found: Row[] | null }>): string[] {
+  const listed = new Set(primitives.filter(isRow).map((p) => p.kind).filter((k): k is string => typeof k === 'string'));
+  const unreachable: string[] = [];
   for (const { domain, found } of answers) {
     if (!found) {
       unreachable.push(domain);
@@ -321,14 +358,7 @@ export async function mergeDiscovery(
       primitives.push(typeof p.collection === 'string' ? { ...p, collection: `/v1${p.collection}` } : p);
     }
   }
-  const added = primitives.length - own;
-  const merged: Row = {
-    ...doc,
-    count: typeof doc.count === 'number' ? doc.count + added : primitives.length,
-    primitives,
-  };
-  if (unreachable.length > 0) merged.unreachable = unreachable.sort();
-  return { status: r.status, contentType: 'application/json', body: JSON.stringify(merged) };
+  return unreachable;
 }
 
 /** 200 the address names something in the model; 404 it does not; 502 the model could not be read to say. */
@@ -361,34 +391,54 @@ export async function domainsViewStatus(
   }
   if (!row) return 404;
   if (!instance) return 200;
+  return instanceStatus(row, instance, await generatedApis(owlBase, fetchImpl, ownPort), owlBase, fetchImpl);
+}
 
-  const apis = await generatedApis(owlBase, fetchImpl, ownPort);
-  let doc: { primitives?: unknown; unreachable?: unknown };
-  try {
-    const d = await mergeDiscovery('/', apis, owlBase, fetchImpl);
-    if (d.status !== 200) return 502;
-    doc = JSON.parse(d.body) as typeof doc;
-  } catch {
-    return 502;
-  }
-  if (!Array.isArray(doc.primitives)) return 502;
-  const primitives = doc.primitives as Row[];
+/** Whether one of the Domain row's kinds has a row named `instance`: 200 yes, 404 no, 502 could not be read. */
+async function instanceStatus(
+  row: Row,
+  instance: string,
+  apis: GeneratedApis,
+  owlBase: string,
+  fetchImpl: FetchLike,
+): Promise<ViewStatus> {
+  const served = await servedKinds(apis, owlBase, fetchImpl);
+  if (!served) return 502;
   // this domain's own API did not answer: its kinds are missing from the list, not absent from the model
-  let undecided = strings(doc.unreachable).includes(domain);
+  let undecided = served.unreachable.includes(String(row.name));
   for (const kind of strings(row.definesVocabulary).map((k) => k.split(/[#/]/).pop() ?? '')) {
-    const collection = primitives.find((p) => p?.kind === kind)?.collection;
+    const collection = served.primitives.find((p) => p.kind === kind)?.collection;
     if (typeof collection !== 'string') continue;
     const route = routeOwl(`${collection}/${encodeURIComponent(instance)}`, apis, owlBase);
-    try {
-      const r = await fetchImpl(route.target, {
-        headers: { Accept: 'application/json' },
-        signal: bounded(),
-      });
-      if (r.ok) return 200;
-      if (r.status !== 404) undecided = true;
-    } catch {
-      undecided = true;
-    }
+    const has = await hasRow(route.target, fetchImpl);
+    if (has === true) return 200;
+    if (has === null) undecided = true;
   }
   return undecided ? 502 : 404;
+}
+
+/** The merged discovery's primitives and the domains it could not ask, or null when it could not be read. */
+async function servedKinds(
+  apis: GeneratedApis,
+  owlBase: string,
+  fetchImpl: FetchLike,
+): Promise<{ primitives: Row[]; unreachable: string[] } | null> {
+  try {
+    const d = await mergeDiscovery('/', apis, owlBase, fetchImpl);
+    const doc = d.status === 200 ? discoveryDoc(d.body) : null;
+    return doc ? { primitives: doc.primitives.filter(isRow), unreachable: strings(doc.body.unreachable) } : null;
+  } catch {
+    return null;
+  }
+}
+
+/** true the upstream has the row, false it answered 404, null it could not say. */
+async function hasRow(target: string, fetchImpl: FetchLike): Promise<boolean | null> {
+  try {
+    const r = await fetchImpl(target, { headers: { Accept: 'application/json' }, signal: bounded() });
+    if (r.ok) return true;
+    return r.status === 404 ? false : null;
+  } catch {
+    return null;
+  }
 }
