@@ -1,0 +1,33 @@
+# chorus share door — paths kept SHUT on purpose (#5039)
+#
+# The other half of config/share-allowlist.txt. A served page, or a data path a public page
+# names, must be let through there or named here with its reason: nothing is refused by
+# accident. platform/scripts/share-door-inventory.py reads both and fails on any path in
+# neither. One prefix per line, then the reason. Matching is the door's own route().
+#
+# Personal data: shut by Silas's ruling, 2026-11-25 05:25.
+/api/chorus/jeff                  personal: Jeff's posture readings
+/api/chorus/voice                 personal: voice recordings and their analysis
+/api/chorus/voice-analytics       personal: voice analysis (also times out locally at 12 s, 11-25)
+/api/chorus/sessions              personal: session records
+/api/chorus/cost                  personal: spend
+/api/chorus/attention-analytics   personal: Jeff's attention readings; not ruled open
+/api/chorus/reprompt-analytics    personal: Jeff's prompts; also times out locally at 12 s, 11-25
+# Broken on localhost too (11-25): opening them would publish a hang, not a page.
+/api/chorus/werk/activity         times out locally at 12 s; fix first, then rule
+/api/werk/activity                the raw spine stream (chorus.log tail): not reviewed, same class as logs and traces (gate-code, #5039)
+# Answer 404 on localhost as named (11-25): a prefix whose real routes are not reviewed, or dead.
+/api/athena                       prefix with write verbs beside it; only the exact reads above are open
+/api/chorus/logs                  card and trace logs: not reviewed for what they hold
+/api/chorus/pain/card             per-card pain: not reviewed
+/api/chorus/trace                 traces: not reviewed
+/api/codebase                     404 locally: the pages naming it are stale
+/api/convergence                  404 locally: not reviewed
+/api/icd                          has write verbs beside it; not reviewed
+# The design docs tree is reviewed one document at a time (share-allowlist.txt, #3809).
+/designing/docs                   exact documents only; the tree is not public
+# Named by the analytics pages opened by #5039; personal, and 404 on localhost as named (11-25).
+/api/attention-analytics          personal: Jeff's attention readings
+/api/voice-analytics              personal: voice analysis
+# The catalog's other routes: write verbs beside them, 404 for a plain read (11-25).
+/api/chorus/catalog               only the exact reads in the allow list are open

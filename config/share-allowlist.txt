@@ -108,3 +108,70 @@
 # gap should land with the gap closed.
 /ui-inventory.js
 /archive.html
+
+# #5039 — every Chorus page opens behind the sign-in door (Jeff 2026-11-24: "i feel i must be
+# able to see all pages via public url"). Measured 11-25: these pages served on localhost and
+# were refused here even when signed in. EXACT FILES at the root, never a root prefix: the
+# root is the whole served tree (the #3815 /docs trap). platform/scripts/share-door-inventory.py
+# fails the run when a new page is neither let through nor named in share-shut.txt.
+/attention-analytics.html
+/basement-garden.html
+/business-plan.html
+/concept-enrichment.html
+/doc-catalog.html
+/doc-inventory.html
+/dpor-report.html
+/flow-map.html
+/frustration.html
+/garden-observability.html
+/gathering-chorus.html
+/gemba-analysis.html
+/harvest-scope.html
+/homeostasis-research.html
+/index.html
+/lightlife.html
+/model-data-hub.html
+/ontology-value-stream-research.html
+/practice-spine.html
+/reprompt-analytics.html
+/self-ontology-sketch.html
+/self-relationships.html
+/ui-system.html
+/v1-acceptance-criteria.html
+/value-stream-render.html
+/voice-analytics.html
+/wardley-map.html
+/werk-process.html
+# The book: two pages in their own directory, nothing else beside them.
+/book
+
+# #5039 — the read-only data those pages and the already-public pages fetch. One decision
+# per page-and-data pair (#3806): each answered a GET on :3340 on 11-25 and holds nothing
+# personal (Silas's ruling 05:25; the personal ones are in share-shut.txt). The door is
+# GET/HEAD only, so no write verb on any of these routes is reachable through it.
+/api/athena/class-atlas
+/api/athena/vocabulary
+/api/chorus/codebase/topology
+/api/chorus/context/board/next
+/api/chorus/context/board/wip
+/api/chorus/context/roles
+/api/chorus/domain
+/api/chorus/fitness/summary
+/api/chorus/hooks/friction
+/api/chorus/hooks/summary
+/api/chorus/pain/rollup
+/api/chorus/patterns/summary
+/api/chorus/policies/counts
+/api/chorus/quality/summary
+/api/chorus/services
+/api/loom-analytics
+/api/loom-metrics
+/api/loom/policies
+/api/werk/schema
+/designing/docs/werk-value-stream-design.html
+# The document catalog and inventory pages' reads (doc-catalog.html, doc-inventory.html).
+/api/chorus/catalog/curated
+/api/chorus/catalog/drift
+/api/chorus/catalog/doc
+/api/doc-catalog
+/api/doc-inventory

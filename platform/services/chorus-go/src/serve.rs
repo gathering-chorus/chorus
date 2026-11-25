@@ -18,7 +18,7 @@ pub fn origin() -> String { env_or("CHORUS_GO_ORIGIN", "https://lightlifeurbanga
 pub fn chorus_home() -> String { env_or("CHORUS_HOME", &format!("{}/CascadeProjects/chorus", env_or("HOME", ""))) }
 fn werk_base() -> String { env_or("CHORUS_WERK_BASE", &format!("{}/CascadeProjects/chorus-werk", env_or("HOME", ""))) }
 
-struct Req { method: String, path: String, query: String, body: Vec<u8> }
+struct Req { method: String, path: String, query: String, body: Vec<u8>, cookie: String, tunnel: bool }
 
 fn read_req(s: &mut TcpStream) -> Result<Req, String> {
     s.set_read_timeout(Some(std::time::Duration::from_secs(10))).ok();
@@ -29,18 +29,23 @@ fn read_req(s: &mut TcpStream) -> Result<Req, String> {
     let method = parts.next().unwrap_or("").to_string();
     let target = parts.next().unwrap_or("/").to_string();
     let mut len = 0usize;
+    let (mut cookie, mut tunnel) = (String::new(), false);
     loop {
         let mut h = String::new();
         if r.read_line(&mut h).map_err(|e| e.to_string())? == 0 || h == "\r\n" || h == "\n" { break; }
         if let Some((k, v)) = h.split_once(':') {
             if k.eq_ignore_ascii_case("content-length") { len = v.trim().parse().unwrap_or(0); }
+            if k.eq_ignore_ascii_case("cookie") { cookie = v.trim().to_string(); }
+            // #5039 — Cloudflare sets this on every request through the public tunnel and a
+            // client cannot remove it; a request on localhost or the Wi-Fi never has it.
+            if k.eq_ignore_ascii_case("cf-connecting-ip") { tunnel = true; }
         }
     }
     if len > 64 * 1024 { return Err("body too large".into()); }
     let mut body = vec![0; len];
     r.read_exact(&mut body).map_err(|e| e.to_string())?;
     let (path, query) = target.split_once('?').map(|(a, b)| (a.to_string(), b.to_string())).unwrap_or((target, String::new()));
-    Ok(Req { method, path, query, body })
+    Ok(Req { method, path, query, body, cookie, tunnel })
 }
 
 fn param(q: &str, k: &str) -> String {
@@ -48,7 +53,7 @@ fn param(q: &str, k: &str) -> String {
 }
 
 fn reply(s: &mut TcpStream, code: u16, ctype: &str, body: &str) -> Result<(), String> {
-    let reason = match code { 200 => "OK", 400 => "Bad Request", 403 => "Forbidden", 404 => "Not Found", _ => "Error" };
+    let reason = match code { 200 => "OK", 400 => "Bad Request", 401 => "Unauthorized", 403 => "Forbidden", 404 => "Not Found", _ => "Error" };
     write!(s, "HTTP/1.1 {code} {reason}\r\nContent-Type: {ctype}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n{body}", body.len())
         .map_err(|e| e.to_string())
 }
@@ -58,9 +63,79 @@ fn redirect(s: &mut TcpStream, to: &str) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+/// #5039 — the one sign-in door decides who is signed in: chorus-go asks the share guard's
+/// `/_auth/whoami` with the caller's own cookie, and holds no session key of its own.
+/// Anything but `200` with `"allowed": true` is no (unreachable guard included: fail closed).
+#[derive(PartialEq)]
+enum Who { Allowed, Unlisted, No }
+
+fn signed_in(cookie: &str) -> Who {
+    if cookie.is_empty() || cookie.contains(['\r', '\n']) { return Who::No; }
+    let addr = env_or("CHORUS_GO_AUTHN", "127.0.0.1:8899");
+    let Ok(sock) = addr.parse::<std::net::SocketAddr>() else { return Who::No };
+    let Ok(mut c) = TcpStream::connect_timeout(&sock, std::time::Duration::from_secs(3)) else { return Who::No };
+    c.set_read_timeout(Some(std::time::Duration::from_secs(5))).ok();
+    if write!(c, "GET /_auth/whoami HTTP/1.1\r\nHost: {addr}\r\nCookie: {cookie}\r\nConnection: close\r\n\r\n").is_err() { return Who::No; }
+    let mut out = String::new();
+    if c.read_to_string(&mut out).is_err() { return Who::No; }
+    // only a 200 is an answer about a person; any other status is no, whatever its body says
+    if out.split_whitespace().nth(1) != Some("200") { return Who::No; }
+    let body = out.split_once("\r\n\r\n").map(|(_, b)| b).unwrap_or("");
+    match serde_json::from_str::<Value>(body).ok().and_then(|v| v.get("allowed").and_then(Value::as_bool)) {
+        Some(true) => Who::Allowed,
+        Some(false) => Who::Unlisted,
+        None => Who::No,
+    }
+}
+
+/// #5039 — the way back that needs no go. If the sign-in check ever locks Jeff out of /go on
+/// the road, undoing it by a land would need the go he cannot give. So the check reads one
+/// property row, `go.tunnel_signin`: the value `off` (written through the door by its owner on
+/// Jeff's word) serves the tunnel as before #5039. Anything else (on, missing, unreadable door)
+/// keeps the check on: fail closed.
+fn tunnel_signin_on() -> bool {
+    let route = "/v1/properties/properties/prop-go-tunnel-signin";
+    let Ok(o) = Command::new(curl_bin()).args(["-sf", "--max-time", "3", &format!("{}{route}", door())]).output() else { return true };
+    if !o.status.success() { return true; }
+    let v: Value = serde_json::from_slice(&o.stdout).unwrap_or(Value::Null);
+    let d = v.get("data").unwrap_or(&Value::Null);
+    let key = d.get("propertyKey").and_then(Value::as_str);
+    let val = d.get("propertyValue").and_then(Value::as_str).map(str::trim);
+    !(key == Some("go.tunnel_signin") && val == Some("off"))
+}
+
+fn login_url(path: &str, query: &str) -> String {
+    let back = if query.is_empty() { format!("{}{path}", origin()) } else { format!("{}{path}?{query}", origin()) };
+    let enc: String = back.bytes().map(|b| match b {
+        b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => (b as char).to_string(),
+        _ => format!("%{b:02X}"),
+    }).collect();
+    format!("{}?next={enc}", env_or("CHORUS_GO_LOGIN", "https://chorus.lightlifeurbangardens.com/_auth/login"))
+}
+
 pub fn handle(store: &Store, mut s: TcpStream) -> Result<(), String> {
     let req = read_req(&mut s)?;
     let path = req.path.trim_end_matches('/');
+    // #5039 — over the public tunnel every /go route needs a signed-in, allowed person first;
+    // the passkey on decide still signs the go itself. Pages go to sign-in, the API says 401.
+    if req.tunnel {
+        let who = signed_in(&req.cookie);
+        // the way back is read only when the check would refuse, so a signed-in person costs no extra call
+        if who != Who::Allowed && !tunnel_signin_on() {
+            // the way back is in use: say so on every request, so it is never left off unseen
+            eprintln!("chorus-go: WARNING go.tunnel_signin is off: {} {} served over the tunnel with no sign-in", req.method, req.path);
+            let _ = Command::new(format!("{}/platform/scripts/chorus-log", chorus_home()))
+                .args(["go.tunnel_signin.off", "system", &format!("path={}", req.path), "level=warn"]).output();
+        } else if who == Who::Unlisted {
+            // signed in but not on the list: a refusal, not another sign-in (that would loop)
+            return reply(&mut s, 403, "application/json", "{\"ok\":false,\"text\":\"Signed in, but not allowed on the go page.\"}");
+        } else if who == Who::No {
+            if req.method == "GET" && !path.starts_with("/go/api") {
+                return redirect(&mut s, &login_url(&req.path, &req.query));
+            }
+            return reply(&mut s, 401, "application/json", "{\"ok\":false,\"text\":\"Signed out. Reload the page to sign in again.\"}");
+        }
+    }
     let json_body = || serde_json::from_slice::<Value>(&req.body).unwrap_or(Value::Null);
     let field = |v: &Value, k: &str| v.get(k).and_then(Value::as_str).unwrap_or("").to_string();
     let out = match (req.method.as_str(), path) {
