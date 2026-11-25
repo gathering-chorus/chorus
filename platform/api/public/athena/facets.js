@@ -19,13 +19,13 @@ async function renderFacetTables(el, fid, opts) {
   opts = opts || {};
   const dname = opts.domain || String(fid).replace(/-domain$/, '');
   // one page-wide model base (#4064/#4084): the page may define OWL; otherwise the same-origin /owl proxy
-  // #5040 — both bases go through the page's mount, asked here at call time. The model base was
-  // taken from a page constant captured before the page knew its mount, and the facet base was
-  // root-absolute with no mount: under lightlifeurbangardens.com/chorus every fold asked the garden site
+  // #5040 — both bases go through window.basePath (the one mount helper every page that loads
+  // this file defines in its head), asked here at call time. The model base was taken from a
+  // page constant captured before the page knew its mount, and the facet base was root-absolute
+  // with no mount: under lightlifeurbangardens.com/chorus every fold asked the garden site
   // (Jeff's phone, 2026-11-25 08:02: "could not read … HTTP 404" down the page).
-  const inMount = p => (typeof window.basePath === 'function') ? window.basePath(p) : p;
-  const OWL = inMount('/owl');
-  const DOM = inMount('/api/chorus/domain/');
+  const OWL = window.basePath('/owl');
+  const DOM = window.basePath('/api/chorus/domain/');
   // #4353 — code, pages and endpoints are graph rows carrying hasDomain; read them
   // like the Logs fold.
   // hasDomain is one name or a list of them (115 of 6,329 code files name several)

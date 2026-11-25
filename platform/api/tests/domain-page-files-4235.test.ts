@@ -19,8 +19,8 @@ describe('#4235 domain page Files fold', () => {
   // It held the fold to a query POSTed to /sparql-read; the public sign-in door refuses a POST
   // (405 on Jeff's phone, 2026-11-25), so the fold now reads the model door's CodeFile
   // collection filtered on hasDomain. What that test covered is held, as drawn in a browser
-  // through the real door, by proving/flows/athena-domain-public-door.spec.cjs ("the Services
-  // and Files folds show through the door what localhost shows, with no POST").
+  // through the real door, by proving/flows/athena-domain-folds-5034.spec.cjs ("the Services
+  // and Files folds read through the door with no POST, and show what the store holds").
 
   it('NEGATIVE PROOF — a failed read shows an unknown count, never zero files', () => {
     const failure = fn.slice(fn.indexOf('} catch (e)'));

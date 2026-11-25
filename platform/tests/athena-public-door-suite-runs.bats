@@ -3,7 +3,7 @@
 # @domain: tests
 # @card: #5040 AC4 · owner: wren
 #
-# The through-the-door suite (proving/flows/athena-domain-public-door.spec.cjs) must run on any
+# The through-the-door tests (in proving/flows/athena-domain-folds-5034.spec.cjs) must run on any
 # card that changes an Athena page, or the next change can break Jeff's phone view while every
 # test is green again (2026-11-25 08:06: "the page is way too broken to do an interview", 13 of
 # 13 green). werk-test plays, in a card's test step, every registered browser spec plus the
@@ -15,11 +15,11 @@
 #   - it names every Athena page file it opens.
 # NEGATIVE: the same checks fail on a spec with the header cut, and on one that names no page.
 #
-# Covers: proving/flows/athena-domain-public-door.spec.cjs
-# Covers: proving/flows/lib/public-door-5040.cjs
+# Covers: proving/flows/athena-domain-folds-5034.spec.cjs
+# Covers: proving/flows/lib/athena-page-5034.cjs
 
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
-SPEC="proving/flows/athena-domain-public-door.spec.cjs"
+SPEC="proving/flows/athena-domain-folds-5034.spec.cjs"
 PAGES="domain.html domains-view.html facets.js model-fold.js rows.js athena-flow.js"
 
 # is this spec text a registered-lane browser spec that names the page file $2?
@@ -32,7 +32,7 @@ browser_lane() { head -3 "$1" | grep -q '^// @test-type: e2e:ui'; }
   test "$status" -eq 0
   echo "$output" | grep -q "under /chorus (the public apex)"
   echo "$output" | grep -q "at the root (the door's own host)"
-  n="$(echo "$output" | grep -c "athena-domain-public-door.spec.cjs")"
+  n="$(echo "$output" | grep -c "#5040 ")"
   test "$n" -ge 12
 }
 

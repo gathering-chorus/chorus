@@ -170,12 +170,12 @@ document.write('<script src="'+window.basePath('/athena/model-fold.js')+'"><\/sc
 <div class="wrap" id="app"><p class="empty">Loading the model…</p></div>
 
 <script>
-// #5040 — every address this page asks for or links to goes through H, the page's mount.
+// #5040 — every address this page asks for or links to goes through window.basePath, the one
+// mount helper the head snippet above defines (there is no second copy under another name).
 // Jeff's phone, 2026-11-25 08:02, at lightlifeurbangardens.com/chorus/domains/principles:
 // "Could not read the model — /domains → HTTP 404", under the breadcrumb "domains / chorus /
 // domains / principles". The page read its own address without taking the mount off, and asked
-// for '/owl/…' and linked '/domains/…' at the garden site. At the root H changes nothing.
-const H = p => window.basePath(p);
+// and linked root-absolute, at the garden site. At the root the mount is empty: nothing changes.
 const OWL = '/owl';
 const app = document.getElementById('app');
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -186,7 +186,7 @@ const here = location.pathname.slice((window.CHORUS_BASE || '').length);
 const seg = here.replace(/^\/domains\/?/, '').split('/').filter(Boolean).map(decodeURIComponent);
 
 async function get(p) {
-  const r = await fetch(H(OWL + p), { headers: { Accept: 'application/json' } });
+  const r = await fetch(window.basePath(OWL + p), { headers: { Accept: 'application/json' } });
   if (!r.ok) throw new Error(p + ' → HTTP ' + r.status);
   return r.json();
 }
@@ -202,19 +202,19 @@ function ladder() {
   ];
   return '<nav class="ladder" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">' +
     rungs.map(([l, h]) => h
-      ? `<a class="rung" style="font-size:.78rem;padding:3px 11px;border:1px solid var(--rule);border-radius:12px;color:var(--ink-faint);text-decoration:none" href="${H(h)}">${l}</a>`
+      ? `<a class="rung" style="font-size:.78rem;padding:3px 11px;border:1px solid var(--rule);border-radius:12px;color:var(--ink-faint);text-decoration:none" href="${window.basePath(h)}">${l}</a>`
       : `<span class="rung here" style="font-size:.78rem;padding:3px 11px;border-radius:12px;background:#16202b;color:#fff;font-weight:600">${l}</span>`
     ).join('') + '</nav>';
 }
 
 function crumbs(parts) {
-  const out = ['<a href="' + H('/domains') + '">domains</a>'];
+  const out = ['<a href="' + window.basePath('/domains') + '">domains</a>'];
   let acc = '/domains';
   parts.forEach((p, i) => {
     acc += '/' + encodeURIComponent(p);
     out.push(i === parts.length - 1
       ? '<span>' + esc(p) + '</span>'
-      : '<a href="' + H(acc) + '">' + esc(p) + '</a>');
+      : '<a href="' + window.basePath(acc) + '">' + esc(p) + '</a>');
   });
   return ladder() + '<nav class="crumbs">' + out.join(' <span>/</span> ') + '</nav>';
 }
@@ -249,7 +249,7 @@ async function renderCatalog() {
       '<code>/domains/products</code> is the right shape and not a nesting mistake.</p>' +
     '<div class="grid">' + rows.map(r => {
       const v = [].concat(r.definesVocabulary || []).filter(Boolean);
-      return '<a class="card" href="' + H('/domains/' + encodeURIComponent(r.name)) + '">' +
+      return '<a class="card" href="' + window.basePath('/domains/' + encodeURIComponent(r.name)) + '">' +
         '<span class="n">' + esc(r.name) + '</span>' +
         '<span class="m">' + (v.length ? esc(v.join(', ')) : 'declares no vocabulary') + '</span></a>';
     }).join('') + '</div>';
@@ -261,13 +261,13 @@ async function renderDomain(name) {
   if (!dom) {
     app.innerHTML = crumbs([name]) + '<h1>' + esc(name) + '</h1>' +
       '<div class="note"><strong>No such domain in the model.</strong> ' +
-      'The catalog at <a class="ref" href="' + H('/domains') + '">/domains</a> is the live list.</div>';
+      'The catalog at <a class="ref" href="' + window.basePath('/domains') + '">/domains</a> is the live list.</div>';
     return;
   }
   let head = crumbs([name]) +
     '<h1>' + esc(name) + '</h1>' +
     '<p class="sub">' + (dom.comment ? esc(dom.comment) : '<span class="empty">No comment in the model.</span>') +
-    ' <a class="ref" href="' + H('/athena/domain.html?d=' + encodeURIComponent(name)) + '">ops view &rarr; cards, code, tests, logs (#3761)</a></p>';
+    ' <a class="ref" href="' + window.basePath('/athena/domain.html?d=' + encodeURIComponent(name)) + '">ops view &rarr; cards, code, tests, logs (#3761)</a></p>';
 
   // #3757 — the schema/OWL/instances rendering moved to the SHARED model fold
   // (model-fold.js), the same component the ops page mounts compact. Order
@@ -424,7 +424,7 @@ async function renderInstance(domainName, instName) {
       const vals = [].concat(v).filter(x => x !== '' && x != null);
       const cell = vals.length
         ? vals.map(x => /^[a-z][\w-]*$/i.test(String(x)) && String(x) !== String(found.label)
-            ? '<a class="ref" href="' + H('/domains/' + encodeURIComponent(domainName) + '/' + encodeURIComponent(x)) + '">' + esc(x) + '</a>'
+            ? '<a class="ref" href="' + window.basePath('/domains/' + encodeURIComponent(domainName) + '/' + encodeURIComponent(x)) + '">' + esc(x) + '</a>'
             : esc(x)).join(', ')
         : '<span class="empty">—</span>';
       return '<tr><td class="k">' + esc(k) + '</td><td>' + cell + '</td></tr>';
@@ -434,7 +434,7 @@ async function renderInstance(domainName, instName) {
     '<h3 class="prosek">' + esc(k) + '</h3><p class="prose">' + esc(String(v)) + '</p>').join('');
   app.innerHTML = head +
     '<h1>' + esc(full.label || found.label || found.name) + '<span class="kind">' + esc(foundKind) + '</span></h1>' +
-    '<p class="sub"><code>' + esc(found.name) + '</code> — in the <a class="ref" href="' + H('/domains/' +
+    '<p class="sub"><code>' + esc(found.name) + '</code> — in the <a class="ref" href="' + window.basePath('/domains/' +
       encodeURIComponent(domainName)) + '">' + esc(domainName) + '</a> domain.</p>' +
     prose +
     '<div class="scroll"><table><thead><tr><th>Property</th><th>Value</th></tr></thead>' +

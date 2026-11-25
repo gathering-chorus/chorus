@@ -5,7 +5,7 @@
      The family's domain view; the richer 17-facet /domain.html (root) remains until
      its facets fold in (consolidation card). Hand-authored pending the generator upgrade. -->
 <script>window.OWL_PORT = 3360;</script>
-<link rel="stylesheet" href="athena-flow.css"><style>.tbl{overflow-x:auto;max-width:100%;-webkit-overflow-scrolling:touch}.tbl table{min-width:420px}.ok{color:#1a7f37;font-weight:600}.bad{color:#cf222e;font-weight:600}/* #5040: a verdict is one word; the fold's wrap-anywhere rule broke it into "gr ee n" on a phone */.ok,.bad,.fold td.word{white-space:nowrap;overflow-wrap:normal}@media (prefers-color-scheme:dark){.ok{color:#3fb950}.bad{color:#f85149}}</style><script src="athena-flow.js"></script><script src="model-fold.js"></script><script src="facets.js"></script><script>mountJourneyNav('domains');</script><script>/* #3810 — the page teaches itself its mount, with nothing to fetch.
+<link rel="stylesheet" href="athena-flow.css"><style>.tbl{overflow-x:auto;max-width:100%;-webkit-overflow-scrolling:touch}.tbl table{min-width:420px}.ok{color:#1a7f37;font-weight:600}.bad{color:#cf222e;font-weight:600}/* #5040: a verdict is one word; the fold's wrap-anywhere rule broke it into "gr ee n" on a phone */span.ok,span.bad,.fold td.word{white-space:nowrap;overflow-wrap:normal}@media (prefers-color-scheme:dark){.ok{color:#3fb950}.bad{color:#f85149}}</style><script src="athena-flow.js"></script><script src="model-fold.js"></script><script src="facets.js"></script><script>mountJourneyNav('domains');</script><script>/* #3810 — the page teaches itself its mount, with nothing to fetch.
    A root-absolute src on the loader tag is the trap: from /chorus/ the browser resolves it
    against the apex, asks the garden site, gets a 404 — so the file that would have told
    this page where it lives can never load. Chicken-and-egg, and it left three correct
@@ -20,12 +20,11 @@ return b+(x.charAt(0)==='/'?x:'/'+x);};
 /* the DOM-rewriter still has a job (root-absolute hrefs must stay inside the mount);
    it is fetched THROUGH the base this snippet just computed, so it cannot escape. */
 var s=document.createElement('script');s.src=window.basePath('/js/base-path.js');document.head.appendChild(s);}());
-// #4064/#4084 — one page-wide model base, for anything that still reads it.
-// #5040 — defined HERE, after the page knows its mount. It sat above this snippet, so it was
-// always the bare '/owl': under lightlifeurbangardens.com/chorus every address built from it
-// left the sign-in door (Jeff's phone, 2026-11-25 08:02). Nothing on this page builds an
-// address from a constant captured earlier than this line.
-var OWL = window.basePath('/owl');</script>
+// #5040 — the page-wide `OWL` constant (#4064/#4084) is gone. It was set ABOVE this snippet,
+// before the page knew its mount, so it was always the bare model base: under
+// lightlifeurbangardens.com/chorus every address built from it left the sign-in door (Jeff's
+// phone, 2026-11-25 08:02). Every address on this page is now built at call time through
+// window.basePath (above) or athena-flow.js's fetchJSON.</script>
 </head>
 <body><div class="wrap">
 <div class="crumb" id="crumb"><a href="value-stream.html">value stream</a> &rarr; <a href="domains.html">domains</a></div>
@@ -78,16 +77,15 @@ var OWL = window.basePath('/owl');</script>
     // both. A Document row gives its own address (docHref); a value with neither gets words.
     // The edge is many-valued and may arrive with an IRI prefix (product.html reads it the same
     // way); every address goes through basePath so it stays inside the mount.
-    const inMount = h => (typeof window.basePath === 'function' ? window.basePath(h) : h);
     const designDocs = asArray(e.hasDesignDoc).map(v => String(v).split('#').pop().replace(/^chorus:/, '')).filter(Boolean);
     const ddLink = (await Promise.all(designDocs.map(async dd => {
       if (/^document-/.test(dd)) {
         const env = await fetchJSON(`/knowledge/documents/${encodeURIComponent(dd.replace(/^document-/, ''))}`).catch(() => null);
         const doc = env && (Array.isArray(env.data) ? env.data[0] : env.data);
-        return doc && doc.docHref ? `<a class="edge" href="${esc(inMount(doc.docHref))}">${esc(doc.docTitle || dd)}</a>`
+        return doc && doc.docHref ? `<a class="edge" href="${esc(window.basePath(doc.docHref))}">${esc(doc.docTitle || dd)}</a>`
           : `${esc(dd)} <span class="empty">&mdash; the model holds no document by that name</span>`;
       }
-      if (/^[\w.-]+\.html$/.test(dd)) return `<a class="edge" href="${esc(inMount('/designing/docs/' + dd))}">${esc(dd)}</a>`;
+      if (/^[\w.-]+\.html$/.test(dd)) return `<a class="edge" href="${esc(window.basePath('/designing/docs/' + dd))}">${esc(dd)}</a>`;
       return `${esc(dd)} <span class="empty">&mdash; not a document name or a design file</span>`;
     }))).join('<br>');
 
@@ -98,7 +96,7 @@ var OWL = window.basePath('/owl');</script>
   <div class="stat"><div class="v">${stepBadge(e.atStep)}</div><div class="l">Step (atStep)</div></div>
   <div class="stat"><div class="v">${esc(e.status || 'no status')}</div><div class="l">Status</div></div>
   <div class="stat"><div class="v">${part ? `<a class="edge" href="product.html?p=${encodeURIComponent(part)}">${esc(part)}</a>` : '<span class="empty">unclaimed</span>'}</div><div class="l">Product (partOf)</div></div>
-  <div class="stat"><div class="v"><a class="edge" href="${esc(inMount('/domains/' + encodeURIComponent(d)))}">schema &rarr; OWL &rarr; instances</a></div><div class="l">Model view (#3761)</div></div>
+  <div class="stat"><div class="v"><a class="edge" href="${esc(window.basePath('/domains/' + encodeURIComponent(d)))}">schema &rarr; OWL &rarr; instances</a></div><div class="l">Model view (#3761)</div></div>
 </div>
 <details class="fold" open><summary>Description <span class="src">rdfs:comment</span></summary><div class="body"><p>${esc(e.comment || '')}</p></div></details>
 <details class="fold" open><summary>Vocabulary (definesVocabulary) <span class="src">the classes this domain owns &mdash; each is a generated API</span></summary><div class="body">
@@ -180,13 +178,16 @@ async function renderFiles(d) {
     // #5040 — read from the model door's own collection, filtered there on hasDomain (a GET the
     // sign-in door serves). It was a query POSTed to the store, which the door refuses: 405.
     // Every page of the collection is followed, so a domain with many files is not cut short.
-    const paths = [];
-    for (let next = `/code/files?hasDomain=${encodeURIComponent(d)}&limit=1000`, pages = 0; next && pages < 20; pages++) {
+    const seen = new Set();
+    let next = `/code/files?hasDomain=${encodeURIComponent(d)}&limit=1000`;
+    for (let pages = 0; next && pages < 20; pages++) {
       const env = await fetchJSON(next);
-      for (const f of (env.data || [])) if (f.filePath) paths.push(String(f.filePath));
+      for (const f of (env.data || [])) if (f.filePath) seen.add(String(f.filePath));
       next = env.links && env.links.next ? String(env.links.next).replace(/^\/v1/, '') : null;
     }
-    paths.sort();
+    // 20 pages is 20,000 files; a domain past that is told so, never shown a short list as the whole
+    if (next) throw new Error('more than 20,000 files for this domain: the list would be cut short');
+    const paths = [...seen].sort();
     if (!paths.length) { el.innerHTML = fold(0, `<p class="empty">The crawl tagged no file with this domain.</p>`); return; }
     el.innerHTML = fold(paths.length, `<div class="tbl"><table><tbody>${paths.map(p => `<tr><td><code>${esc(p)}</code></td></tr>`).join('')}</tbody></table></div>`);
   } catch (e) { el.innerHTML = fold('?', `<p class="empty"><strong>Cannot reach the model</strong> for files &mdash; fetch failure. ${esc(String(e && e.message || e))}</p>`); }
