@@ -113,7 +113,9 @@ async function renderFolds(answer: (url: string) => { status: number; body: unkn
   const el = { innerHTML: '' };
   const esc = (s: unknown) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] as string));
   const fetch = async (u: string) => { const a = answer(u); return { ok: a.status < 400, status: a.status, json: async () => a.body }; };
-  const ctx = vm.createContext({ window: {}, fetch, esc, el });
+  // #5040 — the stand-in page defines window.basePath, as the head of every page that loads
+  // facets.js does (the one mount helper). This one sits at the root: the mount is empty.
+  const ctx = vm.createContext({ window: { basePath: (p: string) => p }, fetch, esc, el });
   vm.runInContext(src + '\nthis.__run = () => renderFacetTables(el, "principles", { only: ["Decisions"], notes: { Decisions: "Decisions: 0 because none carries hasDomain" } });', ctx);
   await (ctx as unknown as { __run: () => Promise<void> }).__run();
   return el.innerHTML;
