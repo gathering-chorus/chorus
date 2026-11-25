@@ -152,16 +152,10 @@ for (const [where, mount] of MOUNTS_5041) {
       test.setTimeout(420_000);
       door = await startDoor({ mount });
       ({ page, context } = await signedInPage(browser, door));
-      // The policies read is answered by chorus-api itself, the live answer, asked beside the door
-      // with time to finish. This suite is about the LINKS the page draws from that answer. Through
-      // the door the lint has run past the 30 s the door gives its upstream whenever the suites run
-      // together, and the fold then names no policy (11-25 11:20 and 11:38): a red that says nothing
-      // about links. That the door serves this read, and how long it takes, is held by the folds
-      // suite's "the ops view: every fold is filled…" test, which reads it through the door.
-      await page.route((url) => url.pathname === `${door.mount}/api/chorus/policies/counts`, async (route) => {
-        const live = await context.request.get(`${BASE}/api/chorus/policies/counts${new URL(route.request().url()).search}`, { timeout: 300_000 });
-        return route.fulfill({ response: live });
-      });
+      // The policies read is the live answer, asked of chorus-api once per test process (lib
+      // serveLintOnce, which signedInPage applies). This suite is about the LINKS the page draws
+      // from that answer. That the door serves the read is held by the folds suite's "the ops
+      // view: every fold is filled…" test, which reads it through the door.
       await openOpsThroughDoor(page, door);
       drawn = await page.evaluate(drawnLinks);
     });

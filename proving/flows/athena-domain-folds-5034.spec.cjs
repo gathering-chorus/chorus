@@ -45,7 +45,7 @@ test.describe(`#5034 every fold on the ${DOMAIN} domain page is filled or says w
   test.setTimeout(240_000);
 
   test('no fold is loading, unread, unmeasured or unrecorded', async ({ page }) => {
-    const { errors } = await openDomainPage(page);
+    const { errors } = await openDomainPage(page, { lint: 'live' });
     // the conformance fold runs the domain lint (about 12 s measured); wait for its verdict
     await page.waitForFunction(() => !/running the domain lint/.test(document.getElementById('conf-slot')?.textContent || ''), null, { timeout: 180_000 });   // 90 s was not enough inside the pipeline's test step (run 2, 11-24 17:21)
     // (#5041: the ops view no longer embeds the Model fold, so there is no model slot to wait for)
@@ -155,7 +155,8 @@ for (const [where, mount] of MOUNTS) {
     test.afterAll(() => door && door.stop());
 
     test('the ops view: every fold is filled or says a true reason, and nothing leaves or is refused by the door', async ({ browser }) => {
-      const { page, context, refused } = await signedInPage(browser, door);
+      // lint: 'live' — this is the test that reads the policies answer THROUGH the door, as a phone does
+      const { page, context, refused } = await signedInPage(browser, door, { lint: 'live' });
       const slow = [];
       page.on('requestfinished', (r) => { const t = r.timing(); if (t.responseEnd > READ_BUDGET_MS) slow.push(`${Math.round(t.responseEnd / 100) / 10} s ${r.url().replace(door.origin, '')}`); });
       await openThroughDoor(page, door, `/athena/domain.html?d=${encodeURIComponent(DOMAIN)}`);
@@ -249,7 +250,9 @@ test.describe('#5040 NEGATIVE: the door checks are red on the pages that broke o
     const before = (f) => execFileSync('git', ['-C', ROOT, 'show', `${BEFORE_5040}:platform/api/public/athena/${f}`], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
     const door = await startDoor({ mount: '/chorus' });
     try {
-      const { page, context, refused } = await signedInPage(browser, door);
+      // lint: 'live' — the old page asked for the policies OUTSIDE the mount, and that request must be
+      // left to fail as it did on the phone; the once-per-process answer would hand it a good one
+      const { page, context, refused } = await signedInPage(browser, door, { lint: 'live' });
       await page.route((url) => url.origin === door.origin && /^\/chorus\/athena\/(domain\.html|facets\.js|model-fold\.js)$/.test(url.pathname), (route) => {
         const f = new URL(route.request().url()).pathname.split('/').pop();
         return route.fulfill({ status: 200, contentType: f.endsWith('.html') ? 'text/html; charset=utf-8' : 'text/javascript; charset=utf-8', body: before(f) });
@@ -297,7 +300,7 @@ test.describe('#5040 NEGATIVE: the door checks are red on the pages that broke o
 // Page code read as drawn: platform/api/public/athena/domain.html (the slots, the Conformance
 // and Code folds), platform/api/public/athena/facets.js (the order of the shared folds).
 // =============================================================================================
-const { serveOwnAthenaFiles, openOldDomainPage, PHONE } = require('./lib/athena-page-5034.cjs');
+const { serveOwnAthenaFiles, serveLintOnce, openOldDomainPage, PHONE } = require('./lib/athena-page-5034.cjs');
 
 const FOLD_ORDER = ['Vocabulary', 'API Contract', 'Services', 'Conformance', 'Gaps', 'Dependencies', 'Design doc', 'Decisions',
   'UI Pages', 'Alerts', 'Logs', 'Cards', 'Pipeline', 'Releases', 'Infrastructure', 'Tests', 'Code'];
@@ -338,8 +341,10 @@ function orderFaults(folds) {
 }
 
 /** Open the ops view at phone width and wait until every fold has drawn. Nothing is opened. */
-async function openAsItStarts(page) {
+async function openAsItStarts(page, { plantedPolicies = false } = {}) {
   await page.setViewportSize(PHONE);
+  // a test that planted its own policies answer keeps it: a route added later would win over it
+  if (!plantedPolicies) await serveLintOnce(page);
   await serveOwnAthenaFiles(page);
   await page.goto(`${BASE}/athena/domain.html?d=${encodeURIComponent(DOMAIN)}`, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => document.querySelector('#code-slot details') && document.querySelector('#svc-slot details') && document.querySelector('#conf-slot details')
@@ -392,7 +397,7 @@ test.describe(`#5041 the folds of the ${DOMAIN} ops view come in the reader's or
 
   test('with no red policy Conformance starts closed; with one it starts open. NEGATIVE: either turned round is red', async ({ page }) => {
     await page.route(isPoliciesRead, policiesAnswer(['pass', 'pass', 'pass']));
-    await openAsItStarts(page);
+    await openAsItStarts(page, { plantedPolicies: true });
     let folds = await page.evaluate(foldsAsDrawn);
     expect(folds.find((f) => f.name === 'Conformance'), 'three green policies: closed').toMatchObject({ open: false, red: 0, policies: 3 });
     expect(orderFaults(folds)).toEqual([]);

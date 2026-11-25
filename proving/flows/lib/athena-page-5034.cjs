@@ -41,9 +41,36 @@ async function serveOwnAthenaFiles(page) {
   });
 }
 
+/**
+ * #5041 — the Conformance fold's read (GET /api/chorus/policies/counts) runs the whole domain lint
+ * on the server: about 12 s alone. Every open of the ops view starts one, and these suites open it
+ * some thirty times, several at once. Lints then queue past the 30 s the sign-in door gives its
+ * upstream and a fold reads "Cannot reach": run 4 of #5041 went red on exactly that (13:06), in a
+ * test that has nothing to do with the lint's speed, and the links suite twice before it.
+ * So the lint is run ONCE per test process, asked of chorus-api directly with time to finish, and
+ * that real answer is what a page's policies read is given. The tests that are ABOUT this read
+ * (that the door serves it, that the fold then says something true) pass `lint: 'live'` and read
+ * it the way a phone does. A test that plants its own policies answer registers its route later,
+ * and the later route wins.
+ * Named limit: a phone still waits on the live lint, and under load it can still pass 30 s.
+ */
+const lintAnswers = new Map();
+function lintAnswer(request, search) {
+  if (!lintAnswers.has(search)) lintAnswers.set(search, request.get(`${BASE}/api/chorus/policies/counts${search}`, { timeout: 300_000 })
+    .then(async (r) => ({ status: r.status(), body: await r.text() })));
+  return lintAnswers.get(search);
+}
+async function serveLintOnce(page) {
+  await page.route((url) => /\/api\/chorus\/policies\/counts$/.test(url.pathname), async (route) => {
+    const a = await lintAnswer(page.context().request, new URL(route.request().url()).search);
+    return route.fulfill({ status: a.status, contentType: 'application/json', body: a.body });
+  });
+}
+
 /** Open the domain page at the given width and wait until its folds have drawn. */
-async function openDomainPage(page, { width = PHONE.width, height = PHONE.height, domain = DOMAIN } = {}) {
+async function openDomainPage(page, { width = PHONE.width, height = PHONE.height, domain = DOMAIN, lint = 'once' } = {}) {
   await page.setViewportSize({ width, height });
+  if (lint !== 'live') await serveLintOnce(page);
   await serveOwnAthenaFiles(page);
   await serveDiscoveryAsLanded(page);
   const errors = [];
@@ -275,10 +302,11 @@ async function startDoor({ allowFile = DOOR_ALLOW, mount = '/chorus' } = {}) {
  * `timezoneId` (#5041) puts the reader in another time zone, so "shown in local time" can be told
  * apart from "shown as stored": this machine sits in the zone the stored times are written in.
  */
-async function signedInPage(browser, door, { width = PHONE.width, height = PHONE.height, timezoneId } = {}) {
+async function signedInPage(browser, door, { width = PHONE.width, height = PHONE.height, timezoneId, lint = 'once' } = {}) {
   const context = await browser.newContext({ viewport: { width, height }, ...(timezoneId ? { timezoneId } : {}) });
   await context.addCookies([{ name: 'chorus_share_session', value: door.cookie, url: door.origin }]);
   const page = await context.newPage();
+  if (lint !== 'live') await serveLintOnce(page);   // see serveLintOnce: one lint per test process, not one per open
   const refused = [];
   const M = door.mount;
   const mountRe = M.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -320,4 +348,4 @@ async function openOldDomainPage(page, under, { domain = DOMAIN } = {}) {
     && !/loading the materialized view|loading live from the model|running the domain lint/.test(document.body.innerText), null, { timeout: 180_000 });
 }
 
-module.exports = { BEFORE_5041, athenaFileAt, serveAthenaFilesAsOf, openOldDomainPage, LIVE_DISCOVERY, ROOT, ATHENA_DIR, BASE, DOMAIN, PHONE, ownAthenaFile, serveOwnAthenaFiles, serveOwnModelView, serveDiscoveryAsLanded, openDomainPage, openModelView, sameOriginLinks, deadLinks, doorTruth, startDoor, signedInPage };
+module.exports = { serveLintOnce, BEFORE_5041, athenaFileAt, serveAthenaFilesAsOf, openOldDomainPage, LIVE_DISCOVERY, ROOT, ATHENA_DIR, BASE, DOMAIN, PHONE, ownAthenaFile, serveOwnAthenaFiles, serveOwnModelView, serveDiscoveryAsLanded, openDomainPage, openModelView, sameOriginLinks, deadLinks, doorTruth, startDoor, signedInPage };
