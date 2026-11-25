@@ -12,9 +12,12 @@
   if (h) h.textContent = window.ROWS_TITLE || kind;
   try {
     const disc = await fetchJSON('/');
-    // discovery lists every served kind with its collection
-    const text = JSON.stringify(disc);
-    const m = text.match(new RegExp('"kind":\\s*"' + kind + '"[^}]*?"collection":\\s*"([^"]+)"'));
+    // discovery lists every served kind with its collection.
+    // #5034 — read the entry, not the text. This matched the JSON text with "kind" before
+    // "collection"; a generated API writes its keys in the other order, so in production
+    // (11-24 20:30, after the land) rows.html?kind=Principle said the door does not serve it.
+    const hit = (disc.primitives || []).find(p => p && p.kind === kind);
+    const m = hit && hit.collection ? [null, hit.collection] : null;
     if (!m) { main.innerHTML = '<div class="err">The door does not serve <strong>' + esc(kind) + '</strong>.</div>'; return; }
     // #5034 — the collection exactly as discovery names it (/v1/<domain>/<class>s). Dropping the
     // /v1 worked for athena-make only; a class served by its own generated API answers under /v1.
