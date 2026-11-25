@@ -238,6 +238,19 @@ test.describe(`#5041 the ${DOMAIN} ops view says each thing once and counts it t
     await page.waitForSelector('#code-slot details');
     expect(await names(), 'a Description that says more than the purpose is drawn').toContain('Description');
     expect(await page.evaluate(() => [...document.querySelectorAll('details.fold')].find((f) => /^Description/.test(f.querySelector('summary').textContent)).querySelector('.body').textContent)).toMatch(/And one thing more\./);
+    // a domain with no description at all draws no Description fold (it drew an open, empty one:
+    // Borg Queen, 11-25 12:34). The page falls back to the collection row's comment, so both are blanked.
+    comment = () => '';
+    await page.route((url) => url.pathname === '/owl/domains', async (route) => {
+      const live = await route.fetch();
+      const body = await live.json();
+      for (const row of body.data || []) if (row.name === DOMAIN) delete row.comment;
+      return route.fulfill({ response: live, json: body });
+    });
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#code-slot details');
+    expect(await names(), 'a domain with no description draws no Description fold').not.toContain('Description');
+    expect((await names()).length, 'and the rest of the page is still drawn').toBeGreaterThan(10);
   });
 
   test('NEGATIVE: the page Jeff walked is red on its two folds over the same files', async ({ page, request }) => {

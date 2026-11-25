@@ -61,9 +61,11 @@ async function renderFacetTables(el, fid, opts) {
   ];
   // #5041 — Jeff's phone, 2026-11-25: a card id drawn one character a line (#/5/0/2/1), a release
   // time broken over three lines, a path cut mid-word. The fold's wrap-anywhere rule did that to
-  // every narrow column. These columns are one line each (class "one"; the page's stylesheet
-  // decides what that means, and the table scrolls inside its fold); prose columns still wrap.
-  const ONE_LINE = ['id', 'cardId', 'owner', 'role', 'status', 'priority', 'timestamp', 'filePath', 'path', 'file', 'logPath'];
+  // every narrow column. These columns are one line each (class "one"; athena-flow.css decides
+  // what that means, and the table scrolls inside its fold); prose columns still wrap. A route
+  // and its method are addresses too: beside a one-line file path the UI Pages route wrapped
+  // five letters a line (Borg Queen at 390px, 2026-11-25 12:34).
+  const ONE_LINE = ['id', 'cardId', 'owner', 'role', 'status', 'priority', 'timestamp', 'filePath', 'path', 'file', 'logPath', 'route', 'routePath', 'httpMethod'];
   // how a column's value is shown: a card id with its #, a stored time in the viewer's own zone
   // (localTime gives '' for a value that is not a time: the stored text is shown then), a bare owner
   const SHOWN = { id: v => '#' + v, timestamp: v => localTime(v) || v, owner: v => ownerLocal(v), role: v => ownerLocal(v) };

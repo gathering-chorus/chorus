@@ -142,6 +142,12 @@ function phoneReading() {
     releaseTimes: column(fold('Releases'), 'timestamp').map((c) => ({ text: text(c), lines: lines(c) })),
     paths: [...document.querySelectorAll('details.fold td')].filter((c) => isPath(text(c))).map((c) => ({ fold: nameOf(c.closest('details.fold')), text: text(c), lines: lines(c), reach: reach(c) })),
     verdicts: [...document.querySelectorAll('#conf-slot tr[data-policy]')].map((tr) => ({ verdict: tr.dataset.verdict, text: text(tr.cells[0]), lines: lines(tr.cells[0]) })),
+    // every cell of ten letters or more that is drawn narrower than 120 px over three lines or more:
+    // a word a few letters a line (the Alerts name at 51 px by 437 px, the UI Pages route at 57 px, 11-25 12:34)
+    squeezed: [...document.querySelectorAll('details.fold td')].filter((c) => text(c).length >= 10)
+      .map((c) => ({ fold: nameOf(c.closest('details.fold')), text: text(c).slice(0, 40), width: Math.round(c.getBoundingClientRect().width), lines: lines(c) }))
+      .filter((c) => c.width > 0 && c.width < 120 && c.lines >= 3),
+    routes: [...document.querySelectorAll('details.fold')].filter((f) => nameOf(f) === 'UI Pages').flatMap((f) => column(f, 'route')).map((c) => ({ text: text(c), lines: lines(c) })),
     bodyOver: document.documentElement.scrollWidth - window.innerWidth,
   };
 }
@@ -151,7 +157,9 @@ const inZone = (iso, timeZone) => new Date(iso).toLocaleString('en-US', { timeZo
 
 /** What a phone reader cannot read, by which of the five it is: { cardId, lastCardsColumn, owner, releaseTime, path, verdict }. */
 function phoneFaults(r, { ownedBy, releases, zone }) {
-  const f = { cardId: [], lastCardsColumn: [], owner: [], releaseTime: [], path: [], verdict: [] };
+  const f = { cardId: [], lastCardsColumn: [], owner: [], releaseTime: [], path: [], verdict: [], squeezed: [] };
+  for (const c of r.squeezed || []) f.squeezed.push(`${c.fold}: "${c.text}" is squeezed to ${c.width}px over ${c.lines} lines`);
+  for (const c of r.routes || []) if (c.lines !== 1) f.squeezed.push(`UI Pages: the route ${c.text} is drawn on ${c.lines} lines`);
   if (!r.cardIds.length) f.cardId.push('the Cards fold lists no card: nothing to read');
   for (const c of r.cardIds) if (!/^#\d+$/.test(c.text) || c.lines !== 1) f.cardId.push(`"${c.text}" is drawn on ${c.lines} lines`);
   if (!r.cardsRows) f.lastCardsColumn.push('the Cards fold lists no card: nothing to read');
@@ -224,8 +232,38 @@ for (const [where, mount] of [['under /chorus (the public apex)', '/chorus'], ['
     test('a verdict is one word on one line', () => {
       expect(faults().verdict, faults().verdict.join('\n')).toEqual([]);
     });
+    // Borg Queen, navigating, at 390 px on the demo (11-25 12:34): the first build made the paths one
+    // line and left the prose cell beside them 51 px wide, and the new UI Pages links five letters a line
+    test('no cell is squeezed to a few letters a line, and every UI Pages route is one line', () => {
+      expect(reading.routes.length, 'the UI Pages fold lists its routes').toBeGreaterThan(0);
+      expect(faults().squeezed, `cells a phone cannot read:\n${faults().squeezed.join('\n')}`).toEqual([]);
+    });
   });
 }
+
+// The service page loads the same fold renderer, so it gets the same one-line cells. Its tables
+// must scroll inside their folds too, or the whole page scrolls sideways (Borg Queen, 11-25 12:40:
+// the scroll-box rule was on domain.html alone; it is in athena-flow.css now).
+test.describe('#5041 the service page, which shares the fold renderer, reads on a phone too', () => {
+  const { serveOwnAthenaFiles } = require('./lib/athena-page-5034.cjs');
+  const open = async (page) => {
+    await page.setViewportSize(PHONE);
+    await serveOwnAthenaFiles(page);
+    await page.goto(`${BASE}/athena/service.html?s=athena`, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => document.querySelectorAll('td.one').length > 0, null, { timeout: 120_000 });
+    await page.evaluate(() => document.querySelectorAll('details').forEach((d) => { d.open = true; }));
+  };
+  const over = (page) => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+
+  test('one-line cells are drawn, and the page body does not scroll sideways at 390 px', async ({ page }) => {
+    test.setTimeout(180_000);
+    await open(page);
+    expect(await over(page), 'the service page is wider than the screen').toBeLessThanOrEqual(1);
+    // NEGATIVE: with the scroll boxes taken away the same page does scroll sideways, so the check can fail
+    await page.addStyleTag({ content: '.tbl{overflow-x:visible!important;max-width:none!important}' });
+    expect(await over(page), 'without its scroll boxes the page must run off the screen').toBeGreaterThan(1);
+  });
+});
 
 test.describe('#5041 NEGATIVE: the phone checks are red on the page Jeff walked', () => {
   test('the ops view as it was at #5040: the card id, the owner, the release time and the path are each named', async ({ browser, request }) => {
@@ -258,8 +296,13 @@ test.describe('#5041 NEGATIVE: the phone checks are red on the page Jeff walked'
       <div class="stats"><div class="stat"><div class="v">wren</div><div class="l">Owner (ownedBy)</div></div></div>
       <details class="fold" open><summary>Cards (1) </summary><div class="body"><div class="tbl"><table style="width:600px"><tr><th>id</th><th>title</th><th>priority</th></tr><tr><td>#5021</td><td>t</td><td>P2</td></tr></table></div></div></details>
       <div id="conf-slot"><table style="width:60px"><tr data-policy="p" data-verdict="pass"><td><div style="width:20px;overflow-wrap:anywhere"><span>green</span></div></td></tr></table></div>
+      <details class="fold" open><summary>Alerts (1) </summary><div class="body"><div class="tbl"><table style="width:340px"><tr><th>name</th><th>file</th></tr><tr><td style="overflow-wrap:anywhere">unreachable-principles-api</td><td style="white-space:nowrap">a one-line value that takes all the width there is</td></tr></table></div></div></details>
+      <details class="fold" open><summary>UI Pages (1) </summary><div class="body"><div class="tbl"><table style="width:340px"><tr><th>route</th><th>pageType</th></tr><tr><td style="overflow-wrap:anywhere;width:50px"><a href="#">/loom/policy-counts.html</a></td><td>a page of this kind</td></tr></table></div></div></details>
       <div class="wide">x</div>`);
     const f = phoneFaults(await page.evaluate(phoneReading), { ownedBy: 'principal-wren', releases: [], zone: READER_ZONE });
+    expect(f.squeezed.join('\n'), 'a name a few letters a line beside a one-line cell').toMatch(/^Alerts: "unreachable-principles-api" is squeezed to \d+px over [3-9]\d* lines$/m);
+    expect(f.squeezed.join('\n'), 'a route broken over lines').toMatch(/^UI Pages: the route \/loom\/policy-counts\.html is drawn on [2-9] lines$/m);
+    expect(f.squeezed.join('\n'), 'the wide one-line cell beside it is not named').not.toMatch(/a one-line value/);
     expect(f.lastCardsColumn.join('\n')).toMatch(/the last Cards column is wider than its box, which does not scroll/);
     expect(f.verdict.join('\n')).toMatch(/^"green" is drawn on [2-9] lines$/);
     expect(f.path.join('\n')).toMatch(/the page body scrolls sideways by \d+px/);

@@ -363,6 +363,33 @@ test.describe(`#5041 the folds of the ${DOMAIN} ops view come in the reader's or
     expect(folds.find((f) => f.name === 'Code').open, 'Code starts closed').toBe(false);
   });
 
+  // Seen by LOOKING at the page at 390 px (Wren, 11-25 12:50, after Jeff: "they dont care about
+  // positions of things"): the closed Conformance fold's label hung out of its box and lay over
+  // the Gaps fold. Every test here was green. This one reads where things sit: each fold's
+  // heading, label included, is inside the fold's own box, and no fold lies over the next.
+  test('every fold holds its own heading, and no fold lies over the next one, as the page starts', async ({ page }) => {
+    await openAsItStarts(page);
+    const overlaps = () => page.evaluate(() => {
+      const folds = [...document.querySelectorAll('details.fold')];
+      const name = (f) => (f.querySelector(':scope > summary')?.childNodes[0]?.textContent || '').trim().replace(/\s*\(.*$/, '');
+      const out = [];
+      folds.forEach((f, i) => {
+        const box = f.getBoundingClientRect();
+        for (const part of f.querySelectorAll(':scope > summary, :scope > summary *')) {
+          const r = part.getBoundingClientRect();
+          if (r.height && r.bottom > box.bottom + 1) out.push(`${name(f)}: its heading runs ${Math.round(r.bottom - box.bottom)}px below its own box`);
+        }
+        const next = folds[i + 1]?.getBoundingClientRect();
+        if (next && next.top < box.bottom - 1) out.push(`${name(f)} lies over ${name(folds[i + 1])} by ${Math.round(box.bottom - next.top)}px`);
+      });
+      return [...new Set(out)];
+    });
+    expect(await overlaps(), `folds out of their boxes:\n${(await overlaps()).join('\n')}`).toEqual([]);
+    // NEGATIVE: without the rule that makes a closed fold hold its label, the closed Conformance fold is named
+    await page.addStyleTag({ content: '.fold > summary::after{display:none!important}' });
+    expect((await overlaps()).join('\n'), 'the page as it was an hour ago').toMatch(/^Conformance: its heading runs \d+px below its own box$/m);
+  });
+
   test('with no red policy Conformance starts closed; with one it starts open. NEGATIVE: either turned round is red', async ({ page }) => {
     await page.route(isPoliciesRead, policiesAnswer(['pass', 'pass', 'pass']));
     await openAsItStarts(page);

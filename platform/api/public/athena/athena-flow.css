@@ -33,11 +33,27 @@ h1 .kind, h2 .kind { color: var(--muted); font-weight: 400; font-size: 1.05rem; 
 .fold .body { padding: 0 16px 14px; clear: both; }
 /* #5034 — a long path wraps inside its cell; a phone has no hover to read a shortened one */
 .fold td { overflow-wrap: anywhere; }
+/* #5041 — a card id, a time, an owner, a path, a route is one line (the shared fold renderer marks
+   those cells "one"); its table scrolls inside the fold. In a row that has such a cell, every
+   prose cell keeps room to be read, wherever it sits: beside a long one-line path the Alerts
+   name was squeezed to 51px, four letters a line (Borg Queen at 390px, 2026-11-25 12:34). The
+   rules live here, not on one page: every page that loads the renderer gets the class. */
+/* the scroll box the renderer wraps every table in. It was on domain.html alone; with one-line
+   cells a page without it (service.html) would scroll sideways as a whole (Borg Queen, 12:40). */
+.tbl { overflow-x: auto; max-width: 100%; -webkit-overflow-scrolling: touch; }
+.tbl table { min-width: 420px; }
+.fold td.one { white-space: nowrap; overflow-wrap: normal; }
+.fold .tbl tr:has(td.one) td:not(.one) { min-width: 12em; }
 .fold .src { font-size: .7rem; color: var(--muted); font-weight: 400; }
 /* #5034 — only the summary's source label floats. The same class is used for small text inside
    a fold's body (the Conformance fold's "measured …" line); floated there, it squeezed the table
    below it to 105px of 308 on a phone, the same cut as the summary float above. */
 .fold > summary .src { float: right; }
+/* #5041 — a CLOSED fold must hold its own floated label. With nothing under the summary to clear
+   it, a label that wrapped to a second line hung out of the fold's box and lay over the fold
+   below (Conformance over Gaps at 390 px: seen by looking at the page, 2026-11-25 12:50; a fold
+   that started closed was new on this card). */
+.fold > summary::after { content: ""; display: block; clear: both; }
 .empty { color: var(--muted); font-style: italic; font-size: .9rem; }
 table { width: 100%; border-collapse: collapse; font-size: .88rem; }
 th { text-align: left; color: var(--muted); font-size: .72rem; text-transform: uppercase; padding: 6px 8px; border-bottom: 1px solid var(--border); }
