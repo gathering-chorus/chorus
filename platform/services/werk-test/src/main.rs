@@ -4012,7 +4012,7 @@ mod ui_flows_env_4235 {
 #[cfg(test)]
 mod ui_flows_card_5034 {
     fn reporter_line(env: &[(&'static str, String)]) -> String {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+        let root = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").expect("cargo sets CARGO_MANIFEST_DIR")).join("../../..");
         let events = env.iter().find(|(k, _)| *k == "CHORUS_TEST_EVENTS").map(|(_, v)| v.clone()).expect("events path");
         let _ = std::fs::remove_file(&events);
         let js = r#"const R = require('./proving/flows/lib/case-events-reporter.cjs');
