@@ -18,6 +18,18 @@
 }
 
 :3000 {
+	# #5039 — one sign-in door for Chorus pages on the public apex. A request through the
+	# public tunnel always carries Cf-Connecting-Ip (Cloudflare sets it; a client cannot
+	# remove it), so on the tunnel the Chorus page paths go to the signed-in door at
+	# /chorus/* (chorus-share-guard) instead of 404ing or serving anonymously; the data
+	# under /api/chorus/* too, which answered the internet with no sign-in. On
+	# localhost and the Wi-Fi there is no such header and every route below serves as before.
+	@chorus_public {
+		header Cf-Connecting-Ip *
+		path /athena /athena/* /borg /borg/* /loom /loom/* /werk /werk/* /chorus-pages /chorus-pages/* /domains /domains/* /api/chorus/*
+	}
+	redir @chorus_public /chorus{uri} 302
+
 	# Borg pages → chorus-api. Strip the /borg prefix and re-add so chorus-api
 	# sees the same path the upstream expects.
 	# #3991: bare /borg (no slash) fell through to the app → public 404 while
