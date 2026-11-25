@@ -5,7 +5,7 @@
      The family's domain view; the richer 17-facet /domain.html (root) remains until
      its facets fold in (consolidation card). Hand-authored pending the generator upgrade. -->
 <script>window.OWL_PORT = 3360;</script>
-<link rel="stylesheet" href="athena-flow.css"><style>.tbl{overflow-x:auto;max-width:100%;-webkit-overflow-scrolling:touch}.tbl table{min-width:420px}.ok{color:#1a7f37;font-weight:600}.bad{color:#cf222e;font-weight:600}/* #5040: a verdict is one word; the fold's wrap-anywhere rule broke it into "gr ee n" on a phone */span.ok,span.bad,.fold td.word{white-space:nowrap;overflow-wrap:normal}@media (prefers-color-scheme:dark){.ok{color:#3fb950}.bad{color:#f85149}}</style><script src="athena-flow.js"></script><script src="model-fold.js"></script><script src="facets.js"></script><script>mountJourneyNav('domains');</script><script>/* #3810 — the page teaches itself its mount, with nothing to fetch.
+<link rel="stylesheet" href="athena-flow.css"><style>.tbl{overflow-x:auto;max-width:100%;-webkit-overflow-scrolling:touch}.tbl table{min-width:420px}.ok{color:#1a7f37;font-weight:600}.bad{color:#cf222e;font-weight:600}/* #5040: a verdict is one word; the fold's wrap-anywhere rule broke it into "gr ee n" on a phone */span.ok,span.bad,.fold td.word{white-space:nowrap;overflow-wrap:normal}/* #5041: a card id, a time, an owner, a path is one line; its table scrolls inside the fold (.tbl) */.fold td.one{white-space:nowrap;overflow-wrap:normal}.fold .tbl td.one+td:not(.one){min-width:12em}.fold .kinds{font-size:.78rem;color:var(--muted);font-weight:400}@media (prefers-color-scheme:dark){.ok{color:#3fb950}.bad{color:#f85149}}</style><script src="athena-flow.js"></script><script src="facets.js"></script><script>mountJourneyNav('domains');</script><script>/* #3810 — the page teaches itself its mount, with nothing to fetch.
    A root-absolute src on the loader tag is the trap: from /chorus/ the browser resolves it
    against the apex, asks the garden site, gets a 404 — so the file that would have told
    this page where it lives can never load. Chicken-and-egg, and it left three correct
@@ -64,13 +64,26 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
     // A class discovery does not name gets words, never a link that leads nowhere.
     const disc = vocab.length ? await fetchJSON('/').catch(() => null) : null;
     const collOf = v => ((disc && disc.primitives) || []).find(p => p.kind === v);
-    const vocabRows = vocab.map(v => {
+    // #5041 — this row is the ONE route to the class's rows (Jeff, 2026-11-25 10:40: "we dont want
+    // 2-3 links to same data"), and its label says how many there are, read live from the class's
+    // own collection. A count that cannot be read is left out: "rows of Principle", never a guess.
+    const rowCount = async coll => {
+      try {
+        const one = await fetchJSON(coll + '?limit=1');
+        if (typeof one.count === 'number') return one.count;          // a generated API states its total
+        if (!(one.links && one.links.next)) return Array.isArray(one.data) ? one.data.length : null;
+        const env = await fetchJSON(coll + '?limit=1000');            // the read rows.html itself makes
+        return Array.isArray(env.data) && !(env.links && env.links.next) ? env.data.length : null;
+      } catch (e) { return null; }
+    };
+    const vocabRows = (await Promise.all(vocab.map(async v => {
       const c = collOf(v);
+      if (!c) return `<tr><td class="word">${esc(v)}</td><td><span class="empty">${disc ? 'not served: discovery names no collection for this class' : 'could not read discovery'}</span></td></tr>`;
+      const n = await rowCount(c.collection);
       // #5040 — the link opens the class's rows as a table (rows.html). It opened the collection
       // itself, which on a phone is a screen of raw data (Jeff, 08:14); the collection is named beside it.
-      return `<tr><td class="word">${esc(v)}</td><td>${c ? `<a class="edge" href="rows.html?kind=${encodeURIComponent(v)}">rows of ${esc(v)}</a> <span class="src">${esc(c.collection)}</span>`
-        : `<span class="empty">${disc ? 'not served: discovery names no collection for this class' : 'could not read discovery'}</span>`}</td></tr>`;
-    }).join('');
+      return `<tr><td class="word">${esc(v)}</td><td><a class="edge" href="rows.html?kind=${encodeURIComponent(v)}">${n === null ? '' : n + ' '}${n === 1 ? 'row' : 'rows'} of ${esc(v)}</a> <span class="src">${esc(c.collection)}</span></td></tr>`;
+    }))).join('');
 
     // #5034 — the design doc link. The row holds either a Document row's name ("document-<name>")
     // or a file name under designing/docs. The page linked "/<value>", which answered 404 for
@@ -89,6 +102,17 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
       return `${esc(dd)} <span class="empty">&mdash; not a document name or a design file</span>`;
     }))).join('<br>');
 
+    // #5041 — the page says each thing once. A Description that only repeats the purpose line
+    // above it (same words, whatever the spacing or capitals) is not drawn a second time.
+    const plain = s => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    const descFold = plain(e.comment) === plain(e.purpose) ? ''
+      : `<details class="fold" open><summary>Description <span class="src">rdfs:comment</span></summary><div class="body"><p>${esc(e.comment || '')}</p></div></details>`;
+
+    // #5041 — the folds in the order a reader needs (Borg Queen's UX review, 2026-11-25): what the
+    // domain is and exposes, whether it is healthy, then the work and the code. The page's own
+    // folds and the shared renderer's interleave, so each group of facets has its own slot.
+    // The embedded Model fold is gone: it was a third route to the same rows. ONE link (the
+    // "Shape and OWL" tile) opens the model view, where the class definition is.
     main.innerHTML = `
 <div class="promise"><strong>purpose:</strong> ${esc(e.purpose || '')}</div>
 <div class="stats">
@@ -96,31 +120,27 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
   <div class="stat"><div class="v">${stepBadge(e.atStep)}</div><div class="l">Step (atStep)</div></div>
   <div class="stat"><div class="v">${esc(e.status || 'no status')}</div><div class="l">Status</div></div>
   <div class="stat"><div class="v">${part ? `<a class="edge" href="product.html?p=${encodeURIComponent(part)}">${esc(part)}</a>` : '<span class="empty">unclaimed</span>'}</div><div class="l">Product (partOf)</div></div>
-  <div class="stat"><div class="v"><a class="edge" href="${esc(window.basePath('/domains/' + encodeURIComponent(d)))}">schema &rarr; OWL &rarr; instances</a></div><div class="l">Model view (#3761)</div></div>
+  <div class="stat"><div class="v"><a class="edge" href="${esc(window.basePath('/domains/' + encodeURIComponent(d)))}">Shape and OWL</a></div><div class="l">Model view (#3761)</div></div>
 </div>
-<details class="fold" open><summary>Description <span class="src">rdfs:comment</span></summary><div class="body"><p>${esc(e.comment || '')}</p></div></details>
+${descFold}
 <details class="fold" open><summary>Vocabulary (definesVocabulary) <span class="src">the classes this domain owns &mdash; each is a generated API</span></summary><div class="body">
-${vocab.length ? `<table><tr><th>Class</th><th>Generated collection</th></tr>${vocabRows}</table>` : '<div class="empty">no vocabulary yet</div>'}</div></details>
-${ddLink ? `<details class="fold" open><summary>Design doc <span class="src">chorus:hasDesignDoc</span></summary><div class="body"><p>${ddLink}</p></div></details>` : ''}
-<details class="fold" open><summary>Gaps <span class="src">chorus:gaps from the model &middot; gap rows from the graph</span></summary><div class="body">${e.gaps ? `<p>${esc(e.gaps)}</p>` : '<p class="empty">the model names no gap for this domain</p>'}<div id="gaps-facet"></div></div></details>
-<div id="mfold-slot"></div>
-<div id="conf-slot"></div>
+${vocab.length ? `<table><tr><th>Class</th><th>Rows &middot; generated collection</th></tr>${vocabRows}</table>` : '<div class="empty">no vocabulary yet</div>'}</div></details>
+<div id="facets-api"></div>
 <div id="svc-slot"></div>
-<div id="files-slot"></div>
-<div id="model-facets"></div>
-<div id="facets"><p class="empty">loading the materialized view (cards, code, alerts, &hellip;)&hellip;</p></div>
+<div id="conf-slot"></div>
+<details class="fold" open><summary>Gaps <span class="src">chorus:gaps from the model</span></summary><div class="body">${e.gaps ? `<p>${esc(e.gaps)}</p>` : '<p class="empty">the model names no gap for this domain</p>'}</div></details>
+<div id="facets-deps"></div>
+${ddLink ? `<details class="fold" open><summary>Design doc <span class="src">chorus:hasDesignDoc</span></summary><div class="body"><p>${ddLink}</p></div></details>` : ''}
+<div id="facets-decisions"></div>
+<div id="facets"><p class="empty">loading the materialized view (cards, alerts, tests, &hellip;)&hellip;</p></div>
+<div id="code-slot"></div>
 ${srcNote(`GET /domains/${esc(d)} + the materialized facet endpoints (/api/chorus/domain)`)}`;
-    // #3757 — the shared model fold, compact: the ground-level what-is-this
-    // anchor. Same component, same endpoints as /domains/<d>; the drift test
-    // holds the two surfaces identical. Jeff's bar: the fold is a link up the
-    // altitude ladder, not a second dashboard — collapsed by default.
-    renderModelFold(document.getElementById('mfold-slot'), d, { compact: true });
     // #5021 — the Domain row's written reasons for empty folds, keyed by fold name
     window.FOLD_NOTES = Object.fromEntries(asArray(e.foldNote).map(n => String(n)).filter(n => n.includes(':'))
       .map(n => [n.slice(0, n.indexOf(':')).trim(), n.slice(n.indexOf(':') + 1).trim()]));
     renderFacets(d);
     renderServices(d, asArray(e.hosts).map(x => String(x).split('#').pop().replace(/^chorus:/, '')).filter(Boolean));
-    renderFiles(d);
+    renderCode(d);
     renderConformance(d);
   } catch (e) { fetchFailed(main, e); }
 })();
@@ -139,8 +159,10 @@ async function renderConformance(d) {
     const ps = b.policies || [];
     if (!ps.length) { el.innerHTML = fold('', '<p class="empty">No policy with a check applies to this domain.</p>', true); return; }
     const red = ps.filter(p => p.verdict !== 'pass').length;
+    // #5041 — each policy name opens that policy's own page (Jeff: "i want to be able to click
+    // into and see policy instances"). The fold starts closed when nothing is red, open when something is.
     const verdict = p => p.verdict === 'pass' ? '<span class="ok">green</span>' : p.verdict === 'fail' ? '<span class="bad">red</span>' : '<span class="bad">could not run</span>';
-    const rows = ps.map(p => `<tr data-policy="${esc(p.name)}" data-verdict="${esc(p.verdict)}"><td>${verdict(p)}</td><td><strong>${esc(p.name)}</strong><br><span class="src">${esc(p.label || '')}</span>${(p.violations || []).length ? `<ul>${p.violations.map(v => `<li><code>${esc(v)}</code></li>`).join('')}</ul>` : ''}${p.reason ? `<br><span class="empty">${esc(p.reason)}</span>` : ''}</td><td>${p.count == null ? '&ndash;' : esc(String(p.count))} / ${p.baseline == null ? '&ndash;' : esc(String(p.baseline))}</td><td>${esc(p.scope || '')}</td></tr>`).join('');
+    const rows = ps.map(p => `<tr data-policy="${esc(p.name)}" data-verdict="${esc(p.verdict)}"><td>${verdict(p)}</td><td><a class="edge" href="${esc(window.basePath('/domains/policies/' + encodeURIComponent(p.name)))}"><strong>${esc(p.name)}</strong></a><br><span class="src">${esc(p.label || '')}</span>${(p.violations || []).length ? `<ul>${p.violations.map(v => `<li><code>${esc(v)}</code></li>`).join('')}</ul>` : ''}${p.reason ? `<br><span class="empty">${esc(p.reason)}</span>` : ''}</td><td>${p.count == null ? '&ndash;' : esc(String(p.count))} / ${p.baseline == null ? '&ndash;' : esc(String(p.baseline))}</td><td>${esc(p.scope || '')}</td></tr>`).join('');
     el.innerHTML = fold(`(${red ? red + ' red' : 'green'} of ${ps.length})`,
       `<p class="src">measured ${esc(b.measuredAt || '?')}</p><div class="tbl"><table><tr><th></th><th>Policy</th><th>count / baseline</th><th>applies</th></tr>${rows}</table></div>`, red > 0);
   } catch (e) { el.innerHTML = fold('', `<p class="empty"><strong>Cannot reach</strong> the policies endpoint &mdash; fetch failure. ${esc(String(e && e.message || e))}</p>`, true); }
@@ -171,26 +193,51 @@ async function renderServices(d, svcs) {
 
 // #4235 — the files the crawl tagged with this domain (CodeFile hasDomain), from the
 // graph. A file is listed because the crawl measured it, never because a list said so.
-async function renderFiles(d) {
-  const el = document.getElementById('files-slot');
-  const fold = (n, body) => `<details class="fold"${n && n <= 40 ? ' open' : ''}><summary>Files (${n}) <span class="src">chorus:CodeFile &rarr; chorus:hasDomain (the code crawl)</span></summary><div class="body">${body}</div></details>`;
+// #5041 — shown ONCE, in the Code fold. There were two folds over the same rows ("Files" here,
+// "Code" from the shared renderer; Jeff: "files seems same as code fold?", "are code and tests
+// counts really right?"). This is the one: every file, grouped by the kind the crawl gave it,
+// with a count per kind beside the total. It starts closed (it is the longest fold on the page).
+// The fold's name stays "Code": the model's Domain shape and the folds counter fix the names.
+const CODE_KINDS = ['code', 'test', 'config', 'marker', 'doc', 'asset'];   // the order shown; any other kind follows, by name
+async function renderCode(d) {
+  const el = document.getElementById('code-slot');
+  const fold = (n, kinds, body, open) => `<details class="fold"${open ? ' open' : ''}><summary>Code (${n}) <span class="kinds">${kinds}</span> <span class="src">chorus:CodeFile &rarr; chorus:hasDomain (the code crawl)</span></summary><div class="body">${body}</div></details>`;
+  const bare = v => String(v).split('#').pop().replace(/^chorus:/, '');
   try {
     // #5040 — read from the model door's own collection, filtered there on hasDomain (a GET the
     // sign-in door serves). It was a query POSTed to the store, which the door refuses: 405.
     // Every page of the collection is followed, so a domain with many files is not cut short.
-    const seen = new Set();
+    // The filter is repeated here, so a door that ignored it could not widen what is shown.
+    const rows = new Map();
     let next = `/code/files?hasDomain=${encodeURIComponent(d)}&limit=1000`;
     for (let pages = 0; next && pages < 20; pages++) {
       const env = await fetchJSON(next);
-      for (const f of (env.data || [])) if (f.filePath) seen.add(String(f.filePath));
+      for (const f of (env.data || []))
+        if (f.filePath && asArray(f.hasDomain || (f.links && f.links.hasDomain)).some(v => bare(v) === d)) rows.set(String(f.name || f.filePath), f);
       next = env.links && env.links.next ? String(env.links.next).replace(/^\/v1/, '') : null;
     }
     // 20 pages is 20,000 files; a domain past that is told so, never shown a short list as the whole
     if (next) throw new Error('more than 20,000 files for this domain: the list would be cut short');
-    const paths = [...seen].sort();
-    if (!paths.length) { el.innerHTML = fold(0, `<p class="empty">The crawl tagged no file with this domain.</p>`); return; }
-    el.innerHTML = fold(paths.length, `<div class="tbl"><table><tbody>${paths.map(p => `<tr><td><code>${esc(p)}</code></td></tr>`).join('')}</tbody></table></div>`);
-  } catch (e) { el.innerHTML = fold('?', `<p class="empty"><strong>Cannot reach the model</strong> for files &mdash; fetch failure. ${esc(String(e && e.message || e))}</p>`); }
+    if (!rows.size) {
+      const why = (window.FOLD_NOTES || {}).Code;   // #5021 — the written reason, when there is one
+      el.innerHTML = fold(0, '', (why ? `<p class="note"><strong>Why empty:</strong> ${esc(why)}</p>` : '') + `<p class="empty">The crawl tagged no file with this domain.</p>`, false);
+      return;
+    }
+    // a file is in one group: its kind, or "no kind" when the crawl gave it none
+    const groups = {};
+    for (const f of rows.values()) {
+      const k = asArray(f.hasKind).map(v => bare(v).replace(/^code-kind-/, '')).sort().join(' + ') || 'no kind';
+      (groups[k] = groups[k] || []).push(String(f.filePath));
+    }
+    const rank = k => { const i = CODE_KINDS.indexOf(k); return i < 0 ? CODE_KINDS.length : i; };
+    const kinds = Object.keys(groups).sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
+    el.innerHTML = fold(rows.size, kinds.map(k => `${groups[k].length} ${esc(k)}`).join(' &middot; '),
+      kinds.map(k => `<h3 data-kind="${esc(k)}" data-count="${groups[k].length}">${esc(k)} <small>${groups[k].length} file(s)</small></h3>` +
+        `<div class="tbl"><table><tbody>${groups[k].sort().map(p => `<tr><td class="one"><code>${esc(p)}</code></td></tr>`).join('')}</tbody></table></div>`).join(''), false);
+  } catch (e) {
+    // a read that failed is said so, with an unknown count: never an empty Code fold, never "0 files"
+    el.innerHTML = fold('?', '', `<div class="bad">could not read Code: ${esc(String(e && e.message || e))}</div>`, true);
+  }
 }
 
 // ---- the materialized view (#3635, Jeff's ruling 2026-07-12): the domain instance
@@ -200,15 +247,16 @@ async function renderFiles(d) {
 async function renderFacets(d) {
   // #4093 — one renderer (facets.js); this page draws every facet
   const fid = await resolveFacetId(d);
-  // #4285 — Jeff, 2026-09-24: ONE Gaps section (the model's text and the
-  // graph's gap rows together), and Actors + Scenarios belong with the Model,
-  // not at the bottom under the operational folds.
-  const withModel = ['Actors', 'Scenarios'];
-  const withGaps = ['Gaps & Status'];
+  // #5041 — three facets sit between the page's own folds, each in its slot; every other facet
+  // the renderer has is drawn below them, in the renderer's order, so a facet added there still
+  // shows here. Code is this page's own fold (renderCode: the files, once, by kind).
+  // (The #4285 mounts for "Gaps & Status", "Actors" and "Scenarios" are gone: the renderer has
+  // held no facet by those names since its folds became graph reads, so they drew nothing.)
+  const o = { domain: d, notes: window.FOLD_NOTES || {} };
+  const placed = [['facets-api', 'API Contract'], ['facets-deps', 'Dependencies'], ['facets-decisions', 'Decisions']];
   await Promise.all([
-    renderFacetTables(document.getElementById('gaps-facet'), fid, { only: withGaps, heading: () => 'from the graph' }),
-    renderFacetTables(document.getElementById('model-facets'), fid, { only: withModel }),
-    renderFacetTables(document.getElementById('facets'), fid, { except: withModel.concat(withGaps), domain: d, notes: window.FOLD_NOTES || {} }),
+    ...placed.map(([slot, t]) => renderFacetTables(document.getElementById(slot), fid, { ...o, only: [t] })),
+    renderFacetTables(document.getElementById('facets'), fid, { ...o, except: placed.map(p => p[1]).concat('Code') }),
   ]);
 }
 </script>

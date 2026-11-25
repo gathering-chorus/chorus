@@ -49,11 +49,12 @@ async function openDomainPage(page, { width = PHONE.width, height = PHONE.height
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await page.goto(`${BASE}/athena/domain.html?d=${encodeURIComponent(domain)}`, { waitUntil: 'domcontentloaded' });
-  // the facets and the files fold draw after their own fetches; the placeholder text goes when they have
+  // the facets and the Code fold draw after their own fetches; the placeholder text goes when they have
+  // (#5041: the files are in the Code fold, #code-slot; the separate Files fold is gone)
   await page.waitForFunction(() => {
     const f = document.getElementById('facets');
-    const files = document.querySelector('#files-slot details');
-    return f && files && f.querySelector('details.fold') && !/loading the materialized view/.test(f.textContent);
+    const code = document.querySelector('#code-slot details');
+    return f && code && f.querySelector('details.fold') && !/loading the materialized view/.test(f.textContent);
   }, null, { timeout: 45_000 });
   // a closed fold still holds its table: open every one, as a reader would
   await page.evaluate(() => document.querySelectorAll('details').forEach((d) => { d.open = true; }));
@@ -269,9 +270,13 @@ async function startDoor({ allowFile = DOOR_ALLOW, mount = '/chorus' } = {}) {
   return { origin, mount, cookie, stop, log };
 }
 
-/** A browser page signed in at the door, at phone width, with this tree's own page files. */
-async function signedInPage(browser, door, { width = PHONE.width, height = PHONE.height } = {}) {
-  const context = await browser.newContext({ viewport: { width, height } });
+/**
+ * A browser page signed in at the door, at phone width, with this tree's own page files.
+ * `timezoneId` (#5041) puts the reader in another time zone, so "shown in local time" can be told
+ * apart from "shown as stored": this machine sits in the zone the stored times are written in.
+ */
+async function signedInPage(browser, door, { width = PHONE.width, height = PHONE.height, timezoneId } = {}) {
+  const context = await browser.newContext({ viewport: { width, height }, ...(timezoneId ? { timezoneId } : {}) });
   await context.addCookies([{ name: 'chorus_share_session', value: door.cookie, url: door.origin }]);
   const page = await context.newPage();
   const refused = [];
@@ -292,4 +297,27 @@ async function signedInPage(browser, door, { width = PHONE.width, height = PHONE
   return { page, context, refused };
 }
 
-module.exports = { LIVE_DISCOVERY, ROOT, ATHENA_DIR, BASE, DOMAIN, PHONE, ownAthenaFile, serveOwnAthenaFiles, serveOwnModelView, serveDiscoveryAsLanded, openDomainPage, openModelView, sameOriginLinks, deadLinks, doorTruth, startDoor, signedInPage };
+// ---------------------------------------------------------------------------------------------
+// #5041 — the page as Jeff walked it on his phone, 2026-11-25 10:22 to 10:34: main at #5040.
+// Every #5041 negative proof draws THAT page (cut from git, never rebuilt by hand) and shows the
+// new check red on it. `under` is where the page is opened: BASE, or a door's origin + mount.
+const BEFORE_5041 = 'd15c881c5729f75b691a47b864749cb872389a01';
+const OLD_PAGE_FILES = ['domain.html', 'facets.js', 'athena-flow.js', 'athena-flow.css', 'model-fold.js'];
+const athenaFileAt = (sha, name) => execFileSync('git', ['-C', ROOT, 'show', `${sha}:platform/api/public/athena/${name}`], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
+async function serveAthenaFilesAsOf(page, under, sha = BEFORE_5041) {
+  const at = new URL(under + '/athena/');
+  await page.route((url) => url.origin === at.origin && url.pathname.startsWith(at.pathname) && OLD_PAGE_FILES.includes(url.pathname.slice(at.pathname.length)), (route) => {
+    const name = new URL(route.request().url()).pathname.slice(at.pathname.length);
+    return route.fulfill({ status: 200, contentType: TYPES[path.extname(name)], body: athenaFileAt(sha, name) });
+  });
+}
+/** Open the ops view as it was before #5041 and wait until every fold it had has drawn its answer. */
+async function openOldDomainPage(page, under, { domain = DOMAIN } = {}) {
+  await serveAthenaFilesAsOf(page, under);
+  await page.goto(`${under}/athena/domain.html?d=${encodeURIComponent(domain)}`, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => document.querySelector('#facets details.fold') && document.querySelector('#svc-slot details') && document.querySelector('#files-slot details')
+    && document.querySelector('#mfold-slot[data-mfold-ready="1"]')
+    && !/loading the materialized view|loading live from the model|running the domain lint/.test(document.body.innerText), null, { timeout: 180_000 });
+}
+
+module.exports = { BEFORE_5041, athenaFileAt, serveAthenaFilesAsOf, openOldDomainPage, LIVE_DISCOVERY, ROOT, ATHENA_DIR, BASE, DOMAIN, PHONE, ownAthenaFile, serveOwnAthenaFiles, serveOwnModelView, serveDiscoveryAsLanded, openDomainPage, openModelView, sameOriginLinks, deadLinks, doorTruth, startDoor, signedInPage };

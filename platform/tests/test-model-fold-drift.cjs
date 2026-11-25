@@ -4,16 +4,23 @@
  * AC: "a test asserts the two surfaces render from identical data for the same
  * domain — a divergence is a failure, not a skin difference."
  *
- * Renders BOTH altitudes for the same domain in a real browser:
- *   model view:  /domains/<d>                (full fold)
- *   ops view:    /athena/domain.html?d=<d>   (compact fold)
- * extracts the fold's DATA (class names, property rows, instance names, honest-
- * state notes — not styling) and asserts deep equality.
+ * #5041 — the ops-view half is RETIRED. Jeff, 2026-11-25: "we dont want 2-3 links
+ * to same data"; the ops view (/athena/domain.html?d=<d>) no longer embeds the
+ * fold, so there is one surface and nothing left to drift from. That the ops view
+ * holds exactly one link into the model view, and no fold of its own, is held as
+ * drawn by proving/flows/athena-domain-links-5034.spec.cjs ("no two links share a
+ * destination; one link to the model view…"); that the model view's cards are the
+ * rows the door holds is held by proving/flows/athena-domain-true-5034.spec.cjs.
  *
- * NEGATIVE PROOF (no gate without one): after the equal-pass, the test mutates
- * one surface's rendered DOM (drops a schema row) and asserts the comparator
- * now REPORTS divergence. A comparator that cannot go red on a violated
- * invariant must not gate — this run proves it can, every time it runs.
+ * What this file still proves, in a real browser:
+ *   model view:  /domains/<d>  is reached by its URL (no redirect) and draws the
+ *   fold with its DATA (class names, property rows, instance names, honest-state
+ *   notes — not styling): at least one class.
+ *
+ * NEGATIVE PROOF (no gate without one): the test then mutates the rendered DOM
+ * (drops a schema row) and asserts the comparator REPORTS the difference from
+ * what was first read. A comparator that cannot go red must not gate — this run
+ * proves it can, every time it runs.
  *
  * Run: NODE_PATH=../jeff-bridwell-personal-site/node_modules node platform/tests/test-model-fold-drift.cjs
  *   CHORUS_UI_BASE overrides the target (default :3340; the werk pipeline
@@ -65,18 +72,16 @@ function diverges(a, b) {
 
   let failures = 0;
   try {
+    // #5041 — one surface: the model view. (The ops view was grabbed here too and compared.)
     const model = await grab(`${BASE}/domains/${DOMAIN}`);
-    // grab ops LAST so the still-loaded page is the one we mutate below
-    const ops = await grab(`${BASE}/athena/domain.html?d=${DOMAIN}`);
 
-    if (diverges(model, ops)) {
-      console.error(`DRIFT: the two altitudes render different data for "${DOMAIN}"`);
+    if (!model.classes.length) {
+      console.error(`EMPTY: the model view drew the fold for "${DOMAIN}" with no class in it`);
       console.error('model view:', JSON.stringify(model));
-      console.error('ops view:  ', JSON.stringify(ops));
       failures++;
     } else {
-      console.log(`equal: ${model.classes.length} classes, ${model.rows.length} schema rows, ` +
-        `${model.instances.length} instances, ${model.notes.length} honest-state notes — identical on both altitudes`);
+      console.log(`drawn: ${model.classes.length} classes, ${model.rows.length} schema rows, ` +
+        `${model.instances.length} instances, ${model.notes.length} honest-state notes — on the model view`);
     }
 
     // ---- negative proof: a planted divergence MUST be detected ----
