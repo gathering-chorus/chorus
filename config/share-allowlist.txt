@@ -175,3 +175,9 @@
 /api/chorus/catalog/doc
 /api/doc-catalog
 /api/doc-inventory
+
+# #5040 — the principles domain's design document, which its domain page links (Design doc
+# fold). Jeff's phone, 2026-11-25 08:03: the link opened "Not found — this page isn't shared
+# through Chorus". One exact document, never the docs tree. Silas screened it (25 KB) and ruled
+# it open at 08:51: no secrets, credentials or personal data.
+/designing/docs/loom-subproduct-design.html

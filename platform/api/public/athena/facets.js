@@ -19,19 +19,28 @@ async function renderFacetTables(el, fid, opts) {
   opts = opts || {};
   const dname = opts.domain || String(fid).replace(/-domain$/, '');
   // one page-wide model base (#4064/#4084): the page may define OWL; otherwise the same-origin /owl proxy
-  const OWL = (typeof window.OWL === 'string') ? window.OWL : ((typeof window.basePath === 'function') ? window.basePath('/owl') : '/owl');
-  const DOM = '/api/chorus/domain/';
+  // #5040 — both bases go through the page's mount, asked here at call time. The model base was
+  // taken from a page constant captured before the page knew its mount, and the facet base was
+  // root-absolute with no mount: under lightlifeurbangardens.com/chorus every fold asked the garden site
+  // (Jeff's phone, 2026-11-25 08:02: "could not read … HTTP 404" down the page).
+  const inMount = p => (typeof window.basePath === 'function') ? window.basePath(p) : p;
+  const OWL = inMount('/owl');
+  const DOM = inMount('/api/chorus/domain/');
   // #4353 — code, pages and endpoints are graph rows carrying hasDomain; read them
   // like the Logs fold.
   // hasDomain is one name or a list of them (115 of 6,329 code files name several)
   const onDomain = r => [].concat(r.hasDomain || (r.links && r.links.hasDomain) || []).some(v => tail(v) === dname);
+  // #5040 — the door filters on hasDomain itself. The page read whole tables (20,000 code files,
+  // 14 to 19 s) to keep 50 rows; a phone connection gave up ("could not read Code: no answer").
+  // The client filter stays, so a door that ignored the filter could not widen what is shown.
+  const forDomain = '?hasDomain=' + encodeURIComponent(dname) + '&limit=5000';
   const FACETS = [
     // #5021 — its own route: the board's domain:<name> cards as a list (the old read answered 25 v1 names only)
     { t: 'Cards', u: DOM + dname + '/cards', k: 'cards', cols: ['id', 'title', 'owner', 'status', 'priority'] },
     { t: 'Dependencies', u: DOM + fid + '/dependencies', k: '_deps' },
-    { t: 'API Contract', u: OWL + '/code/endpoints?limit=5000', k: 'items', graph: true, filter: onDomain, cols: ['httpMethod', 'routePath', 'filePath'], src: 'chorus:Endpoint · hasDomain = ' + dname },
-    { t: 'UI Pages', u: OWL + '/code/pages?limit=5000', k: 'items', graph: true, filter: onDomain, cols: ['route', 'filePath', 'pageType'], src: 'chorus:Page · hasDomain = ' + dname },
-    { t: 'Code', u: OWL + '/code/files?limit=20000', k: 'items', graph: true, filter: onDomain, cols: ['filePath', 'hasLanguage'], src: 'chorus:SourceFile · hasDomain = ' + dname },
+    { t: 'API Contract', u: OWL + '/code/endpoints' + forDomain, k: 'items', graph: true, filter: onDomain, cols: ['httpMethod', 'routePath', 'filePath'], src: 'chorus:Endpoint · hasDomain = ' + dname },
+    { t: 'UI Pages', u: OWL + '/code/pages' + forDomain, k: 'items', graph: true, filter: onDomain, cols: ['route', 'filePath', 'pageType'], src: 'chorus:Page · hasDomain = ' + dname },
+    { t: 'Code', u: OWL + '/code/files' + forDomain, k: 'items', graph: true, filter: onDomain, cols: ['filePath', 'hasLanguage'], src: 'chorus:SourceFile · hasDomain = ' + dname },
     { t: 'Tests', u: DOM + fid + '/tests', k: 'tests', cols: ['path', 'type'] },
     { t: 'Pipeline', u: DOM + fid + '/pipeline', k: 'stages', cols: ['name', 'status', 'summary'] },
     { t: 'Releases', u: DOM + fid + '/releases', k: 'releases', cols: ['timestamp', 'cardId', 'title', 'role'] },
@@ -40,7 +49,7 @@ async function renderFacetTables(el, fid, opts) {
     // #4084 — the FIRST fold read from the graph, not a v1 registry: chorus:LogSource rows (harvested hourly by
     // log-harvest.sh) carrying hasDomain from the authored UnitDomainMapping rows. Filtered client-side on the
     // domain edge; the query is shown in the fold so a zero is 'no rows for this domain', never a lookup miss.
-    { t: 'Logs', u: OWL + '/logs/sources?limit=500', k: 'items', graph: true, filter: r => tail(r.hasDomain || (r.links && r.links.hasDomain) || '') === dname,
+    { t: 'Logs', u: OWL + '/logs/sources' + forDomain, k: 'items', graph: true, filter: r => tail(r.hasDomain || (r.links && r.links.hasDomain) || '') === dname,
       cols: ['launchdLabel', 'logStatus', 'lokiJob', 'lastWrittenAt', 'logPath'], src: 'chorus:LogSource · hasDomain = ' + dname },
     { t: 'Alerts', u: DOM + fid + '/alerts', k: 'alerts', cols: ['name', 'file', 'source'] },   // #4285: rows from the alerts graph
   ];

@@ -15,11 +15,12 @@ describe('#4235 domain page Files fold', () => {
     expect(page).toContain('renderFiles(d);');
   });
 
-  it("reads the crawl's tags from the graph, not a file", () => {
-    expect(fn).toContain('chorus:CodeFile ; chorus:hasDomain');
-    expect(fn).toContain("'/sparql-read'");
-    expect(fn).not.toMatch(/data\/athena\//);
-  });
+  // #5040 — the test "reads the crawl's tags from the graph" is retired with the code it read.
+  // It held the fold to a query POSTed to /sparql-read; the public sign-in door refuses a POST
+  // (405 on Jeff's phone, 2026-11-25), so the fold now reads the model door's CodeFile
+  // collection filtered on hasDomain. What that test covered is held, as drawn in a browser
+  // through the real door, by proving/flows/athena-domain-public-door.spec.cjs ("the Services
+  // and Files folds show through the door what localhost shows, with no POST").
 
   it('NEGATIVE PROOF — a failed read shows an unknown count, never zero files', () => {
     const failure = fn.slice(fn.indexOf('} catch (e)'));

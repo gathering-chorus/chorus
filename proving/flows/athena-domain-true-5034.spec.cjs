@@ -56,7 +56,10 @@ test.describe(`#5034 the ${DOMAIN} domain pages say only what the doors hold`, (
     expect(wrong, `the model view disagrees with the doors:\n${wrong.join('\n')}`).toEqual([]);
   });
 
-  test('the ops view links each served class to the collection that holds its rows', async ({ page }) => {
+  // #5040 — the link opens the class's rows as a TABLE (rows.html?kind=<Class>) and names the
+  // collection beside it. It linked the collection itself, which on Jeff's phone opened a screen
+  // of raw data (2026-11-25 08:14). That the rows page then lists every row is the next test.
+  test('the ops view links each served class to its rows page and names the collection that holds them', async ({ page }) => {
     const truth = await doorTruth(page);
     await openDomainPage(page);
     const shown = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll('details.fold')]
@@ -67,7 +70,8 @@ test.describe(`#5034 the ${DOMAIN} domain pages say only what the doors hold`, (
     for (const t of truth) {
       const s = shown[t.kind];
       if (!s) { wrong.push(`${t.kind}: not in the Vocabulary fold`); continue; }
-      if (t.collection && s.href !== `${BASE}/owl${t.collection}`) wrong.push(`${t.kind}: links to ${s.href || 'nothing'} (${s.text}), the door serves it at /owl${t.collection}`);
+      if (t.collection && s.href !== `${BASE}/athena/rows.html?kind=${encodeURIComponent(t.kind)}`) wrong.push(`${t.kind}: links to ${s.href || 'nothing'} (${s.text}), its rows page is /athena/rows.html?kind=${t.kind}`);
+      if (t.collection && !s.text.includes(t.collection)) wrong.push(`${t.kind}: the fold does not name its collection ${t.collection} (it says: ${s.text})`);
       if (t.held > 0 && !s.href) wrong.push(`${t.kind}: the model holds ${t.held} rows, yet the page links to nothing (${s.text})`);
       if (!t.collection && s.href) wrong.push(`${t.kind}: no door lists it, yet the page links to ${s.href}`);
     }
