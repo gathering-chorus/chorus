@@ -70,8 +70,10 @@ function stepLocal(v) {
   return String(v || '').split('#').pop().replace('value-stream-step-', '').toLowerCase();
 }
 
+// #5041 — owners are principal rows now (principal-wren); the page showed the raw id
+// (Jeff's phone, 2026-11-25). Both row prefixes come off, so the reader sees "wren".
 function ownerLocal(v) {
-  return String(v || '').split('#').pop().replace('role-', '');
+  return String(v || '').split('#').pop().replace(/^chorus:/, '').replace(/^(role|principal)-/, '');
 }
 
 function ownerDot(owner) {

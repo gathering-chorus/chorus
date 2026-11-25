@@ -45,10 +45,10 @@ test.describe(`#5034 every fold on the ${DOMAIN} domain page is filled or says w
   test.setTimeout(240_000);
 
   test('no fold is loading, unread, unmeasured or unrecorded', async ({ page }) => {
-    const { errors } = await openDomainPage(page);
+    const { errors } = await openDomainPage(page, { lint: 'live' });
     // the conformance fold runs the domain lint (about 12 s measured); wait for its verdict
     await page.waitForFunction(() => !/running the domain lint/.test(document.getElementById('conf-slot')?.textContent || ''), null, { timeout: 180_000 });   // 90 s was not enough inside the pipeline's test step (run 2, 11-24 17:21)
-    await page.waitForSelector('#mfold-slot[data-mfold-ready="1"]', { timeout: 45_000 });
+    // (#5041: the ops view no longer embeds the Model fold, so there is no model slot to wait for)
     const folds = await page.locator('details.fold, details.mfwrap').count();
     expect(folds, 'the page drew too few folds to be the domain page').toBeGreaterThan(10);
     const bad = await page.evaluate(unansweredFolds, NO_ANSWER.source);
@@ -85,8 +85,9 @@ test.describe(`#5034 every fold on the ${DOMAIN} domain page is filled or says w
 //   (a) every fold is filled or shows its true reason; nothing the page asks for leaves the door
 //       or is refused by it; the model view draws; the rows page lists every row the model holds;
 //   (b) every link drawn stays inside the door and leads somewhere;
-//   (c) the Services and Files folds read through the door with no POST, and show what the model
-//       holds. The door stays GET/HEAD only.
+//   (c) the Services and Code folds read through the door with no POST, and show what the model
+//       holds. The door stays GET/HEAD only. (#5041: the files are listed once, in the Code fold;
+//       the separate Files fold this check first read is gone.)
 // NEGATIVE PROOFS: the pages as they were before #5040 (cut from git) are red under /chorus,
 // named fold by fold; data asked outside the mount does not answer.
 //
@@ -154,7 +155,8 @@ for (const [where, mount] of MOUNTS) {
     test.afterAll(() => door && door.stop());
 
     test('the ops view: every fold is filled or says a true reason, and nothing leaves or is refused by the door', async ({ browser }) => {
-      const { page, context, refused } = await signedInPage(browser, door);
+      // lint: 'live' — this is the test that reads the policies answer THROUGH the door, as a phone does
+      const { page, context, refused } = await signedInPage(browser, door, { lint: 'live' });
       const slow = [];
       page.on('requestfinished', (r) => { const t = r.timing(); if (t.responseEnd > READ_BUDGET_MS) slow.push(`${Math.round(t.responseEnd / 100) / 10} s ${r.url().replace(door.origin, '')}`); });
       await openThroughDoor(page, door, `/athena/domain.html?d=${encodeURIComponent(DOMAIN)}`);
@@ -168,9 +170,15 @@ for (const [where, mount] of MOUNTS) {
       await context.close();
     });
 
+    // #5041 — this test replaces the hand-run script platform/tests/test-model-fold-drift.cjs, retired
+    // on this card. That script compared the model fold on two surfaces (#3757); the ops view no
+    // longer embeds it, so one surface is left. What the script still held of the model view (reached
+    // by its own address, at least one class drawn) is held here, through the door, at both mounts.
     test('the model view draws the schema and a card for every row, through the door', async ({ browser, request }) => {
       const { page, context, refused } = await signedInPage(browser, door);
       await openThroughDoor(page, door, `/domains/${encodeURIComponent(DOMAIN)}`);
+      expect.soft(new URL(page.url()).pathname, 'the model view is reached by its own address, with no redirect').toBe(`${door.mount}/domains/${encodeURIComponent(DOMAIN)}`);
+      expect.soft(await page.locator('[data-mf="schema"] h3').count(), 'the schema draws at least one class').toBeGreaterThan(0);
       const broken = await page.evaluate(brokenFolds, DOOR_NO_ANSWER.source);
       expect.soft(broken, `the model view failed through the door:\n${broken.join('\n')}`).toEqual([]);
       expect.soft([...new Set(refused)], `requests that left the door or that it refused:\n${[...new Set(refused)].join('\n')}`).toEqual([]);
@@ -206,17 +214,20 @@ for (const [where, mount] of MOUNTS) {
       await context.close();
     });
 
-    test('the Services and Files folds read through the door with no POST, and show what the store holds', async ({ browser, request }) => {
+    // #5041 — was "the Services and Files folds…". Jeff's ruling of 2026-11-25 ("files seems same as
+    // code fold?"): the files are listed once, in the Code fold (#code-slot). The assertion is the
+    // same one, read from the fold that now holds the rows: exactly the files the store holds.
+    test('the Services and Code folds read through the door with no POST, and show what the store holds', async ({ browser, request }) => {
       const { page, context } = await signedInPage(browser, door);
       const posts = [];
       page.on('request', (r) => { if (r.method() !== 'GET' && r.method() !== 'HEAD') posts.push(`${r.method()} ${r.url().replace(door.origin, '')}`); });
       await page.goto(`${door.origin}${door.mount}/athena/domain.html?d=${encodeURIComponent(DOMAIN)}`, { waitUntil: 'domcontentloaded' });
-      await page.waitForFunction(() => document.querySelector('#svc-slot details') && document.querySelector('#files-slot details'), null, { timeout: 120_000 });
+      await page.waitForFunction(() => document.querySelector('#svc-slot details') && document.querySelector('#code-slot details'), null, { timeout: 120_000 });
       const drawn = await page.evaluate(() => ({
         services: document.querySelector('#svc-slot').innerText.replace(/\s+/g, ' ').trim(),
         serviceNames: [...document.querySelectorAll('#svc-slot h3 a')].map((a) => a.textContent.trim()).sort(),
-        files: [...document.querySelectorAll('#files-slot td')].map((t) => t.textContent.trim()).sort(),
-        filesSummary: document.querySelector('#files-slot summary').textContent.replace(/\s+/g, ' ').trim() }));
+        files: [...document.querySelectorAll('#code-slot td')].map((t) => t.textContent.trim()).sort(),
+        filesSummary: document.querySelector('#code-slot summary').textContent.replace(/\s+/g, ' ').trim() }));
       await context.close();
       expect.soft(posts, `the page must only read (GET) through the door:\n${posts.join('\n')}`).toEqual([]);
       // the truth is the store's own answer, asked directly on localhost: the two queries the folds used to POST
@@ -227,8 +238,8 @@ for (const [where, mount] of MOUNTS) {
       const held = (await storeRows(request, `SELECT DISTINCT ?path WHERE { GRAPH ?g { ?f a chorus:CodeFile ; chorus:hasDomain <https://jeffbridwell.com/chorus#${DOMAIN}> ; chorus:filePath ?path } }`))
         .map((b) => String(b.path.value)).sort();
       expect(held.length, 'the store holds files for this domain').toBeGreaterThan(0);
-      expect.soft(drawn.filesSummary, 'the Files fold').not.toMatch(/\(\?\)/);
-      expect(drawn.files, 'the Files fold through the door lists exactly the files the store holds').toEqual(held);
+      expect.soft(drawn.filesSummary, 'the Code fold').not.toMatch(/\(\?\)/);
+      expect(drawn.files, 'the Code fold through the door lists exactly the files the store holds').toEqual(held);
     });
   });
 }
@@ -239,7 +250,9 @@ test.describe('#5040 NEGATIVE: the door checks are red on the pages that broke o
     const before = (f) => execFileSync('git', ['-C', ROOT, 'show', `${BEFORE_5040}:platform/api/public/athena/${f}`], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
     const door = await startDoor({ mount: '/chorus' });
     try {
-      const { page, context, refused } = await signedInPage(browser, door);
+      // lint: 'live' — the old page asked for the policies OUTSIDE the mount, and that request must be
+      // left to fail as it did on the phone; the once-per-process answer would hand it a good one
+      const { page, context, refused } = await signedInPage(browser, door, { lint: 'live' });
       await page.route((url) => url.origin === door.origin && /^\/chorus\/athena\/(domain\.html|facets\.js|model-fold\.js)$/.test(url.pathname), (route) => {
         const f = new URL(route.request().url()).pathname.split('/').pop();
         return route.fulfill({ status: 200, contentType: f.endsWith('.html') ? 'text/html; charset=utf-8' : 'text/javascript; charset=utf-8', body: before(f) });
@@ -267,5 +280,160 @@ test.describe('#5040 NEGATIVE: the door checks are red on the pages that broke o
       expect(outside.status(), 'the same data asked outside the mount does not answer: that is the vocabulary link of 08:02').not.toBe(200);
       await context.close();
     } finally { door.stop(); }
+  });
+});
+
+// =============================================================================================
+// #5041 AC4 — the folds come in the order a reader needs, and the long healthy ones start closed.
+//
+// Borg Queen's UX review of Jeff's walk (2026-11-25 10:44), taken by Wren: what the domain is and
+// exposes (Vocabulary, API Contract, Services), then whether it is healthy (Conformance, Gaps,
+// Dependencies, Design doc, Decisions), then the work and the code (UI Pages, Alerts, Logs,
+// Cards, Pipeline, Releases, Infrastructure, Tests, Code). Conformance starts closed when no
+// policy is red and open when one is; Code, the longest fold, starts closed.
+//
+// Read from the page as it STARTS: nothing is opened by the test before the folds are read.
+// NEGATIVE: a page with a red policy shows Conformance open, and the same page with the fold
+// shut is red; a green page with the fold forced open is red; the page Jeff walked is red on
+// its order.
+//
+// Page code read as drawn: platform/api/public/athena/domain.html (the slots, the Conformance
+// and Code folds), platform/api/public/athena/facets.js (the order of the shared folds).
+// =============================================================================================
+const { serveOwnAthenaFiles, serveLintOnce, openOldDomainPage, PHONE } = require('./lib/athena-page-5034.cjs');
+
+const FOLD_ORDER = ['Vocabulary', 'API Contract', 'Services', 'Conformance', 'Gaps', 'Dependencies', 'Design doc', 'Decisions',
+  'UI Pages', 'Alerts', 'Logs', 'Cards', 'Pipeline', 'Releases', 'Infrastructure', 'Tests', 'Code'];
+// a fold the page draws only when there is something to put in it: a domain with no design document has none
+const MAY_BE_ABSENT = ['Design doc'];
+
+/** Run in the page: every fold top to bottom, as it stands: its name, whether it is open, the red policies in it. */
+function foldsAsDrawn() {
+  return [...document.querySelectorAll('details.fold, details.mfwrap')].map((f) => ({
+    name: (f.querySelector(':scope > summary')?.childNodes[0]?.textContent || '').trim().replace(/\s*\(.*$/, ''),
+    open: f.open,
+    red: f.querySelectorAll('tr[data-verdict]:not([data-verdict="pass"])').length,
+    policies: f.querySelectorAll('tr[data-verdict]').length,
+    unread: /\(\?\)/.test(f.querySelector(':scope > summary')?.textContent || ''),
+  }));
+}
+
+/** Every way the folds are out of the reader's order, or start open or closed against the rule. */
+function orderFaults(folds) {
+  const out = [];
+  // "Services and running units" is the Services fold: a drawn name is the listed name, or starts with it
+  const known = (n) => FOLD_ORDER.find((e) => n === e || n.startsWith(e + ' '));
+  const drawn = folds.map((f, i) => ({ ...f, as: known(f.name), i }));
+  for (const f of drawn) {
+    if (f.name === 'Description') { if (f.i !== 0) out.push(`Description is fold ${f.i + 1}: when drawn it sits first, under the purpose`); continue; }
+    if (!f.as) out.push(`a fold the order does not name: "${f.name}"`);
+  }
+  const seq = drawn.filter((f) => f.as).map((f) => f.as);
+  for (const e of FOLD_ORDER) if (!seq.includes(e) && !MAY_BE_ABSENT.includes(e)) out.push(`the ${e} fold is not drawn`);
+  for (const e of new Set(seq)) if (seq.filter((s) => s === e).length > 1) out.push(`the ${e} fold is drawn ${seq.filter((s) => s === e).length} times`);
+  const want = FOLD_ORDER.filter((e) => seq.includes(e));
+  if (JSON.stringify([...new Set(seq)]) !== JSON.stringify(want)) out.push(`order: drawn ${seq.join(' > ')}; it must be ${want.join(' > ')}`);
+  const conf = drawn.find((f) => f.as === 'Conformance');
+  if (conf && conf.policies && conf.open !== (conf.red > 0)) out.push(`Conformance starts ${conf.open ? 'open' : 'closed'} with ${conf.red} red of ${conf.policies}: it is open when a policy is red, closed when none is`);
+  const code = drawn.find((f) => f.as === 'Code');
+  if (code && code.open && !code.unread) out.push('Code starts open: the longest fold on the page starts closed');
+  return out;
+}
+
+/** Open the ops view at phone width and wait until every fold has drawn. Nothing is opened. */
+async function openAsItStarts(page, { plantedPolicies = false } = {}) {
+  await page.setViewportSize(PHONE);
+  // a test that planted its own policies answer keeps it: a route added later would win over it
+  if (!plantedPolicies) await serveLintOnce(page);
+  await serveOwnAthenaFiles(page);
+  await page.goto(`${BASE}/athena/domain.html?d=${encodeURIComponent(DOMAIN)}`, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => document.querySelector('#code-slot details') && document.querySelector('#svc-slot details') && document.querySelector('#conf-slot details')
+    && document.querySelector('#facets details.fold') && !/running the domain lint/.test(document.getElementById('conf-slot').textContent), null, { timeout: 180_000 });
+}
+
+/** The policies endpoint's answer, written by the test: the named policies with the verdicts given. */
+const policiesAnswer = (verdicts) => (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ measuredAt: '2026-11-25T16:00:00.000Z',
+  policies: verdicts.map((verdict, i) => ({ name: `fixture-policy-${i + 1}`, label: 'planted by the test', verdict, count: verdict === 'pass' ? 0 : 3, baseline: 0, scope: 'global', violations: verdict === 'pass' ? [] : ['one thing wrong'] })) }) });
+const isPoliciesRead = (url) => url.pathname === '/api/chorus/policies/counts';
+
+test.describe(`#5041 the folds of the ${DOMAIN} ops view come in the reader's order and start as they should`, () => {
+  test.setTimeout(300_000);
+
+  test('the folds are drawn in the reader\'s order; Conformance is closed unless a policy is red; Code starts closed', async ({ page }) => {
+    await openAsItStarts(page);
+    const folds = await page.evaluate(foldsAsDrawn);
+    expect(folds.length, 'the page drew too few folds to be the domain page').toBeGreaterThan(12);
+    const faults = orderFaults(folds);
+    expect(faults, `the folds are out of order or start wrong:\n${faults.join('\n')}`).toEqual([]);
+    expect(folds.find((f) => f.name === 'Code').open, 'Code starts closed').toBe(false);
+  });
+
+  // Seen by LOOKING at the page at 390 px (Wren, 11-25 12:50, after Jeff: "they dont care about
+  // positions of things"): the closed Conformance fold's label hung out of its box and lay over
+  // the Gaps fold. Every test here was green. This one reads where things sit: each fold's
+  // heading, label included, is inside the fold's own box, and no fold lies over the next.
+  test('every fold holds its own heading, and no fold lies over the next one, as the page starts', async ({ page }) => {
+    await openAsItStarts(page);
+    const overlaps = () => page.evaluate(() => {
+      const folds = [...document.querySelectorAll('details.fold')];
+      const name = (f) => (f.querySelector(':scope > summary')?.childNodes[0]?.textContent || '').trim().replace(/\s*\(.*$/, '');
+      const out = [];
+      folds.forEach((f, i) => {
+        const box = f.getBoundingClientRect();
+        for (const part of f.querySelectorAll(':scope > summary, :scope > summary *')) {
+          const r = part.getBoundingClientRect();
+          if (r.height && r.bottom > box.bottom + 1) out.push(`${name(f)}: its heading runs ${Math.round(r.bottom - box.bottom)}px below its own box`);
+        }
+        const next = folds[i + 1]?.getBoundingClientRect();
+        if (next && next.top < box.bottom - 1) out.push(`${name(f)} lies over ${name(folds[i + 1])} by ${Math.round(box.bottom - next.top)}px`);
+      });
+      return [...new Set(out)];
+    });
+    expect(await overlaps(), `folds out of their boxes:\n${(await overlaps()).join('\n')}`).toEqual([]);
+    // NEGATIVE: without the rule that makes a closed fold hold its label, the closed Conformance fold is named
+    await page.addStyleTag({ content: '.fold > summary::after{display:none!important}' });
+    expect((await overlaps()).join('\n'), 'the page as it was an hour ago').toMatch(/^Conformance: its heading runs \d+px below its own box$/m);
+  });
+
+  test('with no red policy Conformance starts closed; with one it starts open. NEGATIVE: either turned round is red', async ({ page }) => {
+    await page.route(isPoliciesRead, policiesAnswer(['pass', 'pass', 'pass']));
+    await openAsItStarts(page, { plantedPolicies: true });
+    let folds = await page.evaluate(foldsAsDrawn);
+    expect(folds.find((f) => f.name === 'Conformance'), 'three green policies: closed').toMatchObject({ open: false, red: 0, policies: 3 });
+    expect(orderFaults(folds)).toEqual([]);
+    // NEGATIVE: the green fold forced open is named
+    await page.evaluate(() => { document.querySelector('#conf-slot details').open = true; });
+    expect(orderFaults(await page.evaluate(foldsAsDrawn))).toEqual(['Conformance starts open with 0 red of 3: it is open when a policy is red, closed when none is']);
+
+    await page.unroute(isPoliciesRead);
+    await page.route(isPoliciesRead, policiesAnswer(['pass', 'fail', 'pass']));
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => document.querySelector('#conf-slot tr[data-verdict]') && document.querySelector('#code-slot details') && document.querySelector('#facets details.fold'), null, { timeout: 120_000 });
+    folds = await page.evaluate(foldsAsDrawn);
+    expect(folds.find((f) => f.name === 'Conformance'), 'one red policy: open').toMatchObject({ open: true, red: 1, policies: 3 });
+    expect(orderFaults(folds)).toEqual([]);
+    // NEGATIVE: a red policy behind a closed fold is named
+    await page.evaluate(() => { document.querySelector('#conf-slot details').open = false; });
+    expect(orderFaults(await page.evaluate(foldsAsDrawn))).toEqual(['Conformance starts closed with 1 red of 3: it is open when a policy is red, closed when none is']);
+    // NEGATIVE: and Code left open is named
+    await page.evaluate(() => { document.querySelector('#conf-slot details').open = true; document.querySelector('#code-slot details').open = true; });
+    expect(orderFaults(await page.evaluate(foldsAsDrawn))).toEqual(['Code starts open: the longest fold on the page starts closed']);
+  });
+
+  test('NEGATIVE: the page Jeff walked is red on its order, and a fold moved or missing is named', async ({ page }) => {
+    await page.setViewportSize(PHONE);
+    await openOldDomainPage(page, BASE);
+    const faults = orderFaults(await page.evaluate(foldsAsDrawn)).join('\n');
+    expect(faults, 'the old order').toMatch(/^order: drawn Vocabulary > Design doc > Gaps > Conformance > Services > Cards > /m);
+    expect(faults, 'the second list of files').toMatch(/^a fold the order does not name: "Files"$/m);
+    expect(faults, 'the embedded Model fold').toMatch(/^a fold the order does not name: "Model/m);
+    expect(faults, 'the old Code fold started open').toMatch(/^Code starts open/m);
+    // and by hand: two folds swapped, and one taken out
+    const right = FOLD_ORDER.map((name) => ({ name, open: false, red: 0, policies: 0, unread: false }));
+    expect(orderFaults(right)).toEqual([]);
+    const swapped = [...right]; [swapped[4], swapped[5]] = [swapped[5], swapped[4]];
+    expect(orderFaults(swapped).join('\n')).toMatch(/^order: drawn .*Dependencies > Gaps/);
+    expect(orderFaults(right.filter((f) => f.name !== 'Pipeline'))).toEqual(['the Pipeline fold is not drawn']);
+    expect(orderFaults(right.filter((f) => f.name !== 'Design doc')), 'a domain with no design document draws no fold for it').toEqual([]);
   });
 });

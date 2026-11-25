@@ -269,17 +269,15 @@ async function renderDomain(name) {
     '<p class="sub">' + (dom.comment ? esc(dom.comment) : '<span class="empty">No comment in the model.</span>') +
     ' <a class="ref" href="' + window.basePath('/athena/domain.html?d=' + encodeURIComponent(name)) + '">ops view &rarr; cards, code, tests, logs (#3761)</a></p>';
 
-  // #3757 — the schema/OWL/instances rendering moved to the SHARED model fold
-  // (model-fold.js), the same component the ops page mounts compact. Order
-  // stays #3749's ruling (structure first: schema → OWL → instances) — it
-  // lives inside the component now, where it cannot diverge between altitudes.
+  // #3757 — the schema/OWL/instances rendering lives in model-fold.js. Order stays #3749's
+  // ruling (structure first: schema → OWL → instances). #5041 — this page is the only place
+  // it is drawn; the ops view links here once and embeds nothing.
   app.innerHTML = head + '<div id="mfold-slot"></div>';
-  await renderModelFold(document.getElementById('mfold-slot'), name, { compact: false });
+  await renderModelFold(document.getElementById('mfold-slot'), name);
 }
 
-// #3757 tombstone: renderSchema / owlBlock / wireOwl moved to model-fold.js —
-// the shared component both altitudes render. Do not reintroduce a local copy;
-// the drift test fails on any divergence between the two surfaces.
+// #3757 tombstone: renderSchema / owlBlock / wireOwl moved to model-fold.js.
+// Do not reintroduce a local copy.
 /* RETIRED by #3757:
 async function renderSchema(name) {
   const box = document.getElementById('schemabox');
