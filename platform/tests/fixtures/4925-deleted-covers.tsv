@@ -12,3 +12,4 @@ platform/tests/4040-pipelines-model.bats :: AC4047 (live) a valid PipelineRun PO
 platform/tests/4965-attention-architecture-doc.bats	none: it only ran roles/silas/docs/attention-architecture.test.ts (deleted with it, Silas row 6): the wording of one design doc, nothing gates on it
 platform/tests/api-fragile-endpoints.bats :: POST /api/seed/sms returns 200 with signed Twilio payload	platform/scripts/seed-probe.sh
 platform/tests/4175-hat-layers-cannot-cross.bats :: #4175 RED — every hat check finds exactly the violations it claims	platform/tests/4960-policy-rows.bats
+platform/api/tests/domain-page-files-4235.test.ts	proving/flows/athena-domain-true-5034.spec.cjs

@@ -1,10 +1,10 @@
-// #3757 — the shared model fold: schema → OWL → instances for one domain.
-// ONE implementation used by BOTH altitudes (chorus:principle-no-competing-implementations):
-//   /domains/<d>        (model view, full)    — domains-view.html
-//   /athena/domain.html (ops view, compact)   — the what-is-this anchor
-// Same endpoints, same markup, same honest states; divergence is impossible
-// because there is nothing to diverge — the drift test (test-model-fold-drift)
-// proves it stays that way.
+// #3757 — the model fold: schema → OWL → instances for one domain.
+// #5041 — drawn in ONE place now, the model view (/domains/<d>, domains-view.html). The ops
+// view (/athena/domain.html) embedded a compact copy; Jeff, 2026-11-25: "we dont want 2-3 links
+// to same data", so the ops view links here once ("Shape and OWL") and embeds nothing. With one
+// surface there is nothing to drift from: the two-surface drift script is retired, and what the
+// model view draws is held in a browser, through the sign-in door, by
+// proving/flows/athena-domain-folds-5034.spec.cjs and athena-domain-true-5034.spec.cjs.
 //
 // Endpoints (all same-origin, #3644/#3706):
 //   GET /owl/domains                          — vocab edges (collection row)
@@ -43,9 +43,6 @@
 .mfold a.mfcard .mfm { display: block; font-size: .74rem; color: #6b7280; font-family: ui-monospace, Menlo, monospace; }
 .mfold .mfzoom { font-size: .8rem; }
 .mfold .mfzoom a { color: #0d6efd; text-decoration: none; }
-details.mfwrap { border: 1px solid #e0e0e0; border-radius: 8px; background: #fff; margin-bottom: 14px; }
-details.mfwrap > summary { padding: 10px 16px; font-weight: 600; cursor: pointer; font-size: .95rem; }
-details.mfwrap > .mfbody { padding: 0 16px 14px; }
 `;
 
   function injectCss() {
@@ -181,15 +178,12 @@ details.mfwrap > .mfbody { padding: 0 16px 14px; }
   }
 
   /**
-   * Render the model fold for `name` into `el`.
-   * opts.compact — wrap in a collapsed <details> (the ops page's what-is-this
-   *   anchor) with a zoom-out link to the model view. Full mode renders open
-   *   (the model view IS the descent, folding it there would hide the point).
-   * Resolves when schema + instances have rendered (OWL stays lazy).
+   * Render the model fold for `name` into `el`, open (the model view IS the descent; folding
+   * it there would hide the point). Resolves when schema + instances have rendered (OWL stays lazy).
+   * #5041 — the compact, collapsed form the ops page embedded is gone with that embed.
    */
-  async function renderModelFold(el, name, opts) {
+  async function renderModelFold(el, name) {
     injectCss();
-    const compact = !!(opts && opts.compact);
     let vocab = [];
     let vocabErr = null;
     try {
@@ -209,16 +203,10 @@ details.mfwrap > .mfbody { padding: 0 16px 14px; }
         '<h2>Schema — what the model says each class has</h2><div data-mf="schema">…</div>' +
         '<details class="mfowl"><summary>The OWL for this domain</summary><pre>…</pre></details>' +
         '<h2>Instances — what lives in this domain</h2><div data-mf="instances">…</div>')) +
-      '<p class="mfzoom">' + (compact
-        ? 'zoom out: <a href="' + ESC(window.basePath('/domains/' + encodeURIComponent(name))) + '">model view — the descent (ERD &rarr; domain &rarr; class &rarr; instance)</a>'
-        : 'across: <a href="' + ESC(window.basePath('/athena/domain.html?d=' + encodeURIComponent(name))) + '">ops view — cards, code, tests, logs</a>') +
+      '<p class="mfzoom">across: <a href="' + ESC(window.basePath('/athena/domain.html?d=' + encodeURIComponent(name))) + '">ops view — cards, code, tests, logs</a>' +
       '</p></div>';
 
-    el.innerHTML = compact
-      ? '<details class="mfwrap"><summary>Model — schema &middot; OWL &middot; instances ' +
-        '<span style="font-weight:400;color:#6b7280;font-size:.78rem">(the shared fold, #3757 — identical on the model view)</span>' +
-        '</summary><div class="mfbody">' + inner + '</div></details>'
-      : inner;
+    el.innerHTML = inner;
 
     if (!vocabErr) {
       const [sch, inst] = await Promise.all([schemaHtml(name), instancesHtml(name, vocab)]);

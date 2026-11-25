@@ -169,9 +169,15 @@ for (const [where, mount] of MOUNTS) {
       await context.close();
     });
 
+    // #5041 — this test replaces the hand-run script platform/tests/test-model-fold-drift.cjs, retired
+    // on this card. That script compared the model fold on two surfaces (#3757); the ops view no
+    // longer embeds it, so one surface is left. What the script still held of the model view (reached
+    // by its own address, at least one class drawn) is held here, through the door, at both mounts.
     test('the model view draws the schema and a card for every row, through the door', async ({ browser, request }) => {
       const { page, context, refused } = await signedInPage(browser, door);
       await openThroughDoor(page, door, `/domains/${encodeURIComponent(DOMAIN)}`);
+      expect.soft(new URL(page.url()).pathname, 'the model view is reached by its own address, with no redirect').toBe(`${door.mount}/domains/${encodeURIComponent(DOMAIN)}`);
+      expect.soft(await page.locator('[data-mf="schema"] h3').count(), 'the schema draws at least one class').toBeGreaterThan(0);
       const broken = await page.evaluate(brokenFolds, DOOR_NO_ANSWER.source);
       expect.soft(broken, `the model view failed through the door:\n${broken.join('\n')}`).toEqual([]);
       expect.soft([...new Set(refused)], `requests that left the door or that it refused:\n${[...new Set(refused)].join('\n')}`).toEqual([]);
