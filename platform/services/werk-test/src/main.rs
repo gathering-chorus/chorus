@@ -986,7 +986,7 @@ fn step_run(ctx: &Ctx, test_type: &str) -> Result<i32, String> {
             emit_spine("test.integration.skipped", &role, &card, &trace,
                 &[("count", &ui_set.len().to_string()), ("stack_down", down), ("lane", "ui")]);
         } else {
-            let (ok, summary) = run_ui_flows(&werk, &ui_set, &quarantined);
+            let (ok, summary) = run_ui_flows(werk, card, &ui_set, &quarantined);
             // #4539 — a held spec is excluded before the run; it is UNMEASURED too
             for h in &quarantined {
                 if ui_set.iter().any(|f| f.rsplit('/').next() == Some(h.case.as_str())) {
@@ -3976,24 +3976,72 @@ fn ensure_ui_service_built(werk: &str, pkg: &str, artifact: &str) {
 /// sets no CHORUS_ROOT, so every spec that starts its own Clearing died on
 /// "CHORUS_ROOT must be set" (7 red, none about the card). The flows are rooted
 /// in the tree under test, as every other suite is (apply_suite_world, #4474).
-fn ui_flows_env(werk: &str) -> Vec<(&'static str, String)> {
-    vec![
+/// #5034 — the card rides too: the specs' case events are written by their own
+/// reporter (test-events.cjs), which stamps `card=` only from CHORUS_CARD_ID. With
+/// none, every browser case reached the spine with no card_id, and the land prover
+/// (which asks for the card's case events) called all four browser AC unmeasured.
+fn ui_flows_env(werk: &str, card: &str) -> Vec<(&'static str, String)> {
+    let mut env = vec![
         ("CHORUS_CONTEXT", String::new()), // #3918 — test child stays refusable
         ("CHORUS_ROOT", werk.to_string()),
         // #4454 — the specs' own events (fixtures, each case starting and ending)
         ("CHORUS_TEST_EVENTS", test_events_path(werk)),
-    ]
+    ];
+    if !card.trim().is_empty() {
+        env.push(("CHORUS_CARD_ID", card.trim().to_string()));
+    }
+    env
 }
 
 #[cfg(test)]
 mod ui_flows_env_4235 {
     #[test]
     fn the_flows_are_rooted_in_the_werk_under_test() {
-        let env = super::ui_flows_env("/w/kade-4235");
+        let env = super::ui_flows_env("/w/kade-4235", "4235");
         assert!(env.contains(&("CHORUS_ROOT", "/w/kade-4235".to_string())), "{env:?}");
         // NEGATIVE PROOF: without the pin the own-Clearing fixture refuses to start
-        assert!(!super::ui_flows_env("/w/x").iter().any(|(k, v)| *k == "CHORUS_ROOT" && v.is_empty()));
+        assert!(!super::ui_flows_env("/w/x", "4235").iter().any(|(k, v)| *k == "CHORUS_ROOT" && v.is_empty()));
         assert!(env.iter().any(|(k, v)| *k == "CHORUS_CONTEXT" && v.is_empty()));
+    }
+}
+
+/// #5034 — a browser case's event, as the ui lane's env makes the real reporter write it,
+/// carries the card: the land prover finds a card's case events by card_id.
+/// NEGATIVE PROOF: the same reporter under an env with no card (the old ui lane, and the
+/// nightly) writes no card, which is the line the prover called "no result yet".
+#[cfg(test)]
+mod ui_flows_card_5034 {
+    fn reporter_line(env: &[(&'static str, String)]) -> String {
+        let root = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").expect("cargo sets CARGO_MANIFEST_DIR")).join("../../..");
+        let events = env.iter().find(|(k, _)| *k == "CHORUS_TEST_EVENTS").map(|(_, v)| v.clone()).expect("events path");
+        let _ = std::fs::remove_file(&events);
+        let js = r#"const R = require('./proving/flows/lib/case-events-reporter.cjs');
+const t = { location: { file: require('path').resolve('proving/flows/athena-domain-readable-5034.spec.cjs') }, titlePath: () => ['', 'f', 'suite', 'case'], title: 'case' };
+new R().onTestEnd(t, { status: 'passed', duration: 5 });"#;
+        let mut cmd = std::process::Command::new("node");
+        cmd.arg("-e").arg(js).current_dir(&root).env_remove("CHORUS_CARD_ID").env("CHORUS_TRACE_ID", "t-5034");
+        for (k, v) in env { cmd.env(k, v); }
+        let st = cmd.status().expect("node runs");
+        assert!(st.success());
+        let text = std::fs::read_to_string(&events).unwrap_or_default();
+        let _ = std::fs::remove_file(&events);
+        let fwd = werk_test::forwardable_test_events(&text);
+        assert_eq!(fwd.len(), 1, "one forwarded case event: {text}");
+        fwd[0].clone()
+    }
+
+    #[test]
+    fn a_card_runs_browser_case_carries_the_card() {
+        let line = reporter_line(&super::ui_flows_env("/w/wren-5034", "5034"));
+        assert!(line.starts_with("test.case.passed\t"), "{line}");
+        assert!(line.split('\t').any(|f| f == "card=5034"), "no card on the browser case: {line}");
+    }
+
+    #[test]
+    fn negative_proof_with_no_card_in_the_env_the_case_has_none() {
+        let line = reporter_line(&super::nightly_ui_env("/w/canonical"));
+        assert!(!line.split('\t').any(|f| f.starts_with("card=")), "{line}");
+        assert!(super::ui_flows_env("/w/x", " ").iter().all(|(k, _)| *k != "CHORUS_CARD_ID"));
     }
 }
 
@@ -4015,11 +4063,11 @@ mod nightly_ui_env_5034 {
     fn the_nightly_says_so_and_a_card_run_does_not() {
         assert!(super::nightly_ui_env("/w").contains(&("WERK_TEST_NIGHTLY", "1".to_string())));
         // NEGATIVE PROOF: the card run's env must not carry it, or the fixture never applies
-        assert!(!super::ui_flows_env("/w").iter().any(|(k, _)| *k == "WERK_TEST_NIGHTLY"));
+        assert!(!super::ui_flows_env("/w", "5034").iter().any(|(k, _)| *k == "WERK_TEST_NIGHTLY"));
     }
 }
 
-fn run_ui_flows(werk: &str, files: &std::collections::BTreeSet<String>, quarantined: &[werk_test::Quarantined]) -> (Option<bool>, String) {
+fn run_ui_flows(werk: &str, card: &str, files: &std::collections::BTreeSet<String>, quarantined: &[werk_test::Quarantined]) -> (Option<bool>, String) {
     ensure_ui_service_built(werk, "directing/clearing", "dist/server.js");
     let mut cmd = Command::new("npx");
     cmd.arg("playwright").arg("test");
@@ -4040,7 +4088,7 @@ fn run_ui_flows(werk: &str, files: &std::collections::BTreeSet<String>, quaranti
         cmd.arg(f);
     }
     cmd.current_dir(werk);
-    for (k, v) in ui_flows_env(werk) {
+    for (k, v) in ui_flows_env(werk, card) {
         cmd.env(k, v);
     }
     let out = cmd.output();

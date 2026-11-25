@@ -74,7 +74,13 @@ const isModelViewPath = (p) => p === '/domains' || p.startsWith('/domains/');
  * read the directory exactly as served.
  * `omit` removes kinds instead: a negative proof draws the page as it was before the fix.
  */
-const LANDED_ENTRIES = [{ kind: 'Principle', collection: '/v1/principles/principles' }];
+// Nothing is stood in any more. The server change landed 11-24 20:22 and the live directory lists
+// Principle itself, so the suites read it as served. The stand-in that was here wrote its entry
+// with "kind" before "collection"; the real answer has them the other way round, and rows.js
+// matched on that order, so the rows page passed here and was wrong in production (found by the
+// after-the-land run, 20:29). A stand-in for a server change must be the server's real answer,
+// byte for byte, or not exist.
+const LANDED_ENTRIES = [];
 const LIVE_DISCOVERY = process.env.ATHENA_DISCOVERY === 'live' || process.env.WERK_TEST_NIGHTLY === '1';
 function asLanded(body) {
   if (LIVE_DISCOVERY) return body;
