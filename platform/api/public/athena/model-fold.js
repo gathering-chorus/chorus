@@ -56,8 +56,14 @@ details.mfwrap > .mfbody { padding: 0 16px 14px; }
     document.head.appendChild(s);
   }
 
+  // #5040 — every address this fold asks for or links to goes through window.basePath, the ONE
+  // mount helper each page that loads this file defines in its head (domain.html,
+  // domains-view.html, service.html), asked at CALL time. Under lightlifeurbangardens.com/chorus
+  // a root-absolute address leaves the sign-in door and lands on the garden site: Jeff's phone,
+  // 2026-11-25 08:02, "Could not read the model". At the root the mount is empty and every
+  // address is what it was.
   async function getJSON(path) {
-    const r = await fetch(path, { headers: { Accept: 'application/json' } });
+    const r = await fetch(window.basePath(path), { headers: { Accept: 'application/json' } });
     if (!r.ok) throw new Error(path + ' → HTTP ' + r.status);
     return r.json();
   }
@@ -73,7 +79,7 @@ details.mfwrap > .mfbody { padding: 0 16px 14px; }
   async function schemaHtml(name) {
     let d;
     try {
-      const r = await fetch('/api/athena/domain-schema/' + encodeURIComponent(name));
+      const r = await fetch(window.basePath('/api/athena/domain-schema/' + encodeURIComponent(name)));
       // Three failures, three messages (#3724's hard-won lesson): route-missing,
       // store-unreachable, and genuinely-empty must never look alike.
       if (r.status === 404) {
@@ -132,7 +138,7 @@ details.mfwrap > .mfbody { padding: 0 16px 14px; }
         const items = (r.data || []).slice().sort((a, b) => String(a.name).localeCompare(String(b.name)));
         parts.push('<h3>' + ESC(kind) + '</h3>' + (items.length
           ? '<div class="mfgrid">' + items.map(i =>
-              '<a class="mfcard" href="/domains/' + encodeURIComponent(name) + '/' + encodeURIComponent(i.name) + '">' +
+              '<a class="mfcard" href="' + ESC(window.basePath('/domains/' + encodeURIComponent(name) + '/' + encodeURIComponent(i.name))) + '">' +
               '<span class="mfn">' + ESC(i.label || i.name) + '</span>' +
               '<span class="mfm">' + ESC(i.name) + '</span></a>').join('') + '</div>'
           : '<div class="mfnote"><strong>Served, but zero instances live.</strong> The collection ' +
@@ -156,7 +162,7 @@ details.mfwrap > .mfbody { padding: 0 16px 14px; }
       loaded = true;
       const pre = box.querySelector('pre');
       try {
-        const r = await fetch('/api/athena/domain-owl/' + encodeURIComponent(name));
+        const r = await fetch(window.basePath('/api/athena/domain-owl/' + encodeURIComponent(name)));
         const body = await r.text();
         if (r.status === 404 || body.startsWith('{')) {
           pre.textContent = '# This endpoint is not on this server.\n' +
@@ -204,8 +210,8 @@ details.mfwrap > .mfbody { padding: 0 16px 14px; }
         '<details class="mfowl"><summary>The OWL for this domain</summary><pre>…</pre></details>' +
         '<h2>Instances — what lives in this domain</h2><div data-mf="instances">…</div>')) +
       '<p class="mfzoom">' + (compact
-        ? 'zoom out: <a href="/domains/' + encodeURIComponent(name) + '">model view — the descent (ERD &rarr; domain &rarr; class &rarr; instance)</a>'
-        : 'across: <a href="/athena/domain.html?d=' + encodeURIComponent(name) + '">ops view — cards, code, tests, logs</a>') +
+        ? 'zoom out: <a href="' + ESC(window.basePath('/domains/' + encodeURIComponent(name))) + '">model view — the descent (ERD &rarr; domain &rarr; class &rarr; instance)</a>'
+        : 'across: <a href="' + ESC(window.basePath('/athena/domain.html?d=' + encodeURIComponent(name))) + '">ops view — cards, code, tests, logs</a>') +
       '</p></div>';
 
     el.innerHTML = compact

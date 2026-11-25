@@ -5,12 +5,7 @@
      The family's domain view; the richer 17-facet /domain.html (root) remains until
      its facets fold in (consolidation card). Hand-authored pending the generator upgrade. -->
 <script>window.OWL_PORT = 3360;</script>
-<link rel="stylesheet" href="athena-flow.css"><style>.tbl{overflow-x:auto;max-width:100%;-webkit-overflow-scrolling:touch}.tbl table{min-width:420px}.ok{color:#1a7f37;font-weight:600}.bad{color:#cf222e;font-weight:600}@media (prefers-color-scheme:dark){.ok{color:#3fb950}.bad{color:#f85149}}</style><script src="athena-flow.js"></script><script>
-// #4064/#4084 — one page-wide model base. It was never defined on this page (#3810), so any domain with a
-// vocabulary threw 'OWL is not defined'; defining it inside one function (first fix) left renderFacets without it.
-// Same-origin /owl proxy, resolved through athena-flow's basePath when present, so it works on prod, a werk variant, the LAN and the tunnel.
-var OWL = (typeof window.basePath === 'function') ? window.basePath('/owl') : '/owl';
-</script><script src="model-fold.js"></script><script src="facets.js"></script><script>mountJourneyNav('domains');</script><script>/* #3810 — the page teaches itself its mount, with nothing to fetch.
+<link rel="stylesheet" href="athena-flow.css"><style>.tbl{overflow-x:auto;max-width:100%;-webkit-overflow-scrolling:touch}.tbl table{min-width:420px}.ok{color:#1a7f37;font-weight:600}.bad{color:#cf222e;font-weight:600}/* #5040: a verdict is one word; the fold's wrap-anywhere rule broke it into "gr ee n" on a phone */span.ok,span.bad,.fold td.word{white-space:nowrap;overflow-wrap:normal}@media (prefers-color-scheme:dark){.ok{color:#3fb950}.bad{color:#f85149}}</style><script src="athena-flow.js"></script><script src="model-fold.js"></script><script src="facets.js"></script><script>mountJourneyNav('domains');</script><script>/* #3810 — the page teaches itself its mount, with nothing to fetch.
    A root-absolute src on the loader tag is the trap: from /chorus/ the browser resolves it
    against the apex, asks the garden site, gets a 404 — so the file that would have told
    this page where it lives can never load. Chicken-and-egg, and it left three correct
@@ -24,7 +19,12 @@ window.basePath=function(x){if(!x)return b||'/';if(/^[a-z]+:\/\//i.test(x)||x.in
 return b+(x.charAt(0)==='/'?x:'/'+x);};
 /* the DOM-rewriter still has a job (root-absolute hrefs must stay inside the mount);
    it is fetched THROUGH the base this snippet just computed, so it cannot escape. */
-var s=document.createElement('script');s.src=window.basePath('/js/base-path.js');document.head.appendChild(s);}());</script>
+var s=document.createElement('script');s.src=window.basePath('/js/base-path.js');document.head.appendChild(s);}());
+// #5040 — the page-wide `OWL` constant (#4064/#4084) is gone. It was set ABOVE this snippet,
+// before the page knew its mount, so it was always the bare model base: under
+// lightlifeurbangardens.com/chorus every address built from it left the sign-in door (Jeff's
+// phone, 2026-11-25 08:02). Every address on this page is now built at call time through
+// window.basePath (above) or athena-flow.js's fetchJSON.</script>
 </head>
 <body><div class="wrap">
 <div class="crumb" id="crumb"><a href="value-stream.html">value stream</a> &rarr; <a href="domains.html">domains</a></div>
@@ -66,7 +66,9 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
     const collOf = v => ((disc && disc.primitives) || []).find(p => p.kind === v);
     const vocabRows = vocab.map(v => {
       const c = collOf(v);
-      return `<tr><td>${esc(v)}</td><td>${c ? `<a class="edge" href="${OWL}${esc(c.collection)}">${esc(c.collection)}</a>`
+      // #5040 — the link opens the class's rows as a table (rows.html). It opened the collection
+      // itself, which on a phone is a screen of raw data (Jeff, 08:14); the collection is named beside it.
+      return `<tr><td class="word">${esc(v)}</td><td>${c ? `<a class="edge" href="rows.html?kind=${encodeURIComponent(v)}">rows of ${esc(v)}</a> <span class="src">${esc(c.collection)}</span>`
         : `<span class="empty">${disc ? 'not served: discovery names no collection for this class' : 'could not read discovery'}</span>`}</td></tr>`;
     }).join('');
 
@@ -75,16 +77,15 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
     // both. A Document row gives its own address (docHref); a value with neither gets words.
     // The edge is many-valued and may arrive with an IRI prefix (product.html reads it the same
     // way); every address goes through basePath so it stays inside the mount.
-    const inMount = h => (typeof window.basePath === 'function' ? window.basePath(h) : h);
     const designDocs = asArray(e.hasDesignDoc).map(v => String(v).split('#').pop().replace(/^chorus:/, '')).filter(Boolean);
     const ddLink = (await Promise.all(designDocs.map(async dd => {
       if (/^document-/.test(dd)) {
         const env = await fetchJSON(`/knowledge/documents/${encodeURIComponent(dd.replace(/^document-/, ''))}`).catch(() => null);
         const doc = env && (Array.isArray(env.data) ? env.data[0] : env.data);
-        return doc && doc.docHref ? `<a class="edge" href="${esc(inMount(doc.docHref))}">${esc(doc.docTitle || dd)}</a>`
+        return doc && doc.docHref ? `<a class="edge" href="${esc(window.basePath(doc.docHref))}">${esc(doc.docTitle || dd)}</a>`
           : `${esc(dd)} <span class="empty">&mdash; the model holds no document by that name</span>`;
       }
-      if (/^[\w.-]+\.html$/.test(dd)) return `<a class="edge" href="${esc(inMount('/designing/docs/' + dd))}">${esc(dd)}</a>`;
+      if (/^[\w.-]+\.html$/.test(dd)) return `<a class="edge" href="${esc(window.basePath('/designing/docs/' + dd))}">${esc(dd)}</a>`;
       return `${esc(dd)} <span class="empty">&mdash; not a document name or a design file</span>`;
     }))).join('<br>');
 
@@ -95,7 +96,7 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
   <div class="stat"><div class="v">${stepBadge(e.atStep)}</div><div class="l">Step (atStep)</div></div>
   <div class="stat"><div class="v">${esc(e.status || 'no status')}</div><div class="l">Status</div></div>
   <div class="stat"><div class="v">${part ? `<a class="edge" href="product.html?p=${encodeURIComponent(part)}">${esc(part)}</a>` : '<span class="empty">unclaimed</span>'}</div><div class="l">Product (partOf)</div></div>
-  <div class="stat"><div class="v"><a class="edge" href="/domains/${encodeURIComponent(d)}">schema &rarr; OWL &rarr; instances</a></div><div class="l">Model view (#3761)</div></div>
+  <div class="stat"><div class="v"><a class="edge" href="${esc(window.basePath('/domains/' + encodeURIComponent(d)))}">schema &rarr; OWL &rarr; instances</a></div><div class="l">Model view (#3761)</div></div>
 </div>
 <details class="fold" open><summary>Description <span class="src">rdfs:comment</span></summary><div class="body"><p>${esc(e.comment || '')}</p></div></details>
 <details class="fold" open><summary>Vocabulary (definesVocabulary) <span class="src">the classes this domain owns &mdash; each is a generated API</span></summary><div class="body">
@@ -118,7 +119,7 @@ ${srcNote(`GET /domains/${esc(d)} + the materialized facet endpoints (/api/choru
     window.FOLD_NOTES = Object.fromEntries(asArray(e.foldNote).map(n => String(n)).filter(n => n.includes(':'))
       .map(n => [n.slice(0, n.indexOf(':')).trim(), n.slice(n.indexOf(':') + 1).trim()]));
     renderFacets(d);
-    renderServices(d);
+    renderServices(d, asArray(e.hosts).map(x => String(x).split('#').pop().replace(/^chorus:/, '')).filter(Boolean));
     renderFiles(d);
     renderConformance(d);
   } catch (e) { fetchFailed(main, e); }
@@ -132,7 +133,7 @@ async function renderConformance(d) {
   const fold = (summary, body, open) => `<details class="fold"${open ? ' open' : ''}><summary>Conformance ${summary} <span class="src">chorus:Policy (global or appliesTo) &middot; policy-validate --domain ${esc(d)}</span></summary><div class="body">${body}</div></details>`;
   el.innerHTML = fold('', '<p class="empty">running the domain lint&hellip;</p>', true);
   try {
-    const r = await fetch(`/api/chorus/policies/counts?domain=${encodeURIComponent(d)}`);
+    const r = await fetch(window.basePath(`/api/chorus/policies/counts?domain=${encodeURIComponent(d)}`));   // #5040: through the mount
     const b = await r.json();
     if (!r.ok) { el.innerHTML = fold('', `<p class="empty"><strong>Cannot measure</strong> &mdash; ${esc(b.error || ('HTTP ' + r.status))}</p>`, true); return; }
     const ps = b.policies || [];
@@ -147,14 +148,13 @@ async function renderConformance(d) {
 
 // #4472 — the services this domain hosts (chorus:hosts) and the launchd units the services
 // crawl found running them (runsService). Both come from the graph; nothing is listed here.
-async function renderServices(d) {
+// #5040 — the hosted services come from the Domain row the page already read (its `hosts`
+// edge), not from a query POSTed to the store. The sign-in door is GET and HEAD only, by
+// design, so at the public address this fold read "sparql-read 405" (Jeff's phone, 08:03).
+async function renderServices(d, svcs) {
   const el = document.getElementById('svc-slot');
   const fold = (body) => `<details class="fold" open><summary>Services and running units <span class="src">chorus:hosts &rarr; chorus:Service &larr; chorus:runsService (the services crawl)</span></summary><div class="body">${body}</div></details>`;
   try {
-    const q = `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT DISTINCT ?svc WHERE { GRAPH ?g { <https://jeffbridwell.com/chorus#${encodeURIComponent(d)}> chorus:hosts ?svc } }`;
-    const r = await fetch(window.basePath('/sparql-read'), { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/sparql-results+json' }, body: JSON.stringify({ query: q }) });
-    if (!r.ok) throw new Error(`sparql-read ${r.status}`);
-    const svcs = (((await r.json()).results || {}).bindings || []).map(b => String(b.svc.value).split('#').pop());
     const why = (window.FOLD_NOTES || {}).Services;   // #5021 — the written reason, when there is one
     if (!svcs.length) { el.innerHTML = fold((why ? `<p class="note"><strong>Why empty:</strong> ${esc(why)}</p>` : '') + `<p class="empty">The model names no service this domain hosts &mdash; add <code>chorus:${esc(d)} chorus:hosts &lt;service&gt;</code>.</p>`); return; }
     const [inst, jobs] = await Promise.all([fetchJSON('/serviceinstances?limit=500'), fetchJSON('/scheduledjobs?limit=500')]);
@@ -175,10 +175,19 @@ async function renderFiles(d) {
   const el = document.getElementById('files-slot');
   const fold = (n, body) => `<details class="fold"${n && n <= 40 ? ' open' : ''}><summary>Files (${n}) <span class="src">chorus:CodeFile &rarr; chorus:hasDomain (the code crawl)</span></summary><div class="body">${body}</div></details>`;
   try {
-    const q = `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT DISTINCT ?path WHERE { GRAPH ?g { ?f a chorus:CodeFile ; chorus:hasDomain <https://jeffbridwell.com/chorus#${encodeURIComponent(d)}> ; chorus:filePath ?path } } ORDER BY ?path`;
-    const r = await fetch(window.basePath('/sparql-read'), { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/sparql-results+json' }, body: JSON.stringify({ query: q }) });
-    if (!r.ok) throw new Error(`sparql-read ${r.status}`);
-    const paths = (((await r.json()).results || {}).bindings || []).map(b => String(b.path.value));
+    // #5040 — read from the model door's own collection, filtered there on hasDomain (a GET the
+    // sign-in door serves). It was a query POSTed to the store, which the door refuses: 405.
+    // Every page of the collection is followed, so a domain with many files is not cut short.
+    const seen = new Set();
+    let next = `/code/files?hasDomain=${encodeURIComponent(d)}&limit=1000`;
+    for (let pages = 0; next && pages < 20; pages++) {
+      const env = await fetchJSON(next);
+      for (const f of (env.data || [])) if (f.filePath) seen.add(String(f.filePath));
+      next = env.links && env.links.next ? String(env.links.next).replace(/^\/v1/, '') : null;
+    }
+    // 20 pages is 20,000 files; a domain past that is told so, never shown a short list as the whole
+    if (next) throw new Error('more than 20,000 files for this domain: the list would be cut short');
+    const paths = [...seen].sort();
     if (!paths.length) { el.innerHTML = fold(0, `<p class="empty">The crawl tagged no file with this domain.</p>`); return; }
     el.innerHTML = fold(paths.length, `<div class="tbl"><table><tbody>${paths.map(p => `<tr><td><code>${esc(p)}</code></td></tr>`).join('')}</tbody></table></div>`);
   } catch (e) { el.innerHTML = fold('?', `<p class="empty"><strong>Cannot reach the model</strong> for files &mdash; fetch failure. ${esc(String(e && e.message || e))}</p>`); }

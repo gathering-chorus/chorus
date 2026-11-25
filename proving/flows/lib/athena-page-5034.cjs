@@ -197,4 +197,99 @@ async function deadLinks(page, hrefs) {
   return dead;
 }
 
-module.exports = { LIVE_DISCOVERY, ROOT, ATHENA_DIR, BASE, DOMAIN, PHONE, ownAthenaFile, serveOwnAthenaFiles, serveOwnModelView, serveDiscoveryAsLanded, openDomainPage, openModelView, sameOriginLinks, deadLinks, doorTruth };
+// ---------------------------------------------------------------------------------------------
+// #5040 — opening the pages the way Jeff's phone does: through the sign-in door.
+//
+// Jeff, 2026-11-25 08:06, with five phone screenshots: "the page is way too broken to do an
+// interview". Every suite above was green at that moment, because everything above opens the
+// pages at localhost:3340, at the root. His phone opens them at the public address, behind
+// chorus-share-guard: an allow list, a session, GET and HEAD only, and on the apex a /chorus mount.
+//
+// startDoor runs the REAL door (platform/scripts/chorus-share-guard.py) on a scratch port:
+//   - at the mount asked for: '/chorus' as on the public apex, '' as on the door's own host;
+//   - the real allow list (config/share-allowlist.txt), read from THIS tree;
+//   - its upstream is the live chorus-api, as in production;
+//   - a scratch identity world (one test person, a scratch cookie key, offline: no identity
+//     provider is contacted), and a session minted by the door's own --sign-session.
+// Nothing of the door is re-implemented here. The pages' own files are served from this tree
+// (the header of this file says why); every data call goes through the door.
+// (These live in this file, not a second lib: the layout rule counts files under proving/flows.)
+const os = require('os');
+const net = require('net');
+const { spawn, execFileSync } = require('child_process');
+
+const GUARD = path.join(ROOT, 'platform', 'scripts', 'chorus-share-guard.py');
+const DOOR_ALLOW = path.join(ROOT, 'config', 'share-allowlist.txt');
+const DOOR_PERSON = 'https://example.test/tester-5040#me';
+
+// A port the system says is free. Another process could take it before the door binds; the door
+// then exits, and startDoor reports that with the door's own log, never a silent hang.
+const freePort = () => new Promise((resolve, reject) => {
+  const s = net.createServer();
+  s.once('error', reject);
+  s.listen(0, '127.0.0.1', () => { const { port } = s.address(); s.close(() => resolve(port)); });
+});
+
+/**
+ * Start the door. Returns { origin, mount, cookie, stop, log }.
+ * `allowFile` lets a negative proof run the door on another list.
+ */
+async function startDoor({ allowFile = DOOR_ALLOW, mount = '/chorus' } = {}) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'door-5040-'));
+  const port = await freePort();
+  fs.writeFileSync(path.join(dir, 'principals.txt'), DOOR_PERSON + '\n');
+  fs.writeFileSync(path.join(dir, 'person-sessions.json'), JSON.stringify({ 'tester-5040-browser': { principal: 'tester-5040', row: { name: 'tester-5040-browser' } } }));
+  const env = { ...process.env,
+    SHARE_PRINCIPALS_FILE: path.join(dir, 'principals.txt'), SHARE_STATE_FILE: path.join(dir, 'oidc-state.json'),
+    SHARE_PERSON_SESSIONS: path.join(dir, 'person-sessions.json'), SHARE_OIDC_OFFLINE: '1',
+    ATHENA_MAKE_URL: 'http://127.0.0.1:9', // a renewal never writes a real Session row
+    SHARE_ALLOW_FILE: allowFile, SHARE_UPSTREAM: BASE, SHARE_PATH_PREFIX: mount, SHARE_PORT: String(port),
+    SHARE_PUBLIC_ORIGIN: `http://127.0.0.1:${port}`, SHARE_COOKIE_DOMAIN: '' };
+  delete env.SHARE_ALLOW;
+  const logFile = path.join(dir, 'door.log');
+  const out = fs.openSync(logFile, 'a');
+  const child = spawn('python3', [GUARD], { env, stdio: ['ignore', out, out] });
+  const origin = `http://127.0.0.1:${port}`;
+  const stop = () => {
+    try { child.kill(); } catch (e) { process.stderr.write(`door-5040: could not stop the door: ${e.message}\n`); }
+    fs.rmSync(dir, { recursive: true, force: true });
+  };
+  // the door's log, for a failure message; a log that cannot be read is said so, not hidden
+  const log = () => { try { return fs.readFileSync(logFile, 'utf8'); } catch (e) { return `(door log unreadable: ${e.message})`; } };
+  let up = false;
+  for (let i = 0; i < 100 && !up; i++) {
+    if (child.exitCode !== null) { const text = log(); stop(); throw new Error(`the door did not start (exit ${child.exitCode}):\n${text}`); }
+    // not yet listening is the expected answer while it starts: wait and ask again, each ask bounded
+    up = await fetch(`${origin}${mount}/_auth/whoami`, { redirect: 'manual', signal: AbortSignal.timeout(2_000) }).then(() => true, () => false);
+    if (!up) await new Promise((r) => setTimeout(r, 100));
+  }
+  if (!up) { const text = log(); stop(); throw new Error(`the door never answered on ${origin}:\n${text}`); }
+  // the session is signed by the door's own code, with the key the running door just wrote
+  const cookie = execFileSync('python3', [GUARD, '--sign-session', DOOR_PERSON, 'tester-5040-browser'], { env, encoding: 'utf8' }).trim();
+  return { origin, mount, cookie, stop, log };
+}
+
+/** A browser page signed in at the door, at phone width, with this tree's own page files. */
+async function signedInPage(browser, door, { width = PHONE.width, height = PHONE.height } = {}) {
+  const context = await browser.newContext({ viewport: { width, height } });
+  await context.addCookies([{ name: 'chorus_share_session', value: door.cookie, url: door.origin }]);
+  const page = await context.newPage();
+  const refused = [];
+  const M = door.mount;
+  const mountRe = M.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // every request the page makes that the door (or anything else) answers 4xx/5xx, and every one that leaves the door
+  page.on('response', (r) => { if (r.status() >= 400) refused.push(`${r.status()} ${r.request().method()} ${r.url().replace(door.origin, '')}`); });
+  page.on('request', (r) => { const u = r.url(); if (/^https?:/.test(u) && !u.startsWith(door.origin + M + '/') && !/fonts\.(googleapis|gstatic)\.com/.test(u)) refused.push(`LEFT THE DOOR ${r.method()} ${u.replace(door.origin, '')}`); });
+  page.on('requestfailed', (r) => refused.push(`FAILED ${r.method()} ${r.url().replace(door.origin, '')} (${r.failure()?.errorText || 'no reason'})`));
+  // this tree's page files, under the mount, and the one model-view template
+  await page.route((url) => url.origin === door.origin && new RegExp(`^${mountRe}/athena/[^?#]+\\.(html|js|css)$`).test(url.pathname), (route) => {
+    const file = ownAthenaFile(route.request().url());
+    if (!file) return route.fulfill({ status: 404, contentType: 'text/plain', body: 'not in this tree' });
+    return route.fulfill({ status: 200, contentType: TYPES[path.extname(file)] || 'application/octet-stream', body: fs.readFileSync(file) });
+  });
+  await page.route((url) => url.origin === door.origin && (url.pathname === `${M}/domains` || url.pathname.startsWith(`${M}/domains/`)), (route) =>
+    route.fulfill({ status: 200, contentType: TYPES['.html'], body: fs.readFileSync(path.join(ATHENA_DIR, 'domains-view.html')) }));
+  return { page, context, refused };
+}
+
+module.exports = { LIVE_DISCOVERY, ROOT, ATHENA_DIR, BASE, DOMAIN, PHONE, ownAthenaFile, serveOwnAthenaFiles, serveOwnModelView, serveDiscoveryAsLanded, openDomainPage, openModelView, sameOriginLinks, deadLinks, doorTruth, startDoor, signedInPage };
