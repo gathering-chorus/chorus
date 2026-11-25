@@ -6,7 +6,8 @@
 //! before it answers. The one sign-in door (chorus-share-guard) decides: chorus-go asks its
 //! /_auth/whoami with the caller's cookie. Pages go to sign-in (302), /go/api/* says 401.
 //! Localhost and the Wi-Fi (no Cf header) serve as before.
-//! NEGATIVE PROOF: anonymous, signed-in-but-unlisted, a bad cookie and an unreachable door are
+//! NEGATIVE PROOF: anonymous, signed-in-but-unlisted (403, no loop), a bad cookie, a non-200 door
+//! answer saying allowed, and an unreachable door are
 //! each refused on every route the card names, where the code before #5039 answered 200.
 //! The way back that needs no go: the property row go.tunnel_signin = off serves the tunnel as
 //! before; on, a different key, or no row keeps the check on.
@@ -19,6 +20,7 @@ use std::sync::Mutex;
 static ENV: Mutex<()> = Mutex::new(());
 const GOOD: &str = "chorus_share_session=good";
 const UNLISTED: &str = "chorus_share_session=unlisted";
+const LIAR: &str = "chorus_share_session=liar";
 
 /// A stub of the door's /_auth/whoami: 200 allowed for GOOD, 200 not allowed for UNLISTED,
 /// 401 for anything else. It records every cookie it was asked about.
@@ -40,6 +42,8 @@ fn door() -> (String, std::sync::Arc<Mutex<Vec<String>>>) {
             let (code, body) = match cookie.as_str() {
                 GOOD => (200, r#"{"webid": "https://id.example/jeff", "allowed": true}"#),
                 UNLISTED => (200, r#"{"webid": "https://id.example/other", "allowed": false}"#),
+                // a door that refuses but says allowed: only a 200 counts
+                LIAR => (401, r#"{"webid": "https://id.example/jeff", "allowed": true}"#),
                 _ => (401, r#"{"webid": null, "allowed": false}"#),
             };
             let _ = write!(s, "HTTP/1.1 {code} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
@@ -124,11 +128,16 @@ fn over_the_tunnel_an_anonymous_caller_is_sent_to_sign_in_and_the_api_says_401()
 fn negative_proof_unlisted_bad_cookie_and_an_unreachable_door_are_all_refused() {
     let (door_at, seen) = door();
     let srv = serve("neg", &door_at);
-    for cookie in [UNLISTED, "chorus_share_session=forged"] {
+    for cookie in [LIAR, "chorus_share_session=forged"] {
         assert_eq!(ask(&srv.addr, "GET", "/go/", true, Some(cookie)).0, 302, "{cookie}");
         for (m, p) in API {
             assert_eq!(ask(&srv.addr, m, p, true, Some(cookie)).0, 401, "{cookie} {m} {p}");
         }
+    }
+    // signed in but unlisted: refused with 403, never sent round to sign in again (a loop)
+    assert_eq!(ask(&srv.addr, "GET", "/go/", true, Some(UNLISTED)).0, 403);
+    for (m, p) in API {
+        assert_eq!(ask(&srv.addr, m, p, true, Some(UNLISTED)).0, 403, "unlisted {m} {p}");
     }
     // the door was really asked, with the caller's own cookie: the refusal is its answer
     assert!(seen.lock().unwrap().iter().any(|c| c == UNLISTED), "the door was never asked");

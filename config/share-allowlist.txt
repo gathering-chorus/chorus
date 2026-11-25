@@ -167,7 +167,6 @@
 /api/loom-analytics
 /api/loom-metrics
 /api/loom/policies
-/api/werk/activity
 /api/werk/schema
 /designing/docs/werk-value-stream-design.html
 # The document catalog and inventory pages' reads (doc-catalog.html, doc-inventory.html).

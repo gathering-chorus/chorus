@@ -66,18 +66,26 @@ fn redirect(s: &mut TcpStream, to: &str) -> Result<(), String> {
 /// #5039 — the one sign-in door decides who is signed in: chorus-go asks the share guard's
 /// `/_auth/whoami` with the caller's own cookie, and holds no session key of its own.
 /// Anything but `200` with `"allowed": true` is no (unreachable guard included: fail closed).
-fn signed_in(cookie: &str) -> bool {
-    if cookie.is_empty() || cookie.contains(['\r', '\n']) { return false; }
+#[derive(PartialEq)]
+enum Who { Allowed, Unlisted, No }
+
+fn signed_in(cookie: &str) -> Who {
+    if cookie.is_empty() || cookie.contains(['\r', '\n']) { return Who::No; }
     let addr = env_or("CHORUS_GO_AUTHN", "127.0.0.1:8899");
-    let Ok(sock) = addr.parse::<std::net::SocketAddr>() else { return false };
-    let Ok(mut c) = TcpStream::connect_timeout(&sock, std::time::Duration::from_secs(3)) else { return false };
+    let Ok(sock) = addr.parse::<std::net::SocketAddr>() else { return Who::No };
+    let Ok(mut c) = TcpStream::connect_timeout(&sock, std::time::Duration::from_secs(3)) else { return Who::No };
     c.set_read_timeout(Some(std::time::Duration::from_secs(5))).ok();
-    if write!(c, "GET /_auth/whoami HTTP/1.1\r\nHost: {addr}\r\nCookie: {cookie}\r\nConnection: close\r\n\r\n").is_err() { return false; }
+    if write!(c, "GET /_auth/whoami HTTP/1.1\r\nHost: {addr}\r\nCookie: {cookie}\r\nConnection: close\r\n\r\n").is_err() { return Who::No; }
     let mut out = String::new();
-    if c.read_to_string(&mut out).is_err() { return false; }
-    let ok_status = out.split_whitespace().nth(1) == Some("200");
+    if c.read_to_string(&mut out).is_err() { return Who::No; }
+    // only a 200 is an answer about a person; any other status is no, whatever its body says
+    if out.split_whitespace().nth(1) != Some("200") { return Who::No; }
     let body = out.split_once("\r\n\r\n").map(|(_, b)| b).unwrap_or("");
-    ok_status && serde_json::from_str::<Value>(body).ok().and_then(|v| v.get("allowed").and_then(Value::as_bool)) == Some(true)
+    match serde_json::from_str::<Value>(body).ok().and_then(|v| v.get("allowed").and_then(Value::as_bool)) {
+        Some(true) => Who::Allowed,
+        Some(false) => Who::Unlisted,
+        None => Who::No,
+    }
 }
 
 /// #5039 — the way back that needs no go. If the sign-in check ever locks Jeff out of /go on
@@ -110,18 +118,23 @@ pub fn handle(store: &Store, mut s: TcpStream) -> Result<(), String> {
     let path = req.path.trim_end_matches('/');
     // #5039 — over the public tunnel every /go route needs a signed-in, allowed person first;
     // the passkey on decide still signs the go itself. Pages go to sign-in, the API says 401.
-    let check_on = !req.tunnel || tunnel_signin_on();
-    if req.tunnel && !check_on {
-        // the way back is in use: say so on every request, so it is never left off unseen
-        eprintln!("chorus-go: WARNING go.tunnel_signin is off: {} {} served over the tunnel with no sign-in", req.method, req.path);
-        let _ = Command::new(format!("{}/platform/scripts/chorus-log", chorus_home()))
-            .args(["go.tunnel_signin.off", "system", &format!("path={}", req.path), "level=warn"]).output();
-    }
-    if req.tunnel && check_on && !signed_in(&req.cookie) {
-        if req.method == "GET" && !path.starts_with("/go/api") {
-            return redirect(&mut s, &login_url(&req.path, &req.query));
+    if req.tunnel {
+        let who = signed_in(&req.cookie);
+        // the way back is read only when the check would refuse, so a signed-in person costs no extra call
+        if who != Who::Allowed && !tunnel_signin_on() {
+            // the way back is in use: say so on every request, so it is never left off unseen
+            eprintln!("chorus-go: WARNING go.tunnel_signin is off: {} {} served over the tunnel with no sign-in", req.method, req.path);
+            let _ = Command::new(format!("{}/platform/scripts/chorus-log", chorus_home()))
+                .args(["go.tunnel_signin.off", "system", &format!("path={}", req.path), "level=warn"]).output();
+        } else if who == Who::Unlisted {
+            // signed in but not on the list: a refusal, not another sign-in (that would loop)
+            return reply(&mut s, 403, "application/json", "{\"ok\":false,\"text\":\"Signed in, but not allowed on the go page.\"}");
+        } else if who == Who::No {
+            if req.method == "GET" && !path.starts_with("/go/api") {
+                return redirect(&mut s, &login_url(&req.path, &req.query));
+            }
+            return reply(&mut s, 401, "application/json", "{\"ok\":false,\"text\":\"Signed out. Reload the page to sign in again.\"}");
         }
-        return reply(&mut s, 401, "application/json", "{\"error\":\"sign in first\"}");
     }
     let json_body = || serde_json::from_slice::<Value>(&req.body).unwrap_or(Value::Null);
     let field = |v: &Value, k: &str| v.get(k).and_then(Value::as_str).unwrap_or("").to_string();
