@@ -377,7 +377,7 @@ async function renderInstance(domainName, instName) {
     const coll = await collectionFor(kind);
     if (!coll) continue;
     try {
-      const r = await get(coll.replace(/^\/v1/, ''));
+      const r = await get(coll);   // #5034 — as discovery names it; a generated API answers under /v1 only
       const hit = (r.data || []).find(i => i.name === instName);
       if (hit) { found = hit; foundKind = kind; break; }
     } catch { /* reported below if nothing is found at all */ }
@@ -398,7 +398,7 @@ async function renderInstance(domainName, instName) {
   let full = found;
   try {
     const coll = await collectionFor(foundKind);
-    const er = await get(coll.replace(/^\/v1/, '') + '/' + encodeURIComponent(instName));
+    const er = await get(coll + '/' + encodeURIComponent(instName));
     if (er && er.data && Object.keys(er.data).length) full = Object.assign({ name: instName }, er.data);
   } catch { /* husk fallback — better a thin page than a broken one */ }
 

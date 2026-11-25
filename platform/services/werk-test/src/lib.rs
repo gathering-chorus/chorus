@@ -3738,6 +3738,51 @@ pub fn ui_files(rows: &[TestRow]) -> std::collections::BTreeSet<String> {
         .collect()
 }
 
+/// #5034 AC5 — the browser specs a card run plays: the registered ones, plus every
+/// spec the card adds or changes under proving/flows that is still on disk. The
+/// registry is the crawl of main, so before this a card's own new spec never ran
+/// in its own test step: it was proven for the first time by the nightly after
+/// the land. `exists` is relative to the werk root.
+pub fn card_ui_files(rows: &[TestRow], changed: &[String], exists: &dyn Fn(&str) -> bool) -> std::collections::BTreeSet<String> {
+    let mut out = ui_files(rows);
+    out.extend(changed.iter()
+        .filter(|f| f.starts_with("proving/flows/") && f.ends_with(".spec.cjs") && exists(f))
+        .cloned());
+    out
+}
+
+#[cfg(test)]
+mod card_ui_files_5034 {
+    use super::{card_ui_files, ui_lane_fires, TestRow};
+    fn row(path: &str, concern: &str) -> TestRow {
+        TestRow { file_path: path.into(), covers: String::new(), pyramid_layer: String::new(), hermeticity: String::new(), test_concern: concern.into(), needs: String::new() }
+    }
+
+    #[test]
+    fn a_card_that_adds_a_spec_plays_it_in_its_own_test_step() {
+        let rows = vec![row("proving/flows/tiles.spec.cjs", "ui"), row("platform/tests/x.bats", "")];
+        let changed: Vec<String> = ["platform/api/public/athena/facets.js", "proving/flows/athena-domain-readable-5034.spec.cjs",
+            "proving/flows/lib/athena-page-5034.cjs"].iter().map(|s| s.to_string()).collect();
+        assert!(ui_lane_fires(&changed), "an athena page change fires the browser lane");
+        let got = card_ui_files(&rows, &changed, &|_| true);
+        assert!(got.contains("proving/flows/athena-domain-readable-5034.spec.cjs"), "{got:?}");
+        assert!(got.contains("proving/flows/tiles.spec.cjs"), "registered specs still play");
+        assert!(!got.contains("proving/flows/lib/athena-page-5034.cjs"), "a helper is not a spec");
+        assert!(!got.contains("platform/tests/x.bats"), "only ui rows");
+    }
+
+    #[test]
+    fn negative_proof_the_registry_alone_misses_the_cards_spec_and_a_deleted_spec_is_not_played() {
+        let rows = vec![row("proving/flows/tiles.spec.cjs", "ui")];
+        let changed = vec!["proving/flows/athena-domain-true-5034.spec.cjs".to_string(), "proving/flows/gone.spec.cjs".to_string()];
+        // the old selection: registered rows only, so the card's own spec is absent
+        assert!(!super::ui_files(&rows).contains("proving/flows/athena-domain-true-5034.spec.cjs"));
+        let got = card_ui_files(&rows, &changed, &|f| !f.ends_with("gone.spec.cjs"));
+        assert!(got.contains("proving/flows/athena-domain-true-5034.spec.cjs"));
+        assert!(!got.contains("proving/flows/gone.spec.cjs"), "a deleted spec would make playwright find nothing");
+    }
+}
+
 /// #3920 — surfaces whose diffs pay the browser lane: Clearing, the served
 /// chorus pages, and the specs themselves. Anything else skips it — a browser
 /// run on a Rust-only diff is pure cost.

@@ -125,7 +125,10 @@ details.mfwrap > .mfbody { padding: 0 16px 14px; }
         continue;
       }
       try {
-        const r = await getJSON('/owl' + coll.replace(/^\/v1/, ''));
+        // #5034 — the collection path exactly as discovery names it (/v1/<domain>/<class>s). Dropping
+        // the /v1 worked for athena-make only; a domain served by its own generated API answers
+        // under /v1 alone, so its class read 404 here.
+        const r = await getJSON('/owl' + coll);
         const items = (r.data || []).slice().sort((a, b) => String(a.name).localeCompare(String(b.name)));
         parts.push('<h3>' + ESC(kind) + '</h3>' + (items.length
           ? '<div class="mfgrid">' + items.map(i =>

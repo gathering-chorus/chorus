@@ -1,0 +1,25 @@
+{
+  "map": {
+    "principles": "127.0.0.1:3393",
+    "pulse": "127.0.0.1:3394"
+  },
+  "skipped": [
+    { "row": "property-gardens-server-bind", "reason": "host example.com is not in owl.proxy.allowed_hosts" }
+  ],
+  "ruleProblem": null,
+  "discovery": {
+    "status": 200,
+    "contentType": "application/json",
+    "body": {
+      "apiVersion": "v1",
+      "kind": "Discovery",
+      "count": 3,
+      "primitives": [
+        { "kind": "Domain", "collection": "/v1/domains/domains", "composed": false },
+        { "kind": "ADR", "collection": "/v1/decisions/adrs", "composed": false },
+        { "kind": "Principle", "collection": "/v1/principles/principles", "composed": false }
+      ],
+      "unreachable": ["pulse"]
+    }
+  }
+}

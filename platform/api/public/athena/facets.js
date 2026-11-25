@@ -54,7 +54,9 @@ async function renderFacetTables(el, fid, opts) {
   function table(items, cols) {
     const head = cols.map(c => `<th>${esc(c)}</th>`).join('');
     const rows = items.slice(0, 40).map(it =>
-      `<tr>${cols.map(c => { const v = String(it[c] ?? ''); const short = /^\/.+\//.test(v) && v.length > 28 ? `<span title="${esc(v)}">…/${esc(v.split('/').pop())}</span>` : esc(v.slice(0, 120)); return `<td>${c === 'id' && it[c] ? '#' + esc(it[c]) : short}</td>`; }).join('')}</tr>`).join('');
+      // #5034 — the whole value, always: a path was shortened to '…/name' with the rest in a hover
+      // title, which a phone cannot read (and it mangled any text that merely began with a slash)
+      `<tr>${cols.map(c => { const v = String(it[c] ?? ''); return `<td>${c === 'id' && it[c] ? '#' + esc(it[c]) : esc(v)}</td>`; }).join('')}</tr>`).join('');
     const more = items.length > 40 ? `<p class="empty">…and ${items.length - 40} more</p>` : '';
     return `<div class="tbl"><table><tr>${head}</tr>${rows}</table></div>${more}`;   // #4084: Jeff on his phone: the Logs table ran off the right edge; the fold scrolls its own table now
   }

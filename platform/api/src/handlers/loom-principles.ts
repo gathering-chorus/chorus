@@ -12,6 +12,8 @@
  * caller that just wants "give me the principles."
  */
 
+import { generatedApis } from './owl-generated-apis';
+
 const CHORUS_PREFIX = 'https://jeffbridwell.com/chorus#';
 
 interface PrincipleRow {
@@ -32,11 +34,30 @@ function defaultEnvelope(name: string, data: unknown, durationMs: number, extra:
 }
 
 export interface LoomPrinciplesOwlDeps {
-  /** injectable for tests — defaults to global fetch against the local principles-api (#5017) */
+  /** injectable for tests — defaults to global fetch */
   fetchFn?: typeof fetch;
+  /** principles-api's base, when the caller already knows it; otherwise it is read from the graph (#5034) */
   owlApiUrl?: string;
+  /** athena-make, where the generated-API map is read from (default: OWL_UPSTREAM, as the /owl proxy) */
+  owlBase?: string;
+  /** chorus-api's own port, never used as a bind (default: CHORUS_API_PORT, as server.ts) */
+  ownPort?: number;
   now?: () => number;
   envelope?: typeof defaultEnvelope;
+}
+
+/**
+ * #5034 — where principles-api listens. One way to find the door: the same map the
+ * /owl proxy reads (the principles Domain row's server.bind Property, under the bind
+ * rule). No env var and no default port: a map with no principles entry is null, and
+ * the caller says so rather than guessing an address.
+ */
+async function principlesApiBase(deps: LoomPrinciplesOwlDeps, fetchFn: typeof fetch): Promise<string | null> {
+  if (deps.owlApiUrl) return deps.owlApiUrl;
+  const owlBase = deps.owlBase ?? (process.env.OWL_UPSTREAM || 'http://127.0.0.1:3360');
+  const ownPort = deps.ownPort ?? Number.parseInt(process.env.CHORUS_API_PORT || '3340', 10);
+  const bind = (await generatedApis(owlBase, (url, init) => fetchFn(url, init), ownPort)).get('principles');
+  return bind ? `http://${bind}` : null;
 }
 
 // #3749 — REPOINTED to the generated surface. The old implementation ran
@@ -54,10 +75,21 @@ export async function fetchLoomPrinciples(
   const now = deps.now ?? (() => Date.now());
   const envelope = deps.envelope ?? defaultEnvelope;
   const fetchFn = deps.fetchFn ?? fetch;
-  // #5017 — principles has its own generated API (athena-gen, :3393); athena-make no longer serves it
-  const base = deps.owlApiUrl ?? process.env.PRINCIPLES_UPSTREAM ?? 'http://127.0.0.1:3393';
+  // #5017 — principles has its own generated API (athena-gen); athena-make no longer serves it
   const started = now();
   try {
+    const base = await principlesApiBase(deps, fetchFn);
+    if (!base) {
+      return {
+        status: 502,
+        body: envelope(
+          'principles',
+          { error: 'principles-api could not be located: the generated-API map has no principles entry (no usable server.bind Property on the principles Domain row, or athena-make could not be read)' },
+          now() - started,
+          { error: true },
+        ),
+      };
+    }
     const listRes = await fetchFn(`${base}/principles/principles`);
     if (!listRes.ok) {
       // an unreachable generated surface must never read as "no principles"

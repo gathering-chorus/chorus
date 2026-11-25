@@ -16,7 +16,9 @@
     const text = JSON.stringify(disc);
     const m = text.match(new RegExp('"kind":\\s*"' + kind + '"[^}]*?"collection":\\s*"([^"]+)"'));
     if (!m) { main.innerHTML = '<div class="err">The door does not serve <strong>' + esc(kind) + '</strong>.</div>'; return; }
-    const coll = m[1].replace(/^\/v1/, '');
+    // #5034 — the collection exactly as discovery names it (/v1/<domain>/<class>s). Dropping the
+    // /v1 worked for athena-make only; a class served by its own generated API answers under /v1.
+    const coll = m[1];
     const env = await fetchJSON(coll + '?limit=1000');
     const rows = env.data || [];
     const hide = new Set(['status', 'iri']);

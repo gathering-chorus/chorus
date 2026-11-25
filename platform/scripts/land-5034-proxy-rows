@@ -1,0 +1,58 @@
+#!/usr/bin/env python3
+"""#5034: the /owl proxy's two rule rows and their two registered keys. DRY RUN unless --apply.
+# @domain: properties
+
+The chorus-api /owl proxy forwards only to a generated door whose server.bind host is in
+owl.proxy.allowed_hosts and whose port is in owl.proxy.port_range; a missing row means nothing
+is forwarded. Policy data-property-key-registered needs a PropertyKey row for each key, so the
+keys come first in the plan. Silas owns all four rows and runs this by hand (not at deploy as
+wren). The door, the runner, the compare, the 403 wait and the exit codes are land-4960-rows'
+own (one implementation): this script only names different collections and a plan.
+Exit 0 = plan printed (or applied); 1 = a write was refused; 2 = the door or the plan could not
+be read.
+"""
+import importlib.machinery
+import importlib.util
+import os
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+_loader = importlib.machinery.SourceFileLoader("land4960", os.path.join(HERE, "land-4960-rows"))
+_spec = importlib.util.spec_from_loader("land4960", _loader)
+land = importlib.util.module_from_spec(_spec)
+_loader.exec_module(land)
+
+land.DOOR_CLASS = {
+    "keys": ("/v1/properties/keys", "properties", "keys"),
+    "properties": ("/v1/properties/properties", "properties", "properties"),
+}
+SERVICE = "https://jeffbridwell.com/chorus#Service"
+ROWS = [
+    ("keys", "pk-owlproxyallowedhosts", {
+        "label": "pk-owlProxyAllowedHosts", "keyName": "owl.proxy.allowed_hosts",
+        "appliesToClass": SERVICE, "propertyKind": "datatype", "lifecycleEnabled": "false",
+        "comment": "#5034: hosts the chorus-api /owl proxy may forward to (comma list); read at proxy-map build; absent = nothing forwarded"}),
+    ("keys", "pk-owlproxyportrange", {
+        "label": "pk-owlProxyPortRange", "keyName": "owl.proxy.port_range",
+        "appliesToClass": SERVICE, "propertyKind": "datatype", "lifecycleEnabled": "false",
+        "comment": "#5034: port range lo-hi the chorus-api /owl proxy may forward to; absent = nothing forwarded"}),
+    ("properties", "prop-owl-proxy-allowed-hosts", {
+        "label": "prop-owl-proxy-allowed-hosts", "propertyKey": "owl.proxy.allowed_hosts",
+        "propertyValue": "127.0.0.1", "propertyValueType": "string", "propertyScope": "global",
+        "comment": "#5034: hosts the chorus-api /owl proxy may forward to, read from each generated door server.bind row; comma list; a row whose host is not listed is skipped and logged; missing row = nothing forwarded"}),
+    ("properties", "prop-owl-proxy-port-range", {
+        "label": "prop-owl-proxy-port-range", "propertyKey": "owl.proxy.port_range",
+        "propertyValue": "1024-65535", "propertyValueType": "string", "propertyScope": "global",
+        "comment": "#5034: port range (lo-hi) the chorus-api /owl proxy may forward to; chorus-api own port is always refused in code; missing row = nothing forwarded"}),
+]
+
+
+def plan(_live):
+    return ROWS
+
+
+land.plan = plan
+land.policy_rows = lambda: []  # --ttl: no policy rows in this plan
+
+if __name__ == "__main__":
+    sys.exit(land.main(sys.argv[1:]))

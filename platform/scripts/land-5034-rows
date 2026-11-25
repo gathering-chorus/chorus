@@ -1,0 +1,38 @@
+#!/usr/bin/env python3
+"""#5034: the principles Domain row's layer. DRY RUN unless --apply.
+# @domain: domains
+
+One edge: principles inLayer layer-capability (rank 2: neither a runtime foundation nor the
+build, so a capability). The Athena domain page's Layer fold reads it through
+/api/chorus/domain/principles/dependencies (chorus:inLayer); with no edge the fold reads
+"none recorded". Wren owns the principles row, so werk-deploy runs this as wren after the
+land's installs and restarts (#4889). The door, the runner, the compare, the 403 wait and the
+exit codes are land-4960-rows' own (one implementation): this script only names a different
+collection and plan. Exit 0 = plan printed (or applied); 1 = a write was refused; 2 = the door
+or the plan could not be read.
+"""
+import importlib.machinery
+import importlib.util
+import sys
+import os
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+_loader = importlib.machinery.SourceFileLoader("land4960", os.path.join(HERE, "land-4960-rows"))
+_spec = importlib.util.spec_from_loader("land4960", _loader)
+land = importlib.util.module_from_spec(_spec)
+_loader.exec_module(land)
+
+# Only the Domain collection is read and written here; the door takes the edge by bare name.
+land.DOOR_CLASS = {"domains": ("/v1/domains/domains", "domains", "domains")}
+ROWS = [("domains", "principles", {"inLayer": "layer-capability"})]
+
+
+def plan(_live):
+    return ROWS
+
+
+land.plan = plan
+land.policy_rows = lambda: []  # --ttl: no policy rows in this plan
+
+if __name__ == "__main__":
+    sys.exit(land.main(sys.argv[1:]))
