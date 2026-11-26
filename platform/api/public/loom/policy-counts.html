@@ -36,13 +36,25 @@
   <p class="sub" id="sub">Measuring…</p>
   <div id="rows"></div>
   <p id="err"></p>
-  <script src="/vendor/chorus-time/boston.js"></script>
   <script>
+    // #5044 — Jeff's phone at the public address, 2026-11-25 15:50: "all the ui page links have
+    // issues". This page asked for its data and its Boston clock at root-fixed addresses. Under
+    // lightlifeurbangardens.com/chorus those leave the sign-in door (the garden site answers
+    // instead), so the page drew "Could not load". Every address now goes through the mount (the
+    // rule of #3810, as athena/domain.html states it), the clock included: it is loaded here, by
+    // script, and the counts are read once it has loaded.
+    window.basePath = window.basePath || (function () {
+      var m = document.querySelector('meta[name="chorus-base"]'), b = m && m.getAttribute('content') || null;
+      if (b === null) { var p = location.pathname || ''; b = (p === '/chorus' || p.indexOf('/chorus/') === 0) ? '/chorus' : ''; }
+      b = b.replace(/\/+$/, '');
+      return function (x) { return b + (x.charAt(0) === '/' ? x : '/' + x); };
+    }());
     const gate = new URLSearchParams(location.search).get('gate') || 'arch';
     const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
     // the rule's own narrowing, as its row states it (AC3: the demo names every narrowed rule)
     const note = (c) => { const i = c.search(/Narrowed|Checked as written/); return i < 0 ? '' : c.slice(i).replace(/\s*\(#\d+\)\s*$/, ''); };
-    fetch('/api/chorus/policies/counts?gate=' + encodeURIComponent(gate))
+    const failed = (why) => { document.getElementById('sub').textContent = ''; document.getElementById('err').textContent = 'Could not load: ' + why; };
+    const draw = () => fetch(basePath('/api/chorus/policies/counts?gate=' + encodeURIComponent(gate)))
       .then((r) => r.ok ? r.json() : r.json().then((b) => Promise.reject(new Error(b.error || r.status))))
       .then((b) => {
         const at = chorusBoston.bostonMinute(new Date(b.measuredAt));
@@ -57,7 +69,13 @@
             <p class="note">${esc(p.reason || note(p.comment))}</p>
           </div>`).join('');
       })
-      .catch((e) => { document.getElementById('sub').textContent = ''; document.getElementById('err').textContent = 'Could not load: ' + e.message; });
+      .catch((e) => failed(e.message));
+    // the shared Boston clock (#4965), fetched through the mount; a clock that does not arrive is said so
+    const clock = document.createElement('script');
+    clock.src = basePath('/vendor/chorus-time/boston.js');
+    clock.onload = draw;
+    clock.onerror = () => failed('the Boston clock (' + clock.src + ') did not load');
+    document.head.appendChild(clock);
   </script>
 </body>
 </html>

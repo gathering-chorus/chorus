@@ -56,8 +56,19 @@ async function serveOwnAthenaFiles(page) {
  */
 const lintAnswers = new Map();
 function lintAnswer(request, search) {
-  if (!lintAnswers.has(search)) lintAnswers.set(search, request.get(`${BASE}/api/chorus/policies/counts${search}`, { timeout: 300_000 })
-    .then(async (r) => ({ status: r.status(), body: await r.text() })));
+  if (!lintAnswers.has(search)) lintAnswers.set(search, (async () => {
+    // #5044 — a server with this card answers a domain's read at once, and says `checking` while
+    // its check runs: ask again until it has a measured result (five minutes at most). A server
+    // without the card answers once, when its lint is done.
+    for (let asked = 0; ; asked++) {
+      const r = await request.get(`${BASE}/api/chorus/policies/counts${search}`, { timeout: 300_000 });
+      const body = await r.text();
+      let b = null;
+      try { b = JSON.parse(body); } catch (e) { b = null; }   // not JSON: handed on as it is, for the page to report
+      if (!(b && b.checking && asked < 100)) return { status: r.status(), body };
+      await new Promise((done) => setTimeout(done, 3000));
+    }
+  })());
   return lintAnswers.get(search);
 }
 async function serveLintOnce(page) {
@@ -67,10 +78,72 @@ async function serveLintOnce(page) {
   });
 }
 
+// ---------------------------------------------------------------------------------------------
+// #5044 — the two routes that card changes (a domain's Pipeline, a domain's Conformance read),
+// answered by THIS tree's handlers before the land. platform/api/tests/lib/own-routes-5044.ts is
+// a small server that runs those handlers (its header says how); it is started once per test
+// process and a page's reads of the two routes are handed its answers. Nothing is written by hand.
+// Off in the nightly and the after-the-land check (LIVE_DISCOVERY): those read the server as served.
+//   conformance 'measured' (default)  the answer once this tree's check has a result
+//               'raw'                 the handler's answer as it stands (the tests about waiting,
+//                                     staleness and failure, which steer it with ownControl)
+//               'none'                the Conformance read is left alone (a test planted its own)
+//   always      serve them in the nightly too: a test that steers the handlers needs them anywhere
+const OWN_SCRIPT = path.join(ROOT, 'platform', 'api', 'tests', 'lib', 'own-routes-5044.ts');
+let ownStarted = null;
+function ownRoutes() {
+  if (!ownStarted) ownStarted = new Promise((resolve, reject) => {
+    const { spawn: start } = require('child_process');
+    const child = start(path.join(ROOT, 'platform', 'api', 'node_modules', '.bin', 'tsx'), [OWN_SCRIPT], { env: { ...process.env, ATHENA_URL: BASE }, stdio: ['ignore', 'pipe', 'pipe'] });
+    let out = '';
+    let err = '';
+    child.stderr.on('data', (d) => { err += d; });
+    child.stdout.on('data', (d) => { out += d; const m = /READY (\d+)/.exec(out); if (m) resolve({ origin: `http://127.0.0.1:${m[1]}` }); });
+    child.once('error', (e) => reject(new Error(`own-routes-5044 could not start: ${e.message}`)));
+    child.once('exit', (code) => reject(new Error(`own-routes-5044 ended (exit ${code}) before it was ready:\n${err}`)));
+    process.once('exit', () => { try { child.kill(); } catch (e) { process.stderr.write(`own-routes-5044: could not stop: ${e.message}\n`); } });
+  });
+  return ownStarted;
+}
+async function own(pathAndQuery) {
+  const o = await ownRoutes();
+  // ten minutes: with every suite's workers running at once the real lint has taken over five (pass 1, 11-25 19:05)
+  const r = await fetch(o.origin + pathAndQuery, { signal: AbortSignal.timeout(600_000) });
+  return { status: r.status, body: await r.text() };
+}
+/** Steer this tree's handlers (clock, lint: see own-routes-5044.ts). Answers the state. */
+async function ownControl(query) { return JSON.parse((await own(`/control?${query}`)).body); }
+/** Wait until the check running for a domain, if any, has ended (asked again each 45 s, for fifteen minutes at most). */
+async function ownSettled(domain = DOMAIN) {
+  for (let i = 0; i < 20; i++) if (JSON.parse((await own(`/settled?domain=${encodeURIComponent(domain)}`)).body).settled) return;
+  throw new Error(`own-routes-5044: the check for ${domain} had not ended after fifteen minutes`);
+}
+/** This tree's Pipeline answer for a domain; `fail` names a sibling read to fail (see own-routes-5044.ts). */
+async function ownPipeline(domain = DOMAIN, fail = '') {
+  return own(`/pipeline?domain=${encodeURIComponent(domain)}${fail ? '&fail=' + encodeURIComponent(fail) : ''}`);
+}
+async function ownMeasured(domain) {
+  const ask = () => own(`/counts?domain=${encodeURIComponent(domain)}`);
+  let a = await ask();
+  for (let i = 0; i < 3 && a.status === 200 && JSON.parse(a.body).checking; i++) { await ownSettled(domain); a = await ask(); }
+  return a;
+}
+async function serveOwnRoutes(page, { conformance = 'measured', always = false } = {}) {
+  if (LIVE_DISCOVERY && !always) return;
+  const hand = (route, a) => route.fulfill({ status: a.status, contentType: 'application/json', body: a.body });
+  await page.route((url) => /\/api\/chorus\/domain\/[^/]+\/pipeline$/.test(url.pathname), async (route) =>
+    hand(route, await own(`/pipeline?domain=${new URL(route.request().url()).pathname.split('/').slice(-2)[0]}`)));
+  if (conformance === 'none') return;
+  await page.route((url) => /\/api\/chorus\/policies\/counts$/.test(url.pathname) && url.searchParams.has('domain'), async (route) => {
+    const d = new URL(route.request().url()).searchParams.get('domain');
+    return hand(route, conformance === 'raw' ? await own(`/counts?domain=${encodeURIComponent(d)}`) : await ownMeasured(d));
+  });
+}
+
 /** Open the domain page at the given width and wait until its folds have drawn. */
 async function openDomainPage(page, { width = PHONE.width, height = PHONE.height, domain = DOMAIN, lint = 'once' } = {}) {
   await page.setViewportSize({ width, height });
-  if (lint !== 'live') await serveLintOnce(page);
+  if (lint !== 'live') { await serveLintOnce(page); await serveOwnRoutes(page); }
   await serveOwnAthenaFiles(page);
   await serveDiscoveryAsLanded(page);
   const errors = [];
@@ -306,7 +379,7 @@ async function signedInPage(browser, door, { width = PHONE.width, height = PHONE
   const context = await browser.newContext({ viewport: { width, height }, ...(timezoneId ? { timezoneId } : {}) });
   await context.addCookies([{ name: 'chorus_share_session', value: door.cookie, url: door.origin }]);
   const page = await context.newPage();
-  if (lint !== 'live') await serveLintOnce(page);   // see serveLintOnce: one lint per test process, not one per open
+  if (lint !== 'live') { await serveLintOnce(page); await serveOwnRoutes(page); }   // see serveLintOnce: one lint per test process, not one per open; #5044: the card's two routes from this tree
   const refused = [];
   const M = door.mount;
   const mountRe = M.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -348,4 +421,4 @@ async function openOldDomainPage(page, under, { domain = DOMAIN } = {}) {
     && !/loading the materialized view|loading live from the model|running the domain lint/.test(document.body.innerText), null, { timeout: 180_000 });
 }
 
-module.exports = { serveLintOnce, BEFORE_5041, athenaFileAt, serveAthenaFilesAsOf, openOldDomainPage, LIVE_DISCOVERY, ROOT, ATHENA_DIR, BASE, DOMAIN, PHONE, ownAthenaFile, serveOwnAthenaFiles, serveOwnModelView, serveDiscoveryAsLanded, openDomainPage, openModelView, sameOriginLinks, deadLinks, doorTruth, startDoor, signedInPage };
+module.exports = { serveOwnRoutes, ownControl, ownSettled, ownMeasured, ownPipeline, serveLintOnce, BEFORE_5041, athenaFileAt, serveAthenaFilesAsOf, openOldDomainPage, LIVE_DISCOVERY, ROOT, ATHENA_DIR, BASE, DOMAIN, PHONE, ownAthenaFile, serveOwnAthenaFiles, serveOwnModelView, serveDiscoveryAsLanded, openDomainPage, openModelView, sameOriginLinks, deadLinks, doorTruth, startDoor, signedInPage };

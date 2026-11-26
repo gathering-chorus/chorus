@@ -154,7 +154,9 @@ function drawnOnce() {
   const folds = [...document.querySelectorAll('details.fold')].map((f) => ({ name: nameOf(f), summary: text(f.querySelector(':scope > summary')), cells: [...f.querySelectorAll('td')].map(text), rows: f.querySelectorAll('tr td:first-child').length, body: text(f.querySelector(':scope > .body')) }));
   const code = [...document.querySelectorAll('details.fold')].find((f) => nameOf(f) === 'Code');
   // each group: the kind its heading names, and the paths listed in the table right under it
-  const groups = code ? [...code.querySelectorAll('h3[data-kind]')].map((h) => ({ kind: h.dataset.kind, heading: text(h), paths: [...(h.nextElementSibling?.querySelectorAll('td') || [])].map(text) })) : [];
+  // (#5044: a table wider than the phone has one line above it saying it scrolls; the table is the next thing down)
+  const tableUnder = (h) => { const n = h.nextElementSibling; return n && n.classList.contains('cut-cue') ? n.nextElementSibling : n; };
+  const groups = code ? [...code.querySelectorAll('h3[data-kind]')].map((h) => ({ kind: h.dataset.kind, heading: text(h), paths: [...(tableUnder(h)?.querySelectorAll('td') || [])].map(text) })) : [];
   const status = [...document.querySelectorAll('.stats .stat')].find((s) => text(s.querySelector('.l')) === 'Status');
   return { folds, groups, codeSummary: code ? text(code.querySelector(':scope > summary')) : null, status: status ? text(status.querySelector('.v')) : null };
 }
@@ -288,5 +290,127 @@ test.describe(`#5041 the ${DOMAIN} ops view says each thing once and counts it t
     const gone = onceFaults(await page.evaluate(drawnOnce), store);
     expect(gone).toContain('the Pipeline fold is not drawn');
     expect(gone).toContain('the Status tile is not drawn');
+  });
+});
+
+// =============================================================================================
+// #5044 AC2 — the Pipeline fold agrees with the folds beside it.
+//
+// Jeff's phone, 2026-11-25 15:45 and 15:51: "pipeline section does not make sense to me seems like
+// we need to analyze and fix". The fold read shape "No cards" beside Cards (16) and ship "Nothing
+// shipped" above Releases (5). Measured: three of its rows read an old list of 25 domain names
+// (principles is not on it; the 404 was turned into "nothing"), ship counted Done cards in a list
+// with the Done cards taken out (it could not move for any domain), and build read links nothing
+// writes any more (0 files beside a Code fold of 50).
+//
+// Each row now counts what the fold beside it lists. Read from the drawn page, every count taken
+// from the OTHER fold's own heading, never from the Pipeline's read:
+//   shape   the number in Cards (n)          ship    the number in Releases (n)
+//   build   Code (n), Tests (n), API Contract (n)      prove   Alerts (n)
+//   design  a percentage, with how many shape fields are present and missing
+// and every status is plain words (not started, in progress, complete, could not read).
+// Before the land the fold's answer is this tree's handler on the live server's reads (lib
+// serveOwnRoutes, platform/api/tests/lib/own-routes-5044.ts; the handler is
+// platform/api/src/handlers/chorus-domain-pipeline.ts). After it, the server's own.
+// NEGATIVE: the answer main gave for principles on 2026-11-25 (kept below, as served) is red on
+// shape, build and ship; a sibling read that fails draws "could not read", and a fold that drew
+// it as "not started" is named.
+// Named limit: what the five steps MEAN (when a domain is "complete" at a step) is not settled
+// here; the thresholds are the ones the fold had. Jeff: Status and Pipeline "need analysis".
+// =============================================================================================
+const { ownPipeline } = require('./lib/athena-page-5034.cjs');
+
+// GET /api/chorus/domain/principles/pipeline as main served it, 2026-11-25 18:05, while the same
+// server's /cards listed 16 cards and /releases 5
+const PIPELINE_ON_MAIN = { data: { domain: 'principles', stages: [
+  { name: 'shape', status: 'not_started', evidence: 0, summary: 'No cards' },
+  { name: 'design', status: 'not_started', evidence: 0, summary: 'Not started' },
+  { name: 'build', status: 'complete', evidence: 26, summary: '0 source, 26 tests, 0 endpoints' },
+  { name: 'prove', status: 'complete', evidence: 3, summary: '3 alert rules' },
+  { name: 'ship', status: 'not_started', evidence: 0, summary: 'Nothing shipped' },
+] } };
+
+/** Run in the page: the Pipeline fold's rows, and the number each other fold states in its own heading. */
+function drawnPipeline() {
+  const text = (n) => (n?.textContent || '').replace(/\s+/g, ' ').trim();
+  const fold = (name) => [...document.querySelectorAll('details.fold')].find((f) => (f.querySelector(':scope > summary')?.childNodes[0]?.textContent || '').trim().replace(/\s*\(.*$/, '') === name);
+  // "Cards (16)", "Tests (26 files · 175 cases)", "Code (50) 12 code · …": the first number in the brackets
+  const stated = (name) => { const m = /\((\d+)/.exec(text(fold(name)?.querySelector(':scope > summary'))); return m ? Number(m[1]) : null; };
+  const p = fold('Pipeline');
+  return {
+    rows: p ? [...p.querySelectorAll('tr')].filter((tr) => tr.cells[0]?.tagName === 'TD').map((tr) => ({ name: text(tr.cells[0]), status: text(tr.cells[1]), summary: text(tr.cells[2]) })) : null,
+    folds: { Cards: stated('Cards'), Releases: stated('Releases'), Code: stated('Code'), Tests: stated('Tests'), 'API Contract': stated('API Contract'), Alerts: stated('Alerts') },
+  };
+}
+
+/** Every place the Pipeline fold disagrees with a fold beside it, or says a status that is not plain words. */
+function pipelineFaults({ rows, folds }) {
+  if (!rows) return ['the Pipeline fold is not drawn'];
+  const out = [];
+  const row = Object.fromEntries(rows.map((r) => [r.name, r]));
+  for (const n of ['shape', 'design', 'build', 'prove', 'ship']) if (!row[n]) out.push(`${n}: the row is not drawn`);
+  for (const [name, n] of Object.entries(folds)) if (n === null) out.push(`the ${name} fold states no count to hold the Pipeline to`);
+  for (const r of rows) if (!['not started', 'in progress', 'complete', 'could not read'].includes(r.status)) out.push(`${r.name}: the status "${r.status}" is not plain words`);
+  const unread = (r) => r && r.status === 'could not read';
+  const firstNumber = (s) => { const m = /^(\d+)/.exec(s); return m ? Number(m[1]) : 0; };
+  const hold = (r, said, fold, n) => { if (r && !unread(r) && n !== null && said !== n) out.push(`${r.name}: says ${said} (${r.summary}), the ${fold} fold lists ${n}`); };
+  if (row.shape) hold(row.shape, firstNumber(row.shape.summary), 'Cards', folds.Cards);
+  if (row.ship) hold(row.ship, firstNumber(row.ship.summary), 'Releases', folds.Releases);
+  if (row.prove) hold(row.prove, firstNumber(row.prove.summary), 'Alerts', folds.Alerts);
+  if (row.build && !unread(row.build)) {
+    const m = /^(\d+) files, (\d+) test files, (\d+) routes$/.exec(row.build.summary) || (row.build.summary === 'No code' ? [0, 0, 0, 0] : null);
+    if (!m) out.push(`build: "${row.build.summary}" does not state its files, test files and routes`);
+    else { hold(row.build, Number(m[1]), 'Code', folds.Code); hold(row.build, Number(m[2]), 'Tests', folds.Tests); hold(row.build, Number(m[3]), 'API Contract', folds['API Contract']); }
+  }
+  if (row.design && !unread(row.design) && !/^\d+%: \d+ present, \d+ missing$/.test(row.design.summary)) out.push(`design: "${row.design.summary}" does not state its percentage and fields`);
+  // a row that says it has not started beside a fold that lists rows is the fault Jeff photographed
+  for (const [n, fold] of [['shape', 'Cards'], ['ship', 'Releases'], ['prove', 'Alerts']]) if (row[n] && row[n].status === 'not started' && folds[fold] > 0) out.push(`${n}: "not started" beside ${fold} (${folds[fold]})`);
+  return out;
+}
+
+test.describe(`#5044 the Pipeline fold of ${DOMAIN} agrees with the folds beside it`, () => {
+  test.setTimeout(300_000);
+  const isPipelineRead = (url) => /\/api\/chorus\/domain\/[^/]+\/pipeline$/.test(url.pathname);
+  const redraw = async (page) => {
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => [...document.querySelectorAll('#facets details.fold summary')].some((s) => /^Pipeline/.test(s.textContent)) && document.querySelector('#code-slot details'), null, { timeout: 120_000 });
+  };
+
+  test('each Pipeline row counts what the fold beside it lists, in plain words', async ({ page }) => {
+    const { errors } = await openDomainPage(page);
+    const drawn = await page.evaluate(drawnPipeline);
+    expect(drawn.folds.Cards, `the Cards fold lists cards for ${DOMAIN}: this check needs some (drawn: ${JSON.stringify(drawn)})`).toBeGreaterThan(0);
+    expect(drawn.folds.Releases, 'and the Releases fold lists releases').toBeGreaterThan(0);
+    const faults = pipelineFaults(drawn);
+    expect(faults, `the Pipeline fold disagrees with the page around it:\n${faults.join('\n')}\n(rows: ${JSON.stringify(drawn.rows)})`).toEqual([]);
+    expect(errors, `page threw: ${errors.join('; ')}`).toEqual([]);
+  });
+
+  test('NEGATIVE: the answer main gave on 2026-11-25 is red on shape, build and ship', async ({ page }) => {
+    await openDomainPage(page);
+    await page.route(isPipelineRead, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(PIPELINE_ON_MAIN) }));
+    await redraw(page);
+    const faults = pipelineFaults(await page.evaluate(drawnPipeline)).join('\n');
+    expect(faults).toMatch(/^shape: says 0 \(No cards\), the Cards fold lists \d+$/m);
+    expect(faults).toMatch(/^ship: says 0 \(Nothing shipped\), the Releases fold lists \d+$/m);
+    expect(faults).toMatch(/^build: "0 source, 26 tests, 0 endpoints" does not state its files, test files and routes$/m);
+    expect(faults, 'and its statuses were machine words').toMatch(/^shape: the status "not_started" is not plain words$/m);
+    expect(faults, 'prove was right on main, and is not named').not.toMatch(/^prove: says/m);
+  });
+
+  test('NEGATIVE: a read that fails is drawn "could not read", and the same row drawn as "not started" is named', async ({ page }) => {
+    await openDomainPage(page);
+    // this tree's handler, with its releases read made to fail
+    const failed = await ownPipeline(DOMAIN, '/releases');
+    await page.route(isPipelineRead, (route) => route.fulfill({ status: failed.status, contentType: 'application/json', body: failed.body }));
+    await redraw(page);
+    const drawn = await page.evaluate(drawnPipeline);
+    const ship = drawn.rows.find((r) => r.name === 'ship');
+    expect(ship, `the ship row (rows: ${JSON.stringify(drawn.rows)})`).toMatchObject({ status: 'could not read', summary: 'could not read releases' });
+    expect(drawn.rows.find((r) => r.name === 'shape').status, 'the rows whose reads answered are untouched').not.toBe('could not read');
+    expect(pipelineFaults(drawn), 'a row that says it could not read is not a contradiction').toEqual([]);
+    // what the old handler did with the same failure: "not started", beside the releases the page lists
+    const old = { ...drawn, rows: drawn.rows.map((r) => (r.name === 'ship' ? { name: 'ship', status: 'not started', summary: 'No releases' } : r)) };
+    expect(pipelineFaults(old).join('\n')).toMatch(/^ship: "not started" beside Releases \(\d+\)$/m);
   });
 });

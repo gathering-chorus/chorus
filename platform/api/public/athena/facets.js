@@ -52,8 +52,16 @@ async function renderFacetTables(el, fid, opts) {
     { t: 'Logs', u: OWL + '/logs/sources' + forDomain, k: 'items', graph: true, filter: r => tail(r.hasDomain || (r.links && r.links.hasDomain) || '') === dname,
       cols: ['launchdLabel', 'logStatus', 'lokiJob', 'lastWrittenAt', 'logPath'], src: 'chorus:LogSource · hasDomain = ' + dname },
     // #5021 — its own route: the board's domain:<name> cards as a list (the old read answered 25 v1 names only)
-    { t: 'Cards', u: DOM + dname + '/cards', k: 'cards', cols: ['id', 'title', 'owner', 'status', 'priority'] },
-    { t: 'Pipeline', u: DOM + fid + '/pipeline', k: 'stages', cols: ['name', 'status', 'summary'] },
+    // #5044 — a card number is a link to the card (Jeff, 2026-11-25 15:50: "cant link to cards
+    // like clearing v2 does"); cardHref knows where Clearing v2 is from here. The link is HERE
+    // only: Releases names the same cards, and one piece of data has one link on this page
+    // (his rule of 10:40, held by the links suite). Releases shows the number as "#5033", unlinked.
+    { t: 'Cards', u: DOM + dname + '/cards', k: 'cards', cols: ['id', 'title', 'owner', 'status', 'priority'], link: { id: v => cardHref(v) } },
+    // #5044 — each row counts what the fold beside it lists; `dname`, like Cards: any domain's name is asked
+    // (its step names are one short word each: one line; and the table is `fit`: it takes the fold's
+    // width and the summary wraps inside it. Wider than the fold, the summary ran off the right
+    // edge on one line: the cut Jeff photographed at 15:45, read again from this page at 19:47)
+    { t: 'Pipeline', u: DOM + dname + '/pipeline', k: 'stages', cols: ['name', 'status', 'summary'], one: ['name'], fit: true },
     { t: 'Releases', u: DOM + fid + '/releases', k: 'releases', cols: ['timestamp', 'cardId', 'title', 'role'] },
     { t: 'Infrastructure', u: DOM + fid + '/infra', k: 'environments', cols: ['name', 'port', 'engine', 'host'] },
     { t: 'Tests', u: DOM + fid + '/tests', k: 'tests', cols: ['path', 'type'] },
@@ -68,7 +76,7 @@ async function renderFacetTables(el, fid, opts) {
   const ONE_LINE = ['id', 'cardId', 'owner', 'role', 'status', 'priority', 'timestamp', 'filePath', 'path', 'file', 'logPath', 'route', 'routePath', 'httpMethod'];
   // how a column's value is shown: a card id with its #, a stored time in the viewer's own zone
   // (localTime gives '' for a value that is not a time: the stored text is shown then), a bare owner
-  const SHOWN = { id: v => '#' + v, timestamp: v => localTime(v) || v, owner: v => ownerLocal(v), role: v => ownerLocal(v) };
+  const SHOWN = { id: v => '#' + v, cardId: v => '#' + v, timestamp: v => localTime(v) || v, owner: v => ownerLocal(v), role: v => ownerLocal(v) };
   function tail(iri) { return String(iri || '').split('#').pop().replace(/^chorus:/, ''); }
   function unwrap(b, k, alt) {
     if (b && Array.isArray(b.data)) return b.data;   // #4084: an athena-make collection envelope carries its rows in `data`
@@ -77,7 +85,10 @@ async function renderFacetTables(el, fid, opts) {
     return Array.isArray(v) ? v : [];
   }
   // `link` (optional) maps a column to the address its value opens; no address, plain text
-  function table(items, cols, link) {
+  // `one` (optional) names more columns of THIS fold that are one line each; `fit` (optional)
+  // marks a table that is to fit its fold, not scroll
+  function table(items, cols, link, one, fit) {
+    const oneLine = c => ONE_LINE.includes(c) || (one || []).includes(c);
     const cell = (c, v) => {
       const text = esc(v && SHOWN[c] ? SHOWN[c](v) : v);
       const href = v && link && link[c] ? link[c](v) : null;
@@ -87,9 +98,9 @@ async function renderFacetTables(el, fid, opts) {
     const rows = items.slice(0, 40).map(it =>
       // #5034 — the whole value, always: a path was shortened to '…/name' with the rest in a hover
       // title, which a phone cannot read (and it mangled any text that merely began with a slash)
-      `<tr>${cols.map(c => { const v = String(it[c] ?? ''); return `<td${ONE_LINE.includes(c) ? ' class="one"' : ''}>${cell(c, v)}</td>`; }).join('')}</tr>`).join('');
+      `<tr>${cols.map(c => { const v = String(it[c] ?? ''); return `<td${oneLine(c) ? ' class="one"' : ''}>${cell(c, v)}</td>`; }).join('')}</tr>`).join('');
     const more = items.length > 40 ? `<p class="empty">…and ${items.length - 40} more</p>` : '';
-    return `<div class="tbl"><table><tr>${head}</tr>${rows}</table></div>${more}`;   // #4084: Jeff on his phone: the Logs table ran off the right edge; the fold scrolls its own table now
+    return `<div class="tbl"><table${fit ? ' class="fit"' : ''}><tr>${head}</tr>${rows}</table></div>${more}`;   // #4084: Jeff on his phone: the Logs table ran off the right edge; the fold scrolls its own table now
   }
   // #4285 — `except` lets a page mount some folds elsewhere (Actors/Scenarios by the Model, gaps in the Gaps fold)
   const CHOSEN = opts.only ? opts.only.map(t => FACETS.find(f => f.t === t)).filter(Boolean)
@@ -131,7 +142,7 @@ async function renderFacetTables(el, fid, opts) {
       // #4285 — a zero names the graph that was asked, so "0" can never mean
       // "the page asked the wrong graph" without saying so.
       const askedGraph = b && b._meta && b._meta.graph ? ` &middot; graph asked: <code>${esc(b._meta.graph)}</code>` : '';
-      inner = count ? table(rows, f.cols, f.link) : `<div class="empty">no ${f.t.toLowerCase()} for this domain${askedGraph}</div>`;
+      inner = count ? table(rows, f.cols, f.link, f.one, f.fit) : `<div class="empty">no ${f.t.toLowerCase()} for this domain${askedGraph}</div>`;
     }
     // #5021 — an empty fold shows the Domain row's written reason for it (chorus:foldNote "<Fold>: <why>")
     const note = !count && opts.notes && opts.notes[f.t];

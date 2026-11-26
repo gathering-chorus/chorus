@@ -31,7 +31,7 @@ test.describe(`#5034 the ${DOMAIN} domain page reads on a phone`, () => {
     // the Conformance fold draws its table only when the domain lint has answered (12 s alone,
     // over 60 s under load). Checked before that, its table is not there to measure: this test
     // passed for three hours while that table was squeezed to 105px (found 11-24 16:44).
-    await page.waitForFunction(() => !/running the domain lint/.test(document.getElementById('conf-slot')?.textContent || ''), null, { timeout: 180_000 });
+    await page.waitForFunction(() => !/running the domain lint|reading the last check/.test(document.getElementById('conf-slot')?.textContent || ''), null, { timeout: 180_000 });
     await page.evaluate(() => document.querySelectorAll('details').forEach((d) => { d.open = true; }));
     const squeezed = await page.evaluate(() => [...document.querySelectorAll('details.fold')].flatMap((fold) => {
       const body = fold.querySelector(':scope > .body');
@@ -148,6 +148,14 @@ function phoneReading() {
       .map((c) => ({ fold: nameOf(c.closest('details.fold')), text: text(c).slice(0, 40), width: Math.round(c.getBoundingClientRect().width), lines: lines(c) }))
       .filter((c) => c.width > 0 && c.width < 120 && c.lines >= 3),
     routes: [...document.querySelectorAll('details.fold')].filter((f) => nameOf(f) === 'UI Pages').flatMap((f) => column(f, 'route')).map((c) => ({ text: text(c), lines: lines(c) })),
+    // #5044 — every table's scroll box: whether its table runs past the box (measured here, from
+    // the box itself, not from the page's own mark) and whether a line the reader can see says so
+    tables: [...document.querySelectorAll('details.fold .tbl')].filter((b) => b.clientWidth > 0).map((b) => {
+      const cue = b.previousElementSibling && b.previousElementSibling.classList.contains('cut-cue') ? b.previousElementSibling : null;
+      const box = cue && cue.getBoundingClientRect();
+      const seen = !!cue && box.width > 0 && box.height > 0 && getComputedStyle(cue).visibility !== 'hidden' && box.right <= window.innerWidth + 1 && box.left >= -1;
+      return { fold: nameOf(b.closest('details.fold')), over: b.scrollWidth - b.clientWidth, cue: seen, says: cue ? text(cue) : '' };
+    }),
     bodyOver: document.documentElement.scrollWidth - window.innerWidth,
   };
 }
@@ -157,7 +165,13 @@ const inZone = (iso, timeZone) => new Date(iso).toLocaleString('en-US', { timeZo
 
 /** What a phone reader cannot read, by which of the five it is: { cardId, lastCardsColumn, owner, releaseTime, path, verdict }. */
 function phoneFaults(r, { ownedBy, releases, zone }) {
-  const f = { cardId: [], lastCardsColumn: [], owner: [], releaseTime: [], path: [], verdict: [], squeezed: [] };
+  const f = { cardId: [], lastCardsColumn: [], owner: [], releaseTime: [], path: [], verdict: [], squeezed: [], cue: [] };
+  // #5044 — a table that runs past its box says so in words; one that fits says nothing
+  for (const t of r.tables || []) {
+    if (t.over > 1 && !t.cue) f.cue.push(`${t.fold}: its table runs ${t.over}px past the right edge and nothing says it scrolls`);
+    if (t.over > 1 && t.cue && !/sideways/.test(t.says)) f.cue.push(`${t.fold}: the line over its cut table does not say how to reach the rest ("${t.says}")`);
+    if (t.over <= 1 && t.cue) f.cue.push(`${t.fold}: says there is more to the right, and its table fits`);
+  }
   for (const c of r.squeezed || []) f.squeezed.push(`${c.fold}: "${c.text}" is squeezed to ${c.width}px over ${c.lines} lines`);
   for (const c of r.routes || []) if (c.lines !== 1) f.squeezed.push(`UI Pages: the route ${c.text} is drawn on ${c.lines} lines`);
   if (!r.cardIds.length) f.cardId.push('the Cards fold lists no card: nothing to read');
@@ -193,8 +207,12 @@ async function phoneTruth(request) {
 }
 
 const drawnAll = async (page) => {
-  await page.waitForFunction(() => !/loading the materialized view|loading live from the model|running the domain lint/.test(document.body.innerText) && document.querySelector('#conf-slot details'), null, { timeout: 180_000 });
+  await page.waitForFunction(() => !/loading the materialized view|loading live from the model|running the domain lint|reading the last check/.test(document.body.innerText) && document.querySelector('#conf-slot details'), null, { timeout: 180_000 });
   await page.evaluate(() => document.querySelectorAll('details').forEach((d) => { d.open = true; }));
+  // #5044 — the page measures its tables a moment after a fold opens (one pass, 60 ms later); the
+  // reading waits a fixed second for that pass, and never for the mark itself: a page that failed
+  // to mark a cut table must be READ as failing, not waited on
+  await page.waitForTimeout(1000);
   return page.evaluate(phoneReading);
 };
 
@@ -238,8 +256,53 @@ for (const [where, mount] of [['under /chorus (the public apex)', '/chorus'], ['
       expect(reading.routes.length, 'the UI Pages fold lists its routes').toBeGreaterThan(0);
       expect(faults().squeezed, `cells a phone cannot read:\n${faults().squeezed.join('\n')}`).toEqual([]);
     });
+    // #5044 — Jeff's phone, 2026-11-25 15:43 to 15:45: paths, release titles and the Pipeline summary
+    // ran off the right edge of five folds. Each table scrolled, and nothing said so.
+    test('#5044 a table wider than the phone says it scrolls, and one that fits says nothing', () => {
+      const cut = reading.tables.filter((t) => t.over > 1).map((t) => t.fold);
+      expect(cut.length, `at 390 px some fold tables are wider than the screen (measured: ${JSON.stringify(reading.tables)})`).toBeGreaterThan(0);
+      expect(faults().cue, `tables that are cut without saying so, or say so and are not:\n${faults().cue.join('\n')}`).toEqual([]);
+      // the Pipeline table is short enough to fit a phone: it is not cut at all, and its summary wraps
+      // inside the fold (read from the page at 19:47: the summary ran off the edge on one line)
+      const pipeline = reading.tables.find((t) => t.fold === 'Pipeline');
+      expect(pipeline, 'the Pipeline fold draws its table').toBeTruthy();
+      expect(pipeline.over, `the Pipeline table runs ${pipeline.over}px past the fold`).toBeLessThanOrEqual(1);
+    });
   });
 }
+
+// #5044 AC5 NEGATIVE — the same reading on the page with its cue taken away is red on each cut
+// fold by name, and a cue under a table that fits is named too (drawn by hand).
+test.describe('#5044 NEGATIVE: a cut table with no cue, and a cue with no cut, are each named', () => {
+  test('the ops view without the cue is red on the folds Jeff photographed; with it, green', async ({ page }) => {
+    test.setTimeout(300_000);
+    await openDomainPage(page, PHONE);
+    const read = async () => { await page.waitForTimeout(1000); return phoneFaults(await page.evaluate(phoneReading), { ownedBy: '', releases: [], zone: READER_ZONE }).cue; };
+    expect(await read(), 'the page as built').toEqual([]);
+    await page.addStyleTag({ content: '.cut-cue{display:none!important}' });
+    const without = (await read()).join('\n');
+    for (const fold of ['API Contract', 'UI Pages', 'Alerts', 'Releases']) expect(without, `without the cue the ${fold} fold must be named`).toMatch(new RegExp(`^${fold}: its table runs \\d+px past the right edge and nothing says it scrolls$`, 'm'));
+    // and the Pipeline table without its fit mark is cut too, so "it fits" above can fail
+    expect(without, 'the Pipeline table fits, so it is not named').not.toMatch(/^Pipeline: /m);
+    await page.evaluate(() => document.querySelectorAll('.tbl table.fit').forEach((t) => t.classList.remove('fit')));
+    expect((await read()).join('\n'), 'without its fit mark the Pipeline table is cut').toMatch(/^Pipeline: its table runs \d+px past the right edge and nothing says it scrolls$/m);
+  });
+
+  test('by hand: a cue under a table that fits, and a cue that does not say how, are named; a cut table with a true cue is not', async ({ page }) => {
+    await page.setViewportSize(PHONE);
+    await page.setContent(`<style>body{margin:0;font:14px/20px sans-serif}.tbl{max-width:100%;overflow-x:auto}</style>
+      <details class="fold" open><summary>Cards (1) </summary><div class="body"><p class="cut-cue">more to the right: slide the table sideways</p><div class="tbl"><table style="width:200px"><tr><td>fits</td></tr></table></div></div></details>
+      <details class="fold" open><summary>Alerts (1) </summary><div class="body"><p class="cut-cue">more</p><div class="tbl"><table style="width:700px"><tr><td>wide</td></tr></table></div></div></details>
+      <details class="fold" open><summary>Releases (1) </summary><div class="body"><p class="cut-cue">more to the right: slide the table sideways</p><div class="tbl"><table style="width:700px"><tr><td>wide</td></tr></table></div></div></details>
+      <details class="fold" open><summary>Logs (1) </summary><div class="body"><div class="tbl"><table style="width:700px"><tr><td>wide</td></tr></table></div></div></details>`);
+    const cue = phoneFaults(await page.evaluate(phoneReading), { ownedBy: '', releases: [], zone: READER_ZONE }).cue;
+    expect(cue).toEqual([
+      'Cards: says there is more to the right, and its table fits',
+      'Alerts: the line over its cut table does not say how to reach the rest ("more")',
+      'Logs: its table runs 310px past the right edge and nothing says it scrolls',
+    ]);
+  });
+});
 
 // The service page loads the same fold renderer, so it gets the same one-line cells. Its tables
 // must scroll inside their folds too, or the whole page scrolls sideways (Borg Queen, 11-25 12:40:
@@ -259,6 +322,10 @@ test.describe('#5041 the service page, which shares the fold renderer, reads on 
     test.setTimeout(180_000);
     await open(page);
     expect(await over(page), 'the service page is wider than the screen').toBeLessThanOrEqual(1);
+    // #5044 — the cue is the shared file's (athena-flow.js), so this page's cut tables say they scroll too
+    await page.waitForTimeout(1000);
+    const cue = phoneFaults(await page.evaluate(phoneReading), { ownedBy: '', releases: [], zone: READER_ZONE }).cue;
+    expect(cue, `service page tables that are cut without saying so:\n${cue.join('\n')}`).toEqual([]);
     // NEGATIVE: with the scroll boxes taken away the same page does scroll sideways, so the check can fail
     await page.addStyleTag({ content: '.tbl{overflow-x:visible!important;max-width:none!important}' });
     expect(await over(page), 'without its scroll boxes the page must run off the screen').toBeGreaterThan(1);

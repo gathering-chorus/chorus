@@ -56,6 +56,65 @@ function localTime(iso) {
   return isNaN(d) ? '' : d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+// #5044 — how long ago a stored time was, in words a reader needs no clock for: "just now",
+// "7 min ago", "3 h ago", "2 days ago". '' for a value that is not a time.
+function agoText(iso, now) {
+  const t = new Date(iso || '').getTime();
+  if (isNaN(t)) return '';
+  const min = Math.max(0, Math.round(((now || Date.now()) - t) / 60000));
+  if (min < 1) return 'just now';
+  if (min < 60) return min + ' min ago';
+  if (min < 48 * 60) return Math.round(min / 60) + ' h ago';
+  return Math.round(min / 1440) + ' days ago';
+}
+
+// #5044 — a card number opens that card where Clearing v2 shows it (Jeff, 2026-11-25 15:50: "cant
+// link to cards like clearing v2 does"). Clearing v2 is its own service, so its address depends
+// on where the reader stands, measured 2026-11-25:
+//   the public site, under /chorus      the same host, /clearing-v2/<n>
+//   the public site, the chorus. host   that host answers 404 for it; the apex host has it
+//   the home network (a port is named)  the same machine, Clearing v2's own port, /<n>
+// `loc` is the page's location; a test hands in others. Not a number: no address (plain text).
+function cardHref(id, loc) {
+  const n = String(id == null ? '' : id).replace(/^#/, '');
+  if (!/^\d+$/.test(n)) return null;
+  loc = loc || window.location;
+  if (loc.port) return `${loc.protocol}//${loc.hostname}:3472/${n}`;
+  // a whole address, host included: the mount's link rewriter keeps every root-absolute href
+  // inside /chorus, and Clearing v2 is not inside it
+  const host = String(loc.hostname || '');
+  return `${loc.protocol}//${host.indexOf('chorus.') === 0 ? host.slice(7) : host}/clearing-v2/${n}`;
+}
+
+// #5044 — a table wider than its box says so. Jeff's phone, 2026-11-25: file paths, release
+// titles and the Pipeline summary ran off the right edge of five folds. Each table already
+// scrolled inside its fold (#5041), but nothing showed that it did: it read as cut-off text.
+// Every scroll box (.tbl) whose table is wider than the box gets one line ABOVE it (under a long
+// table the line was a screen or more below the cut the reader was looking at); a table that
+// fits gets none. Measured when a fold is drawn, opened, or the window changes width.
+function markCutTables(root) {
+  for (const box of (root || document).querySelectorAll('.tbl')) {
+    const prev = box.previousElementSibling;
+    const cue = prev && prev.classList.contains('cut-cue') ? prev : null;
+    if (!box.clientWidth) continue;                       // inside a closed fold: measured when it opens
+    const cut = box.scrollWidth > box.clientWidth + 1;
+    if (cut && !cue) box.insertAdjacentHTML('beforebegin', '<p class="cut-cue">more to the right: slide the table sideways &rarr;</p>');
+    if (!cut && cue) cue.remove();
+  }
+}
+if (typeof document !== 'undefined') {
+  let due = null;
+  const soon = () => { if (!due) due = setTimeout(() => { due = null; markCutTables(document); }, 60); };
+  document.addEventListener('DOMContentLoaded', () => {
+    // the folds are drawn after their reads come back, one by one
+    new MutationObserver(muts => { if (muts.some(m => !(m.target.classList && m.target.classList.contains('cut-cue')))) soon(); })
+      .observe(document.body, { childList: true, subtree: true });
+    soon();
+  });
+  document.addEventListener('toggle', soon, true);   // a fold opening (toggle does not bubble: capture)
+  window.addEventListener('resize', soon);
+}
+
 function asArray(v) {
   if (Array.isArray(v)) return v;
   if (v === undefined || v === null || v === '') return [];

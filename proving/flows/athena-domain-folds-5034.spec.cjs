@@ -20,7 +20,7 @@ const { DOMAIN, openDomainPage } = require('./lib/athena-page-5034.cjs');
  * whose name holds the word. "Not served" is not here: it is a true answer for a class no
  * door serves, and whether it is true is the true-data suite's question (Kade, 11-24).
  */
-const NO_ANSWER = /loading the materialized view|loading live from the model|running the domain lint|none recorded|could not read|cannot reach|cannot measure|cannot read/i;
+const NO_ANSWER = /loading the materialized view|loading live from the model|running the domain lint|reading the last check|not measured yet|gave no result|none recorded|could not read|cannot reach|cannot measure|cannot read/i;
 
 /** Run in the page: every fold that gives no answer, as "Fold name: the words it shows". */
 function unansweredFolds(pattern) {
@@ -45,9 +45,10 @@ test.describe(`#5034 every fold on the ${DOMAIN} domain page is filled or says w
   test.setTimeout(240_000);
 
   test('no fold is loading, unread, unmeasured or unrecorded', async ({ page }) => {
-    const { errors } = await openDomainPage(page, { lint: 'live' });
+    // #5044: the Conformance read is this tree's until the land (lib serveOwnRoutes); main's waited on its lint
+    const { errors } = await openDomainPage(page);
     // the conformance fold runs the domain lint (about 12 s measured); wait for its verdict
-    await page.waitForFunction(() => !/running the domain lint/.test(document.getElementById('conf-slot')?.textContent || ''), null, { timeout: 180_000 });   // 90 s was not enough inside the pipeline's test step (run 2, 11-24 17:21)
+    await page.waitForFunction(() => !/running the domain lint|reading the last check/.test(document.getElementById('conf-slot')?.textContent || ''), null, { timeout: 180_000 });   // 90 s was not enough inside the pipeline's test step (run 2, 11-24 17:21)
     // (#5041: the ops view no longer embeds the Model fold, so there is no model slot to wait for)
     const folds = await page.locator('details.fold, details.mfwrap').count();
     expect(folds, 'the page drew too few folds to be the domain page').toBeGreaterThan(10);
@@ -106,7 +107,7 @@ const { execFileSync } = require('child_process');
 const { startDoor, signedInPage, BASE, ROOT } = require('./lib/athena-page-5034.cjs');
 
 const MOUNTS = [['under /chorus (the public apex)', '/chorus'], ['at the root (the door\'s own host)', '']];
-const DOOR_NO_ANSWER = /could not read|cannot reach|cannot measure|cannot read|fetch failure|no answer|load failed|HTTP \d{3}|loading the materialized view|loading live from the model|running the domain lint/i;
+const DOOR_NO_ANSWER = /could not read|cannot reach|cannot measure|cannot read|fetch failure|no answer|load failed|HTTP \d{3}|loading the materialized view|loading live from the model|running the domain lint|reading the last check|not measured yet|gave no result/i;
 // Jeff's phone gave up on the 14 to 19 s whole-table read (his Code fold, 08:16). 10 s is well
 // under that and well over what a healthy read takes here (under 1 s), so a busy machine does
 // not turn the suite red. The policy lint runs a real measurement and is left out of the budget.
@@ -118,7 +119,7 @@ const BEFORE_5040 = '112388152d0cfe0bd1d4d227c41c051170ce85a9';
 async function openThroughDoor(page, door, pathAndQuery) {
   await page.goto(door.origin + door.mount + pathAndQuery, { waitUntil: 'domcontentloaded' });
   // innerText, never textContent: the page's own inline scripts contain these very phrases
-  await page.waitForFunction(() => !/loading the materialized view|loading live from the model|Loading the model|running the domain lint/.test(document.body.innerText)
+  await page.waitForFunction(() => !/loading the materialized view|loading live from the model|Loading the model|running the domain lint|reading the last check/.test(document.body.innerText)
     // the shared model fold says when it has drawn (model-fold.js sets data-mfold-ready); until then its slot is empty
     && [...document.querySelectorAll('#mfold-slot')].every((s) => s.dataset.mfoldReady === '1')
     && ![...document.querySelectorAll('[data-mf]')].some((n) => n.textContent.trim() === '…'), null, { timeout: 180_000 });
@@ -155,8 +156,11 @@ for (const [where, mount] of MOUNTS) {
     test.afterAll(() => door && door.stop());
 
     test('the ops view: every fold is filled or says a true reason, and nothing leaves or is refused by the door', async ({ browser }) => {
-      // lint: 'live' — this is the test that reads the policies answer THROUGH the door, as a phone does
-      const { page, context, refused } = await signedInPage(browser, door, { lint: 'live' });
+      // #5044 — before the land the Conformance read is answered by this tree's handler (lib
+      // serveOwnRoutes): main's route ran the lint inside the read, and beside the other suites that
+      // passed the door's 30 s and this test read "Cannot reach" (11-25 19:20, the fault the card
+      // fixes). In the nightly and the after-the-land check the read goes THROUGH the door, as a phone's does.
+      const { page, context, refused } = await signedInPage(browser, door);
       const slow = [];
       page.on('requestfinished', (r) => { const t = r.timing(); if (t.responseEnd > READ_BUDGET_MS) slow.push(`${Math.round(t.responseEnd / 100) / 10} s ${r.url().replace(door.origin, '')}`); });
       await openThroughDoor(page, door, `/athena/domain.html?d=${encodeURIComponent(DOMAIN)}`);
@@ -300,7 +304,7 @@ test.describe('#5040 NEGATIVE: the door checks are red on the pages that broke o
 // Page code read as drawn: platform/api/public/athena/domain.html (the slots, the Conformance
 // and Code folds), platform/api/public/athena/facets.js (the order of the shared folds).
 // =============================================================================================
-const { serveOwnAthenaFiles, serveLintOnce, openOldDomainPage, PHONE } = require('./lib/athena-page-5034.cjs');
+const { serveOwnAthenaFiles, serveLintOnce, serveOwnRoutes, ownControl, ownSettled, ownMeasured, openOldDomainPage, PHONE } = require('./lib/athena-page-5034.cjs');
 
 const FOLD_ORDER = ['Vocabulary', 'API Contract', 'Services', 'Conformance', 'Gaps', 'Dependencies', 'Design doc', 'Decisions',
   'UI Pages', 'Alerts', 'Logs', 'Cards', 'Pipeline', 'Releases', 'Infrastructure', 'Tests', 'Code'];
@@ -345,10 +349,12 @@ async function openAsItStarts(page, { plantedPolicies = false } = {}) {
   await page.setViewportSize(PHONE);
   // a test that planted its own policies answer keeps it: a route added later would win over it
   if (!plantedPolicies) await serveLintOnce(page);
+  // #5044: the card's two routes from this tree; a planted policies answer is left alone
+  await serveOwnRoutes(page, { conformance: plantedPolicies ? 'none' : 'measured' });
   await serveOwnAthenaFiles(page);
   await page.goto(`${BASE}/athena/domain.html?d=${encodeURIComponent(DOMAIN)}`, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => document.querySelector('#code-slot details') && document.querySelector('#svc-slot details') && document.querySelector('#conf-slot details')
-    && document.querySelector('#facets details.fold') && !/running the domain lint/.test(document.getElementById('conf-slot').textContent), null, { timeout: 180_000 });
+    && document.querySelector('#facets details.fold') && !/running the domain lint|reading the last check/.test(document.getElementById('conf-slot').textContent), null, { timeout: 180_000 });
 }
 
 /** The policies endpoint's answer, written by the test: the named policies with the verdicts given. */
@@ -435,5 +441,135 @@ test.describe(`#5041 the folds of the ${DOMAIN} ops view come in the reader's or
     expect(orderFaults(swapped).join('\n')).toMatch(/^order: drawn .*Dependencies > Gaps/);
     expect(orderFaults(right.filter((f) => f.name !== 'Pipeline'))).toEqual(['the Pipeline fold is not drawn']);
     expect(orderFaults(right.filter((f) => f.name !== 'Design doc')), 'a domain with no design document draws no fold for it').toEqual([]);
+  });
+});
+
+// =============================================================================================
+// #5044 AC1 — the Conformance fold reads the kept result and never waits for the check.
+//
+// Jeff's phone, on the road, 2026-11-25 15:44: "Cannot reach the policies endpoint — fetch
+// failure. Load failed"; "conformance is broken". The fold's read ran the whole domain lint inside
+// the request: 12 s alone, 27.4 s at 15:48, no answer in 60 s at 15:47, behind a sign-in door that
+// gives up at 30. The read now answers what is KEPT, at once, and a check runs behind it.
+//
+// The page is this tree's, opened at phone width through the real sign-in door under /chorus; the
+// read is answered by this tree's handler (lib serveOwnRoutes 'raw': own-routes-5044.ts runs
+// platform/api/src/handlers/policy-counts.ts, and the test holds, releases and fails its check and
+// moves its clock). Read from the fold as drawn:
+//   1. with nothing kept and a check still running, the read answers in under 3 s and the fold
+//      says "Not measured yet" and that a check is running; when the check ends the fold fills
+//      in by itself, with the time it was measured;
+//   2. a kept result past ten minutes is shown with its OWN time, marked old, with the fresh
+//      check named; when that ends the fold shows the new result;
+//   3. a check that gives nothing is said so, with why; the fold never says "Cannot reach".
+// NEGATIVE: a read that waits on its check is measured over the 3 s; a stale result is never
+// drawn as fresh (the fold's own mark is read, and its time is the kept one, not the clock's).
+// Named limits: before the land the door's upstream is main, so that the DOOR serves this read
+// in under 3 s is first seen after the land (the folds test above reads it live); the kept result
+// lives in the server's memory, so the first view after a restart reads "Not measured yet".
+// =============================================================================================
+test.describe.serial(`#5044 the Conformance fold of ${DOMAIN} reads the kept result and never waits for the check`, () => {
+  test.setTimeout(900_000);   // the one real lint these tests wait on has taken over five minutes beside every other suite
+  const OPS_VIEW = `/athena/domain.html?d=${encodeURIComponent(DOMAIN)}`;
+  let door;
+  test.beforeAll(async () => { door = await startDoor({ mount: '/chorus' }); });
+  test.afterAll(async () => { await ownControl('reset=1'); if (door) door.stop(); });
+
+  /** A signed-in phone page whose Conformance read is this tree's handler, as it stands; and how long each such read took. */
+  async function phone(browser) {
+    const { page, context } = await signedInPage(browser, door, { lint: 'live' });
+    await serveOwnRoutes(page, { conformance: 'raw', always: true });
+    return { page, context };
+  }
+  /** Run in the page: how long its first Conformance read took, start to last byte, by the browser's own clock (ms); null if it made none. */
+  const readTook = () => {
+    const e = performance.getEntriesByType('resource').filter((r) => /\/api\/chorus\/policies\/counts\?domain=/.test(r.name))[0];
+    return e ? Math.round(e.duration) : null;
+  };
+  /** Run in the page: the Conformance fold as drawn. */
+  const conformance = () => {
+    const slot = document.getElementById('conf-slot');
+    const mark = slot.querySelector('[data-conf="fresh"], [data-conf="stale"], [data-conf="unmeasured"]');
+    // textContent: a fold with nothing red starts closed, and a closed fold's words are not in innerText
+    return { text: slot.textContent.replace(/\s+/g, ' ').trim(), state: mark ? mark.dataset.conf : null, measured: mark ? (mark.dataset.measured || null) : null,
+      failed: slot.querySelector('[data-conf="failed"]')?.textContent.replace(/\s+/g, ' ').trim() || null, policies: slot.querySelectorAll('tr[data-verdict]').length };
+  };
+  const drawn = (page) => page.waitForFunction(() => document.querySelector('#conf-slot [data-conf]'), null, { timeout: 60_000 });
+
+  test('nothing kept, check running: the read answers in under 3 s, the fold says "Not measured yet", and fills in by itself when the check ends', async ({ browser }) => {
+    await ownControl('reset=1&quick=1&lint=hold');
+    const { page, context } = await phone(browser);
+    await page.goto(door.origin + door.mount + OPS_VIEW, { waitUntil: 'domcontentloaded' });
+    await drawn(page);
+    const first = await page.evaluate(conformance);
+    const took = await page.evaluate(readTook);
+    expect(took, 'the page made its Conformance read').not.toBeNull();
+    expect(took, `the policies read took ${took} ms while its check was still running`).toBeLessThan(3000);
+    expect(first.state, `the fold says: ${first.text}`).toBe('unmeasured');
+    expect(first.text).toMatch(/Not measured yet\. A check is running now/);
+    expect(first.text, 'a read that answered is never "cannot reach"').not.toMatch(/cannot reach|fetch failure/i);
+    // the check reads the policies door first and then starts the lint, which the test is holding
+    await expect.poll(async () => (await ownControl('')).held, { message: 'the check the read started is still running, held at its lint', timeout: 30_000 }).toBe(1);
+    // the check ends; nobody reloads the page
+    await ownControl('release=1');
+    await ownSettled();
+    await page.waitForFunction(() => document.querySelector('#conf-slot [data-conf="fresh"]') && document.querySelector('#conf-slot tr[data-verdict]'), null, { timeout: 60_000 });
+    const filled = await page.evaluate(conformance);
+    expect(filled.policies, 'the fold lists the policies it measured').toBeGreaterThan(10);
+    expect(filled.text).toMatch(/measured .+ \((just now|\d+ min ago)\)/);
+    expect(Number.isNaN(Date.parse(filled.measured)), `the fold carries the time it was measured (${filled.measured})`).toBe(false);
+    // NEGATIVE: the same timing, on a read that waits for its check as the old one did, is over the 3 s
+    await page.route((url) => /\/api\/chorus\/policies\/counts$/.test(url.pathname), async (route) => { await new Promise((r) => setTimeout(r, 4000)); return route.fulfill({ status: 200, contentType: 'application/json', body: '{"policies":[]}' }); });
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => !/reading the last check/.test(document.getElementById('conf-slot')?.textContent || 'reading the last check'), null, { timeout: 60_000 });
+    expect(await page.evaluate(readTook), 'a read that waits four seconds must be measured as over three').toBeGreaterThan(3000);
+    await context.close();
+  });
+
+  test('a kept result past ten minutes is drawn with its own time, marked old, the fresh check named; then the new result', async ({ browser }) => {
+    await ownControl('reset=1&quick=1');
+    const kept = JSON.parse((await ownMeasured(DOMAIN)).body);
+    expect(kept.measuredAt, 'this tree\'s check measured the domain').toBeTruthy();
+    await ownControl(`clock=${11 * 60 * 1000}&lint=hold`);
+    const { page, context } = await phone(browser);
+    await page.goto(door.origin + door.mount + OPS_VIEW, { waitUntil: 'domcontentloaded' });
+    await drawn(page);
+    const old = await page.evaluate(conformance);
+    const took = await page.evaluate(readTook);
+    expect(took, `the read took ${took} ms with a fresh check running behind it`).toBeLessThan(3000);
+    expect(old.state, `a result eleven minutes old must be marked old; the fold says: ${old.text}`).toBe('stale');
+    expect(old.measured, 'and carries the time it WAS measured, not the time it was asked').toBe(kept.measuredAt);
+    expect(old.text).toMatch(/\((just now|\d+ min ago)\) — old: more than ten minutes\. A check is running now/);
+    expect(old.policies, 'the old result is still shown while the new one is measured').toBe(kept.policies.length);
+    expect(await page.locator('#conf-slot summary').innerText()).toMatch(/of \d+, old\)/);
+    // the fresh check reads the policies door before it reaches the lint the test is holding; a
+    // release sent before that frees nothing and the check then waits for good (pass 7, 20:10)
+    await expect.poll(async () => (await ownControl('')).held, { message: 'the fresh check is held at its lint', timeout: 60_000 }).toBe(1);
+    await ownControl('release=1');
+    await ownSettled();
+    await page.waitForFunction(() => document.querySelector('#conf-slot [data-conf="fresh"]'), null, { timeout: 60_000 });
+    const fresh = await page.evaluate(conformance);
+    expect(Date.parse(fresh.measured), 'the new result is newer than the kept one').toBeGreaterThan(Date.parse(kept.measuredAt));
+    expect(fresh.text).not.toMatch(/old: more than ten minutes/);
+    await context.close();
+  });
+
+  test('a check that gives nothing is said so, with why, and the fold never says "Cannot reach"', async ({ browser }) => {
+    await ownControl('reset=1&lint=down');
+    const { page, context } = await phone(browser);
+    await page.goto(door.origin + door.mount + OPS_VIEW, { waitUntil: 'domcontentloaded' });
+    await drawn(page);
+    // the first read started the check; the fold reads again by itself and then says what happened
+    await page.waitForFunction(() => document.querySelector('#conf-slot [data-conf="failed"]'), null, { timeout: 60_000 });
+    const said = await page.evaluate(conformance);
+    expect(said.state).toBe('unmeasured');
+    expect(said.failed).toMatch(/^The last check gave no result: the policies door did not answer/);
+    expect(said.text).not.toMatch(/cannot reach|fetch failure/i);
+    expect(said.policies, 'nothing is drawn as a result').toBe(0);
+    // and the fold-by-fold reading of this suite names that fold: a domain nobody measured is not "answered"
+    await page.evaluate(() => document.querySelectorAll('details').forEach((d) => { d.open = true; }));
+    const bad = await page.evaluate(unansweredFolds, NO_ANSWER.source);
+    expect(bad.join('\n')).toMatch(/^Conformance: /m);
+    await context.close();
   });
 });

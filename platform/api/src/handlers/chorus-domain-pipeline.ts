@@ -1,19 +1,27 @@
-/* eslint-disable security/detect-object-injection -- Indexing on validated stage/domain keys. */
 /**
- * GET /api/chorus/domain/:name/pipeline — 5-stage domain maturity view (#2188).
+ * GET /api/chorus/domain/:name/pipeline — the five steps a domain goes through, each counted
+ * from the same read as the fold beside it on /athena/domain.html (#2188; rewritten by #5044).
+ *
+ * #5044 — Jeff, on his phone, 2026-11-25 15:51: "pipeline section does not make sense to me".
+ * Log evidence: the page said shape "No cards" beside 16 cards and ship "Nothing shipped" above
+ * 5 releases. Three rows read the old domain view (/api/chorus/domain/:name), which answers 25
+ * fixed names only (principles got a 404, turned silently into "nothing") and drops Done cards
+ * before ship counted the Done ones: ship could not move for any domain. Design asked for
+ * "<name>-service", which scores 0% for any name. Build read links nothing writes any more.
  *
  * Dependencies injected:
- *   fetcher            — async (url) => any | null   (HTTP aggregator over sibling endpoints)
- *   envelope           — (query_name, data, duration_ms, extra) => wrapped body
- *   now                — () => number
+ *   fetcher       — async (url) => body | null   (this server's own routes, the /owl model proxy
+ *                   among them; null = the read failed)
+ *   envelope      — (query_name, data, duration_ms, extra) => wrapped body
+ *   now           — () => number
  *
- * Behavior:
- *   - Parallel fetch: cards, completeness, code, tests, services (endpoints), alerts
- *   - stage.shape:  by total_cards (≥5 complete)
- *   - stage.design: by completeness % (≥80 complete)
- *   - stage.build:  code+tests+endpoints (≥3 complete)
- *   - stage.prove:  alert count (≥1 complete)
- *   - stage.ship:   done/total cards (≥50% complete)
+ * Each row, and the fold that reads the same thing:
+ *   shape   the board's domain:<name> cards, Done included      (Cards)      5 or more: complete
+ *   design  the Domain row's completeness, under its own name                80% or more: complete
+ *   build   code files + test files + routes carrying hasDomain (Code, Tests, API Contract)   3 or more: complete
+ *   prove   alert rules                                         (Alerts)     1 or more: complete
+ *   ship    releases                                            (Releases)   1 or more: complete
+ * A read that fails makes its row "could not read <what>", never "not started".
  */
 import type { FetchResult } from './codebase-topology';
 
@@ -26,101 +34,121 @@ export interface ChorusDomainPipelineDeps {
   now?: () => number;
 }
 
+type StageName = 'shape' | 'design' | 'build' | 'prove' | 'ship';
+type StageStatus = 'not started' | 'in progress' | 'complete' | 'could not read';
+
 interface Stage {
-  name: 'shape' | 'design' | 'build' | 'prove' | 'ship';
-  status: 'not_started' | 'in_progress' | 'complete';
+  name: StageName;
+  status: StageStatus;
   evidence: number;
   detail: Record<string, unknown>;
   summary: string;
 }
 
-function stageStatus(evidence: number, threshold = 1): Stage['status'] {
-  return evidence === 0 ? 'not_started' : evidence >= threshold ? 'complete' : 'in_progress';
+const CLOSED = new Set(['Done', "Won't Do"]);
+
+function byCount(evidence: number, complete: number): StageStatus {
+  if (evidence === 0) return 'not started';
+  return evidence >= complete ? 'complete' : 'in progress';
 }
 
-function thresholdStatus(evidence: number, threshold: number): Stage['status'] {
-  if (evidence === 0) return 'not_started';
-  return evidence >= threshold ? 'complete' : 'in_progress';
+function unread(name: StageName, what: string): Stage {
+  return { name, status: 'could not read', evidence: 0, detail: { failed: what }, summary: `could not read ${what}` };
 }
 
-type CardRow = { status?: string };
-
-function extractCards(cardsRes: unknown): CardRow[] {
-  const withCards = (cardsRes as { data?: { cards?: CardRow[] } } | null)?.data?.cards;
-  if (withCards) return withCards;
-  const rawData = (cardsRes as { data?: unknown } | null)?.data;
-  return (rawData as CardRow[] | undefined) ?? [];
+/** The list a read carries under `key`, at the top or inside `data`; null when it carries none. */
+function listOf(res: unknown, key: string): unknown[] | null {
+  if (!res || typeof res !== 'object') return null;
+  const top = (res as Record<string, unknown>)[key];
+  if (Array.isArray(top)) return top;
+  const data = (res as { data?: unknown }).data;
+  const inner = data && typeof data === 'object' ? (data as Record<string, unknown>)[key] : null;
+  return Array.isArray(inner) ? inner : null;
 }
 
-function buildShapeStage(cards: CardRow[]): Stage {
+/** Rows of the model door that name this domain: hasDomain is one name or several, bare or an IRI. */
+function onDomain(rows: unknown[], name: string): unknown[] {
+  const tail = (v: unknown): string => String(v ?? '').split('#').pop()!.replace(/^chorus:/, '');
+  return rows.filter((r) => {
+    const row = r as { hasDomain?: unknown; links?: { hasDomain?: unknown } };
+    const named = row.hasDomain ?? row.links?.hasDomain ?? [];
+    return (Array.isArray(named) ? named : [named]).some((v) => tail(v) === name);
+  });
+}
+
+function buildShapeStage(cardsRes: unknown): Stage {
+  const cards = listOf(cardsRes, 'cards') as Array<{ status?: string }> | null;
+  if (!cards) return unread('shape', 'cards');
   const total = cards.length;
   const done = cards.filter((c) => c.status === 'Done').length;
-  const wip = cards.filter((c) => c.status === 'WIP').length;
+  const open = cards.filter((c) => !CLOSED.has(c.status ?? '')).length;
   return {
     name: 'shape',
-    status: thresholdStatus(total, 5),
+    status: byCount(total, 5),
     evidence: total,
-    detail: { total_cards: total, wip, done },
-    summary: total === 0 ? 'No cards' : `${total} cards (${wip} WIP, ${done} done)`,
+    detail: { total_cards: total, open, done },
+    summary: total === 0 ? 'No cards' : `${total} cards (${open} open, ${done} done)`,
   };
 }
 
 function buildDesignStage(compRes: unknown): Stage {
-  const data = (compRes as { data?: { percentage?: number; present?: unknown[]; missing?: unknown[] } } | null)?.data;
-  const pct = data?.percentage ?? 0;
-  const present = data?.present ?? [];
-  const missing = data?.missing ?? [];
+  const data = compRes as { percentage?: unknown; present?: unknown[]; missing?: unknown[] } | null;
+  if (!data || typeof data.percentage !== 'number') return unread('design', 'completeness');
+  const pct = data.percentage;
+  const present = data.present ?? [];
+  const missing = data.missing ?? [];
   return {
     name: 'design',
-    status: thresholdStatus(pct, 80),
+    status: byCount(pct, 80),
     evidence: pct,
     detail: { percentage: pct, present, missing },
-    summary: pct === 0 ? 'Not started' : `${pct}% — ${present.length} present, ${missing.length} missing`,
+    summary: `${pct}%: ${present.length} present, ${missing.length} missing`,
   };
 }
 
-function metaCount(res: unknown, key: 'count' | 'source_count' = 'count'): number {
-  return (res as { _meta?: Record<string, number> } | null)?._meta?.[key] ?? 0;
-}
-
-function buildBuildStage(codeRes: unknown, testsRes: unknown, endpointsRes: unknown): Stage {
-  const code = metaCount(codeRes, 'source_count');
-  const tests = metaCount(testsRes);
-  const endpoints = metaCount(endpointsRes);
-  const total = code + tests + endpoints;
+function buildBuildStage(name: string, filesRes: unknown, testsRes: unknown, endpointsRes: unknown): Stage {
+  const files = listOf(filesRes, 'data');
+  if (!files) return unread('build', 'code files');
+  const tests = (testsRes as { _meta?: { count?: unknown } } | null)?._meta?.count;
+  if (typeof tests !== 'number') return unread('build', 'tests');
+  const endpoints = listOf(endpointsRes, 'data');
+  if (!endpoints) return unread('build', 'routes');
+  const code = onDomain(files, name).length;
+  const routes = onDomain(endpoints, name).length;
+  const total = code + tests + routes;
   return {
     name: 'build',
-    status: stageStatus(total, 3),
+    status: byCount(total, 3),
     evidence: total,
-    detail: { code, tests, endpoints },
-    summary: total === 0 ? 'No code discovered' : `${code} source, ${tests} tests, ${endpoints} endpoints`,
+    detail: { code, tests, endpoints: routes },
+    summary: total === 0 ? 'No code' : `${code} files, ${tests} test files, ${routes} routes`,
   };
 }
 
 function buildProveStage(alertsRes: unknown): Stage {
-  const count = metaCount(alertsRes);
+  const alerts = listOf(alertsRes, 'alerts');
+  if (!alerts) return unread('prove', 'alerts');
+  const count = alerts.length;
   return {
     name: 'prove',
-    status: stageStatus(count),
+    status: byCount(count, 1),
     evidence: count,
     detail: { alerts: count },
-    summary: count === 0 ? 'No alert coverage' : `${count} alert rules`,
+    summary: count === 0 ? 'No alert rules' : `${count} alert rules`,
   };
 }
 
-function buildShipStage(cards: CardRow[]): Stage {
-  const total = cards.length;
-  const done = cards.filter((c) => c.status === 'Done').length;
-  const ratio = total > 0 ? Math.round((done / total) * 100) : 0;
-  let status: Stage['status'] = 'in_progress';
-  if (done === 0) status = 'not_started';
-  else if (done >= total * 0.5) status = 'complete';
+function buildShipStage(releasesRes: unknown): Stage {
+  const releases = listOf(releasesRes, 'releases') as Array<{ cardId?: string }> | null;
+  if (!releases) return unread('ship', 'releases');
+  const count = releases.length;
+  const newest = releases[0]?.cardId;   // the releases read answers newest first
   return {
     name: 'ship',
-    status,
-    evidence: done,
-    detail: { done, total, ratio },
-    summary: done === 0 ? 'Nothing shipped' : `${done}/${total} cards shipped (${ratio}%)`,
+    status: byCount(count, 1),
+    evidence: count,
+    detail: { releases: count, newest: newest ?? null },
+    summary: count === 0 ? 'No releases' : `${count} releases${newest ? `, newest #${newest}` : ''}`,
   };
 }
 
@@ -132,27 +160,27 @@ export async function fetchChorusDomainPipeline(
   const start = now();
 
   const sdId = name.toLowerCase();
+  const dom = `/api/chorus/domain/${sdId}`;
+  // the same filter the folds send the model door (facets.js forDomain)
+  const forDomain = `?hasDomain=${encodeURIComponent(sdId)}&limit=5000`;
 
-  // Cards and completeness come from the domain view itself.
-  const [domainRes, codeRes, testsRes, endpointsRes, alertsRes] = await Promise.all([
-    deps.fetcher(`/api/chorus/domain/${name}`),
-    deps.fetcher(`/api/chorus/domain/${name}/code`),
-    deps.fetcher(`/api/chorus/domain/${name}/tests`),
-    deps.fetcher(`/api/chorus/domain/${name}/services`),
-    deps.fetcher(`/api/chorus/domain/${name}/alerts`),
+  const [cardsRes, compRes, filesRes, testsRes, endpointsRes, alertsRes, releasesRes] = await Promise.all([
+    deps.fetcher(`${dom}/cards`),
+    // the Domain row scored against its shape, asked under the domain's own name
+    deps.fetcher(`/owl/domains/domains/${encodeURIComponent(sdId)}/completeness`),
+    deps.fetcher(`/owl/code/files${forDomain}`),
+    deps.fetcher(`${dom}/tests`),
+    deps.fetcher(`/owl/code/endpoints${forDomain}`),
+    deps.fetcher(`${dom}/alerts`),
+    deps.fetcher(`${dom}/releases`),
   ]);
 
-  // The domain view answers cards as { total, wip, blocked, items } — read
-  // the items; an object passed on as the list threw and reset the socket.
-  const dv = (domainRes ?? {}) as { cards?: { items?: CardRow[] }; completeness?: unknown };
-  const cards = extractCards({ data: { cards: dv.cards?.items ?? [] } });
-  const compRes = { data: dv.completeness ?? null };
   const stages: Stage[] = [
-    buildShapeStage(cards),
+    buildShapeStage(cardsRes),
     buildDesignStage(compRes),
-    buildBuildStage(codeRes, testsRes, endpointsRes),
+    buildBuildStage(sdId, filesRes, testsRes, endpointsRes),
     buildProveStage(alertsRes),
-    buildShipStage(cards),
+    buildShipStage(releasesRes),
   ];
 
   return {

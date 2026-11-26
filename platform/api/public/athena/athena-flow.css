@@ -44,6 +44,13 @@ h1 .kind, h2 .kind { color: var(--muted); font-weight: 400; font-size: 1.05rem; 
 .tbl table { min-width: 420px; }
 .fold td.one { white-space: nowrap; overflow-wrap: normal; }
 .fold .tbl tr:has(td.one) td:not(.one) { min-width: 12em; }
+/* #5044 — a table the renderer marks `fit` (Pipeline: two short columns and a summary) takes the
+   fold's width and wraps its prose inside it; it needs no sideways scroll on a phone. */
+.tbl table.fit { min-width: 0; }
+.fold .tbl table.fit tr:has(td.one) td:not(.one) { min-width: 0; }
+/* #5044 — the line above a table that is wider than its box (athena-flow.js markCutTables puts
+   it there, and takes it away when the table fits). Right-aligned: it sits at the cut edge. */
+.cut-cue { font-size: .72rem; color: var(--accent); text-align: right; margin: 0 0 2px; }
 .fold .src { font-size: .7rem; color: var(--muted); font-weight: 400; }
 /* #5034 — only the summary's source label floats. The same class is used for small text inside
    a fold's body (the Conformance fold's "measured …" line); floated there, it squeezed the table

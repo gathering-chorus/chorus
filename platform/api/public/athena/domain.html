@@ -149,24 +149,40 @@ ${srcNote(`GET /domains/${esc(d)} + the materialized facet endpoints (/api/choru
 // #5021 — Conformance: every policy that applies to this domain (global, or appliesTo it)
 // with its last policy-validate --domain result, read live from the policies door and the
 // lint's own run (GET /api/chorus/policies/counts?domain=). Nothing here is hand-written.
-async function renderConformance(d) {
+// #5044 — the read answers the KEPT result at once; the page never waits for the lint (Jeff's
+// phone, 2026-11-25 15:44: "Cannot reach the policies endpoint"; the lint ran inside the read,
+// 27 s, behind a door that gives up at 30). The fold says when the result was measured and how
+// long ago; one past ten minutes is marked old, and the fresh check running behind it is named.
+// With nothing kept yet it says "not measured yet", never "cannot reach". While a check runs the
+// fold reads again, every 15 s, at most 8 times, so it fills in without a reload.
+async function renderConformance(d, tries) {
+  tries = tries || 0;
   const el = document.getElementById('conf-slot');
   const fold = (summary, body, open) => `<details class="fold"${open ? ' open' : ''}><summary>Conformance ${summary} <span class="src">chorus:Policy (global or appliesTo) &middot; policy-validate --domain ${esc(d)}</span></summary><div class="body">${body}</div></details>`;
-  el.innerHTML = fold('', '<p class="empty">running the domain lint&hellip;</p>', true);
+  if (!tries) el.innerHTML = fold('', '<p class="empty">reading the last check&hellip;</p>', true);
+  // a fold the reader opened or closed by hand stays that way across a re-read
+  const was = el.querySelector('details'), keptOpen = tries && was ? was.open : null;
+  const draw = (summary, body, open) => { el.innerHTML = fold(summary, body, keptOpen === null ? open : keptOpen); };
   try {
     const r = await fetch(window.basePath(`/api/chorus/policies/counts?domain=${encodeURIComponent(d)}`));   // #5040: through the mount
     const b = await r.json();
-    if (!r.ok) { el.innerHTML = fold('', `<p class="empty"><strong>Cannot measure</strong> &mdash; ${esc(b.error || ('HTTP ' + r.status))}</p>`, true); return; }
+    if (!r.ok) { draw('', `<p class="empty"><strong>Cannot measure</strong> &mdash; ${esc(b.error || ('HTTP ' + r.status))}</p>`, true); return; }
+    const again = b.checking && tries < 8;
+    if (again) setTimeout(() => renderConformance(d, tries + 1), 15000);
+    const running = b.checking ? (again ? ' A check is running now; this fold reads it when it is done.' : ' A check is still running; reload the page to read it.') : '';
+    const failed = b.lastCheckFailed ? `<p class="bad" data-conf="failed">The last check gave no result: ${esc(b.lastCheckFailed)}</p>` : '';
+    if (!b.measuredAt) { draw('(not measured yet)', `<p class="empty" data-conf="unmeasured"><strong>Not measured yet.</strong>${running}</p>${failed}`, true); return; }
     const ps = b.policies || [];
-    if (!ps.length) { el.innerHTML = fold('', '<p class="empty">No policy with a check applies to this domain.</p>', true); return; }
+    const when = `<p class="src" data-conf="${b.stale ? 'stale' : 'fresh'}" data-measured="${esc(b.measuredAt)}">measured ${esc(localTime(b.measuredAt) || b.measuredAt)} (${esc(agoText(b.measuredAt))})${b.stale ? ' &mdash; <strong>old</strong>: more than ten minutes.' : ''}${running}</p>${failed}`;
+    if (!ps.length) { draw('', when + '<p class="empty">No policy with a check applies to this domain.</p>', true); return; }
     const red = ps.filter(p => p.verdict !== 'pass').length;
     // #5041 — each policy name opens that policy's own page (Jeff: "i want to be able to click
     // into and see policy instances"). The fold starts closed when nothing is red, open when something is.
     const verdict = p => p.verdict === 'pass' ? '<span class="ok">green</span>' : p.verdict === 'fail' ? '<span class="bad">red</span>' : '<span class="bad">could not run</span>';
     const rows = ps.map(p => `<tr data-policy="${esc(p.name)}" data-verdict="${esc(p.verdict)}"><td>${verdict(p)}</td><td><a class="edge" href="${esc(window.basePath('/domains/policies/' + encodeURIComponent(p.name)))}"><strong>${esc(p.name)}</strong></a><br><span class="src">${esc(p.label || '')}</span>${(p.violations || []).length ? `<ul>${p.violations.map(v => `<li><code>${esc(v)}</code></li>`).join('')}</ul>` : ''}${p.reason ? `<br><span class="empty">${esc(p.reason)}</span>` : ''}</td><td>${p.count == null ? '&ndash;' : esc(String(p.count))} / ${p.baseline == null ? '&ndash;' : esc(String(p.baseline))}</td><td>${esc(p.scope || '')}</td></tr>`).join('');
-    el.innerHTML = fold(`(${red ? red + ' red' : 'green'} of ${ps.length})`,
-      `<p class="src">measured ${esc(b.measuredAt || '?')}</p><div class="tbl"><table><tr><th></th><th>Policy</th><th>count / baseline</th><th>applies</th></tr>${rows}</table></div>`, red > 0);
-  } catch (e) { el.innerHTML = fold('', `<p class="empty"><strong>Cannot reach</strong> the policies endpoint &mdash; fetch failure. ${esc(String(e && e.message || e))}</p>`, true); }
+    draw(`(${red ? red + ' red' : 'green'} of ${ps.length}${b.stale ? ', old' : ''})`,
+      `${when}<div class="tbl"><table><tr><th></th><th>Policy</th><th>count / baseline</th><th>applies</th></tr>${rows}</table></div>`, red > 0 || !!b.lastCheckFailed);
+  } catch (e) { draw('', `<p class="empty"><strong>Cannot reach</strong> the policies endpoint &mdash; fetch failure. ${esc(String(e && e.message || e))}</p>`, true); }
 }
 
 // #4472 — the services this domain hosts (chorus:hosts) and the launchd units the services

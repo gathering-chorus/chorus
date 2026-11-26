@@ -13,7 +13,8 @@ ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 PAGE="$ROOT/platform/api/public/loom/policy-counts.html"
 
 @test "the page reads the counts same-origin for the gates in its address, never from localhost" {
-  grep -q "fetch('/api/chorus/policies/counts?gate=' + encodeURIComponent(gate))" "$PAGE" || return 1
+  # #5044: the same read, through the mount (basePath), so it stays inside the sign-in door under /chorus
+  grep -q "fetch(basePath('/api/chorus/policies/counts?gate=' + encodeURIComponent(gate)))" "$PAGE" || return 1
   grep -q "get('gate')" "$PAGE" || return 1
   ! grep -qE "localhost|127\.0\.0\.1|:33[0-9]{2}" "$PAGE" || return 1
 }
