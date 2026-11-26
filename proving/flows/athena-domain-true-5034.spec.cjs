@@ -157,7 +157,9 @@ function drawnOnce() {
   // (#5044: a table wider than the phone has one line above it saying it scrolls; the table is the next thing down)
   const tableUnder = (h) => { const n = h.nextElementSibling; return n && n.classList.contains('cut-cue') ? n.nextElementSibling : n; };
   const groups = code ? [...code.querySelectorAll('h3[data-kind]')].map((h) => ({ kind: h.dataset.kind, heading: text(h), paths: [...(tableUnder(h)?.querySelectorAll('td') || [])].map(text) })) : [];
-  const status = [...document.querySelectorAll('.stats .stat')].find((s) => text(s.querySelector('.l')) === 'Status');
+  // #5045 — the tile no longer shows a typed status: it shows the API version in production
+  // (data-api). The page Jeff walked before that card labelled it "Status"; both are the same tile.
+  const status = [...document.querySelectorAll('.stats .stat')].find((s) => s.hasAttribute('data-api') || text(s.querySelector('.l')) === 'Status');
   return { folds, groups, codeSummary: code ? text(code.querySelector(':scope > summary')) : null, status: status ? text(status.querySelector('.v')) : null };
 }
 
@@ -285,7 +287,7 @@ test.describe(`#5041 the ${DOMAIN} ops view says each thing once and counts it t
     // Jeff, 10:50: Status and Pipeline stay. Taken out of the drawn page, each is named.
     await page.evaluate(() => {
       [...document.querySelectorAll('details.fold')].find((f) => /^Pipeline/.test(f.querySelector('summary').textContent)).remove();
-      [...document.querySelectorAll('.stats .stat')].find((s) => s.querySelector('.l').textContent.trim() === 'Status').remove();
+      document.querySelector('.stats .stat[data-api]').remove();
     });
     const gone = onceFaults(await page.evaluate(drawnOnce), store);
     expect(gone).toContain('the Pipeline fold is not drawn');

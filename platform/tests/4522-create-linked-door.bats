@@ -27,7 +27,8 @@ setup() {
   TS="$("$REPO/platform/scripts/chorus-identity-token" silas 2>/dev/null)"; [ -n "$TS" ]
   D="doc-probe-4522-$$"; M="domain-probe-4522-$$"
   DOC='{"name":"'$D'","label":"Probe doc","docTitle":"Probe doc","docHref":"/probe.html","docState":"draft","comment":"probe","hasDomain":["'$M'"]}'
-  DOM='{"name":"'$M'","label":"probe","comment":"probe","purpose":"probe","gaps":"none","status":"building","atStep":"probe-4522","hasDesignDoc":"'$D'"}'
+  # #5045 — a Domain no longer carries a typed status or gaps (off the shape; the door refuses them)
+  DOM='{"name":"'$M'","label":"probe","comment":"probe","purpose":"probe","atStep":"probe-4522","hasDesignDoc":"'$D'"}'
 }
 post() { curl -s -o "$BATS_TEST_TMPDIR/body" -w '%{http_code}' -X POST -H "Authorization: Bearer $TS" -H "Content-Type: $1" --max-time 30 --data-binary "$2" "$OWL_URL/$3"; }
 

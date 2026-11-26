@@ -92,10 +92,10 @@ def collect_inventory(endpoint=DEFAULT_ENDPOINT, fixture_data=None, pipelines_di
         rows = []
         for dom in sorted(x for q, x in has_domain if q == p):
             r = d["domains"].get(dom, {})
+            # #5045 — a domain carries no typed status any more (off the Domain shape); the column is gone
             rows.append({
                 "domain": dom,
                 "owner": r.get("owner", ""),
-                "status": r.get("status", ""),
                 "step": r.get("step", "").replace("value-stream-step-", ""),
                 "valueStream": r.get("valueStream", ""),
                 "services": r.get("services", []),
@@ -208,7 +208,7 @@ def render_html(data, target_owner=None):
     def product_card(p):
         prod_issues = fixes.get(p["product"], [])
         rows = "".join(
-            f"<tr><td class='mono'>{e(r['domain'])}</td><td>{e(r['owner'])}</td><td>{e(r['status'] or '—')}</td><td>"
+            f"<tr><td class='mono'>{e(r['domain'])}</td><td>{e(r['owner'])}</td><td>"
             f"{', '.join(e(s.replace('service-', '')) for s in r['services']) or '—'}</td></tr>"
             for r in p["domains"]
         )
@@ -230,7 +230,7 @@ def render_html(data, target_owner=None):
   {'<ul class="issues">' + iss + '</ul>' if iss else ''}
   <details{' open' if len(p['domains']) <= 6 else ''}>
     <summary>{len(p['domains'])} domains · {len(p['pipelines'])} pipelines · consumes {len(p['consumes'])}</summary>
-    <div class="scroll"><table><thead><tr><th>domain</th><th>owner</th><th>status</th><th>services</th></tr></thead><tbody>{rows}</tbody></table></div>
+    <div class="scroll"><table><thead><tr><th>domain</th><th>owner</th><th>services</th></tr></thead><tbody>{rows}</tbody></table></div>
     <p class="sub">pipelines</p><ul class="pipes">{pipes}</ul>
     <p class="sub">consumes</p><p>{chips(p['consumes'])}</p>
   </details>

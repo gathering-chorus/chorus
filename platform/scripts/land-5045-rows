@@ -1,0 +1,135 @@
+#!/usr/bin/env python3
+"""#5045: Domain rows made true — typed status and gaps removed, gaps become card numbers,
+the design-doc links fixed, and the session-start reader of principles named. DRY RUN unless --apply.
+# @domain: domains
+
+Runs AFTER the model deploy that drops chorus:status and chorus:gaps from DomainShape (the door
+lets a patch remove an off-model field with null, never set one). Each row is written by its
+owner: the plan holds only rows owned by the caller (--as <role>, default $CHORUS_ROLE) and
+names every other owner's rows so nothing is skipped silently. Run once per owner:
+silas, wren, kade, borg-queen. The door, the runner, the compare, the 403 wait and the exit codes
+are land-4960-rows' own (one implementation): this script only names collections and a plan.
+Exit 0 = plan printed (or applied); 1 = a write was refused; 2 = the door or the plan could not
+be read, or the caller's role is unknown.
+"""
+import importlib.machinery
+import importlib.util
+import os
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+_loader = importlib.machinery.SourceFileLoader("land4960", os.path.join(HERE, "land-4960-rows"))
+_spec = importlib.util.spec_from_loader("land4960", _loader)
+land = importlib.util.module_from_spec(_spec)
+_loader.exec_module(land)
+
+land.DOOR_CLASS = {
+    "domains": ("/v1/domains/domains", "domains", "domains"),
+}
+
+# Gap -> card, by domain (Wren's #5045 walk, 14:24 comment). A domain listed here gets these
+# card numbers as gapCard; its typed gaps text is removed either way. Filled before the land.
+GAP_CARDS = {
+    # Jeff walked all 19 typed gaps on 2026-11-26 (12:20 to 14:24) and said card or drop for each.
+    "alerts": [4085],             # alerts and monitors not yet read from the model
+    "monitors": [4085],
+    "code": [3148],               # code crawl coverage
+    "principles": [5047],         # five value rows name 11 removed principles
+    "logs": [5048],               # logs out of /tmp; buzz-tunnel output log
+    "wine-diary-access": [5049],  # open registration
+    "schedule": [5050],           # scheduled jobs' lastRunAt (0 of 63)
+    "persistence": [5051],        # store purposes measured (8 of 158)
+    "spine": [4046],              # old events out of reach
+    # Dropped by Jeff, no link: version-control, board, pipelines, and the four other Wine Diary
+    # domains. security, identity (Silas's list) and tests (Kade's) are with Jeff: no link until he says.
+}
+
+# Fixed edges, measured 2026-11-26 15:23 (Wren + Silas).
+EDGES = [
+    # principles pointed at Loom's product design; no principles design exists (its page is the doc)
+    ("domains", "principles", {"hasDesignDoc": None}),
+    # identity pointed at security's May design; its own design is service-design-identity; an edge names the IRI local name the door serves (document-…)
+    ("domains", "identity", {"hasDesignDoc": "document-service-design-identity"}),
+    # The three Loom documents keep hasDomain principles: DocumentShape needs one domain, Loom is
+    # a product (no loom domain), and principles is one of Loom's domains. The Design doc fold
+    # reads only the domain's own hasDesignDoc, so the tags no longer reach the page.
+]
+# every role session reads principles at its start (chorus-hooks principles_inject, session
+# lifecycle); roles is the domain that owns session lifecycle, so roles consumes principles
+CONSUMES = [("roles", "principles")]
+
+
+def as_list(v):
+    if v in (None, ""):
+        return []
+    # the door serves an edge as a full IRI or a kind-prefixed name; the plan holds the bare name
+    return [land.bare(str(x).rsplit("#", 1)[-1]) for x in (v if isinstance(v, list) else [v])]
+
+
+def owner_of(live, coll, name):
+    return land.bare(str((live[coll].get(name) or {}).get("ownedBy", ""))).removeprefix("principal-")
+
+
+def full_plan(live):
+    rows = []
+    for name, have in sorted(live["domains"].items()):
+        w = {}
+        if have.get("status") not in (None, ""):
+            w["status"] = None
+        if have.get("gaps") not in (None, ""):
+            w["gaps"] = None
+        # compared as numbers-in-text, in any order: the door may serve one card as a bare value
+        # and many as a list, and a row that already holds these cards is not written again
+        cards = sorted(str(c) for c in GAP_CARDS.get(name, []))
+        held = have.get("gapCard")
+        held = sorted(str(c) for c in (held if isinstance(held, list) else [] if held in (None, "") else [held]))
+        if cards and cards != held:
+            w["gapCard"] = cards
+        if w:
+            rows.append(("domains", name, w))
+    for coll, name, w in EDGES:
+        have = live[coll].get(name)
+        if have is None:
+            raise RuntimeError(f"{coll}/{name} is not on the door")
+        w = {k: v for k, v in w.items() if not (v is None and have.get(k) in (None, ""))}
+        if w:
+            rows.append((coll, name, w))
+    for consumer, target in CONSUMES:
+        have = as_list(live["domains"][consumer].get("consumes"))
+        if target not in have:
+            rows.append(("domains", consumer, {"consumes": have + [target]}))
+    merged = {}
+    for coll, name, w in rows:  # one write per row, however many reasons it has
+        merged.setdefault((coll, name), {}).update(w)
+    return [(c, n, w) for (c, n), w in merged.items()]
+
+
+def plan(live):
+    role = os.environ.get("LAND_AS") or os.environ.get("CHORUS_ROLE", "")
+    if not role:
+        raise RuntimeError("caller role unknown: pass --as <role> or set CHORUS_ROLE")
+    mine, others = [], {}
+    for coll, name, w in full_plan(live):
+        o = owner_of(live, coll, name)
+        if o == role:
+            mine.append((coll, name, w))
+        else:
+            others.setdefault(o or "unowned", []).append(f"{coll}/{name}")
+    for o, names in sorted(others.items()):
+        print(f"OTHER  {o}: {len(names)} row(s), run as {o}: {', '.join(names)}")
+    return mine
+
+
+land.plan = plan
+land.policy_rows = lambda: []  # --ttl: no policy rows in this plan
+
+if __name__ == "__main__":
+    argv = sys.argv[1:]
+    if "--as" in argv:
+        i = argv.index("--as")
+        if i + 1 >= len(argv):
+            print("--as needs a role")
+            sys.exit(2)
+        os.environ["LAND_AS"] = argv[i + 1]
+        del argv[i:i + 2]
+    sys.exit(land.main(argv))

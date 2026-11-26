@@ -78,6 +78,14 @@ async function renderFacetTables(el, fid, opts) {
   // (localTime gives '' for a value that is not a time: the stored text is shown then), a bare owner
   const SHOWN = { id: v => '#' + v, cardId: v => '#' + v, timestamp: v => localTime(v) || v, owner: v => ownerLocal(v), role: v => ownerLocal(v) };
   function tail(iri) { return String(iri || '').split('#').pop().replace(/^chorus:/, ''); }
+  // #5045 — "consumed by" names services as well as domains (the read says which, in `kind`).
+  // A service opens its own page and says it is a service; it was linked as a domain, and a
+  // domain page for a service's name says "the model has no domain named …".
+  function readerChip(x) {
+    const id = String(x.id || x);
+    if (x.kind === 'service') return `<a class="chip" data-reader="service" href="service.html?s=${encodeURIComponent(id.replace(/^service-/, ''))}">${esc(x.label || id)} <span class="src">service</span></a>`;
+    return `<a class="chip" data-reader="domain" href="domain.html?d=${encodeURIComponent(id.replace(/-domain$/, ''))}">${esc(x.label || id)}</a>`;
+  }
   function unwrap(b, k, alt) {
     if (b && Array.isArray(b.data)) return b.data;   // #4084: an athena-make collection envelope carries its rows in `data`
     const dd = (b && b.data) || b || {};
@@ -133,7 +141,7 @@ async function renderFacetTables(el, fid, opts) {
       const failed = b && b._meta && b._meta.error ? `<div class="empty">could not read dependencies: ${esc(b._meta.message || 'store error')}</div>` : '';
       inner = layerLine + hostsLine + failed + (count
         ? `<div><span class="lbl">depends on</span> ${(dir.consumes || []).map(x => `<a class="chip" href="domain.html?d=${encodeURIComponent(String(x.id || x).replace(/-domain$/, ''))}">${esc(x.label || x.id || x)}</a>`).join('') || '<span class="empty">none</span>'}</div>
-           <div style="margin-top:6px"><span class="lbl">consumed by</span> ${(dir.consumedBy || []).map(x => `<a class="chip" href="domain.html?d=${encodeURIComponent(String(x.id || x).replace(/-domain$/, ''))}">${esc(x.label || x.id || x)}</a>`).join('') || '<span class="empty">none</span>'}</div>`
+           <div style="margin-top:6px"><span class="lbl">consumed by</span> ${(dir.consumedBy || []).map(readerChip).join('') || '<span class="empty">none</span>'}</div>`
         : '<div class="empty">no dependencies recorded</div>');
     } else {
       const items = unwrap(b, f.k, f.alt);
