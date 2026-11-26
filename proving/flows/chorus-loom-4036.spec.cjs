@@ -237,3 +237,126 @@ test.describe('#4036 the checks can fail', () => {
     expect(res.status(), '/loom/borg is nobody').toBe(404);
   });
 });
+
+// =============================================================================================
+// #5044 AC4 — the three pages the principles domain page links to show their data on a phone,
+// through the sign-in door.
+//
+// Jeff's phone at the public address, 2026-11-25 15:50: "all the ui page links have issues". The
+// UI Pages fold of /athena/domain.html?d=principles links /loom/principles.html,
+// /loom/principles-list.html and /loom/policy-counts.html. #5041's test followed each link and
+// took a 200 for an answer. Each page did open, and then asked for its data at a root-fixed
+// address, which under /chorus leaves the door: the pages drew "Failed to load". The counts page
+// also loads the shared Boston clock from /vendor/chorus-time, which was not on the door's list.
+//
+// Opened at 390 px through the REAL door (lib startDoor: the real guard, this tree's allow list,
+// the live chorus-api behind it), at both mounts, with this tree's copy of the three pages:
+//   - principles and principles-list draw one entry for every principle the model holds;
+//   - policy-counts draws its policies with the time they were measured, in Boston time;
+//   - nothing a page asks for leaves the door or is refused by it; no page scrolls sideways.
+// The door: the clock's one directory is served to a signed-in reader, and a made-up neighbour
+// under /vendor is not (Silas, 18:28: "Add only that one directory line").
+// NEGATIVE: the three pages as they are on main, under /chorus, each draw no rows and say so.
+//
+// Page code opened and read: platform/api/public/loom/principles.html,
+// platform/api/public/loom/principles-list.html, platform/api/public/loom/policy-counts.html;
+// the list: config/share-allowlist.txt.
+// =============================================================================================
+const { startDoor, signedInPage, BASE: LIVE_API, ROOT: TREE } = require('./lib/athena-page-5034.cjs');
+
+const LOOM_PAGES = ['principles.html', 'principles-list.html', 'policy-counts.html'];
+const MAIN_BEFORE_5044 = '9461b1d8d';
+
+/** A signed-in phone page whose three Loom pages come from this tree, or from a commit (`sha`). */
+async function loomPhone(browser, door, sha = null) {
+  const { page, context, refused } = await signedInPage(browser, door, { lint: 'live' });
+  await page.route((url) => url.origin === door.origin && LOOM_PAGES.some((f) => url.pathname === `${door.mount}/loom/${f}`), (route) => {
+    const f = new URL(route.request().url()).pathname.split('/').pop();
+    const body = sha ? execFileSync('git', ['-C', TREE, 'show', `${sha}:platform/api/public/loom/${f}`], { encoding: 'utf8' })
+      : fs.readFileSync(path.join(PUBLIC_DIR, 'loom', f), 'utf8');
+    return route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body });
+  });
+  return { page, context, refused };
+}
+
+/** Open one of the three and wait until it has drawn rows or said it could not. Returns what it drew. */
+async function drawnLoomPage(page, door, file) {
+  await page.goto(`${door.origin}${door.mount}/loom/${file}`, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => {
+    const t = document.body.innerText;
+    return /Failed to load|Could not load/.test(t) || document.querySelector('details.principle, #list li, #rows .row');
+  }, null, { timeout: 120_000 });
+  return page.evaluate(() => ({
+    rows: document.querySelectorAll('details.principle, #list li, #rows .row').length,
+    says: (document.body.innerText.match(/(Failed to load|Could not load)[^\n]*/) || [null])[0],
+    sub: document.getElementById('sub')?.textContent.trim() || null,
+    over: document.documentElement.scrollWidth - window.innerWidth,
+    textWidth: Math.round(document.querySelector('details.principle, #list li, #rows .row')?.getBoundingClientRect().width || 0),
+  }));
+}
+
+for (const [where, mount] of [['under /chorus (the public apex)', '/chorus'], ['at the root (the door\'s own host)', '']]) {
+  test.describe(`#5044 the principles domain's three UI pages through the sign-in door, ${where}`, () => {
+    test.setTimeout(300_000);
+    let door;
+    test.beforeAll(async () => { door = await startDoor({ mount }); });
+    test.afterAll(() => door && door.stop());
+
+    test('principles and principles-list each draw every principle the model holds; nothing leaves the door', async ({ browser, request }) => {
+      const held = ((await (await request.get(`${LIVE_API}/owl/v1/principles/principles`, { timeout: 30_000 })).json()).data || []).length;
+      expect(held, 'the model holds principles: this check needs some').toBeGreaterThan(0);
+      const { page, context, refused } = await loomPhone(browser, door);
+      for (const file of ['principles.html', 'principles-list.html']) {
+        const drawn = await drawnLoomPage(page, door, file);
+        expect.soft(drawn.says, `${file} says it could not load`).toBeNull();
+        expect.soft(drawn.rows, `${file}: the model holds ${held} principles`).toBe(held);
+        expect.soft(drawn.over, `${file} is ${drawn.over}px wider than a phone`).toBeLessThanOrEqual(1);
+        // a phone-width column of text, not a desktop page shrunk to fit or squeezed by an inch of margin each side
+        expect.soft(drawn.textWidth, `${file}: its text column is ${drawn.textWidth}px of 390`).toBeGreaterThan(300);
+      }
+      expect([...new Set(refused)], `requests that left the door or that it refused:\n${[...new Set(refused)].join('\n')}`).toEqual([]);
+      await context.close();
+    });
+
+    test('policy-counts draws its policies and when they were measured, in Boston time; nothing leaves the door', async ({ browser }) => {
+      const { page, context, refused } = await loomPhone(browser, door);
+      const drawn = await drawnLoomPage(page, door, 'policy-counts.html');
+      expect.soft(drawn.says, 'the page says it could not load').toBeNull();
+      expect.soft(drawn.rows, 'the page lists the gate\'s policies').toBeGreaterThan(0);
+      expect.soft(drawn.sub, 'the line above them').toMatch(/^\d+ arch policies, worst first · \d+ narrowed · measured \d{4}-\d\d-\d\d \d\d:\d\d Boston$/);
+      expect.soft(drawn.over, `the page is ${drawn.over}px wider than a phone`).toBeLessThanOrEqual(1);
+      expect([...new Set(refused)], `requests that left the door or that it refused:\n${[...new Set(refused)].join('\n')}`).toEqual([]);
+      await context.close();
+    });
+
+    test('the door serves the Boston clock\'s one directory to a signed-in reader, and no neighbour under /vendor', async ({ browser }) => {
+      const { context } = await signedInPage(browser, door, { lint: 'live' });
+      const clock = await context.request.get(`${door.origin}${door.mount}/vendor/chorus-time/boston.js`, { maxRedirects: 0 });
+      expect(clock.status(), 'the clock script through the door').toBe(200);
+      expect(await clock.text(), 'and it is the clock, not a sign-in page').toMatch(/bostonMinute/);
+      // NEGATIVE: the list names ONE directory. A neighbour, the /vendor root, and a path that climbs out of it are refused.
+      for (const p of ['/vendor/no-such-thing-5044/x.js', '/vendor/', '/vendor/chorus-time/../../config/share-allowlist.txt']) {
+        const r = await context.request.get(`${door.origin}${door.mount}${p}`, { maxRedirects: 0 });
+        expect(r.status(), `${p} must not be served through the door`).not.toBe(200);
+      }
+      await context.close();
+    });
+  });
+}
+
+test.describe('#5044 NEGATIVE: the three pages as they are on main draw nothing under /chorus', () => {
+  test.setTimeout(300_000);
+  test('each page on main, opened under /chorus, draws no rows and says it could not load', async ({ browser }) => {
+    const door = await startDoor({ mount: '/chorus' });
+    try {
+      const { page, context, refused } = await loomPhone(browser, door, MAIN_BEFORE_5044);
+      for (const file of LOOM_PAGES) {
+        const drawn = await drawnLoomPage(page, door, file);
+        expect.soft(drawn.rows, `${file} on main draws no rows under /chorus`).toBe(0);
+        expect.soft(drawn.says, `${file} on main says it could not load`).toMatch(/Failed to load|Could not load/);
+      }
+      expect(refused.join('\n'), 'and its reads leave the door').toMatch(/LEFT THE DOOR GET \/(owl\/v1\/principles\/principles|api\/chorus\/policies\/counts|vendor\/chorus-time\/boston\.js)/);
+      await context.close();
+    } finally { door.stop(); }
+  });
+});

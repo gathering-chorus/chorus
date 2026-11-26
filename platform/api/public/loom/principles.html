@@ -327,6 +327,14 @@
   </footer>
 
   <script>
+    // #5044 — where this page is mounted (the rule of #3810, as athena/domain.html states it):
+    // '/chorus' on the public apex, '' on the door's own host and on the home network
+    const basePath = (function () {
+      var m = document.querySelector('meta[name="chorus-base"]'), b = m && m.getAttribute('content') || null;
+      if (b === null) { var p = location.pathname || ''; b = (p === '/chorus' || p.indexOf('/chorus/') === 0) ? '/chorus' : ''; }
+      b = b.replace(/\/+$/, '');
+      return function (x) { return b + (x.charAt(0) === '/' ? x : '/' + x); };
+    }());
     const RENDERED_AT = new Date().toLocaleString('en-US', {
       year: 'numeric', month: 'long', day: 'numeric',
       hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
@@ -403,7 +411,9 @@
       main.innerHTML = '<div class="empty">Loading principles…</div>';
       try {
         // #4353 — the generated principles route, through chorus-api's same-origin proxy
-        const res = await fetch('/owl/v1/principles/principles');
+        // #5044 — and through the mount: asked at the root, the read left the sign-in door under
+        // /chorus and the page drew "Failed to load principles" (Jeff's phone, 2026-11-25 15:50)
+        const res = await fetch(basePath('/owl/v1/principles/principles'));
         if (!res.ok) throw new Error('API returned ' + res.status);
         const body = await res.json();
         // #4358 — the principles are the 14 Hemenway principles, in book order

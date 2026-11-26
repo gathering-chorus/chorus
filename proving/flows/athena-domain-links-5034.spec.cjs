@@ -138,7 +138,76 @@ async function policyLinkDead(context, tab, href, name) {
 async function openOpsThroughDoor(page, door) {
   await page.goto(door.origin + door.mount + OPS, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => document.querySelector('#code-slot details') && document.querySelector('#svc-slot details') && document.querySelector('#conf-slot details')
-    && !/loading the materialized view|loading live from the model|running the domain lint/.test(document.body.innerText), null, { timeout: 180_000 });
+    && !/loading the materialized view|loading live from the model|running the domain lint|reading the last check/.test(document.body.innerText), null, { timeout: 180_000 });
+}
+
+// =============================================================================================
+// #5044 AC3 — a card number opens the card.
+//
+// Jeff's phone, 2026-11-25 15:50, on the Cards fold: "cards list seems longer but cant link to
+// cards like clearing v2 does". The numbers were plain text.
+//
+// Read from the drawn page, through the sign-in door, at both mounts: every number in the Cards
+// fold reads "#<n>" and is a link, and the link is the card's address in Clearing v2 from where
+// the reader stands. Clearing v2 is its own service, so that address is not under this door:
+//   the public site under /chorus      the same host, /clearing-v2/<n>
+//   the public site's chorus. host     the apex host, /clearing-v2/<n> (measured 11-25: the
+//                                      chorus. host answers 404 for it)
+//   the home network (a port is named) the same machine, Clearing v2's own port, /<n>
+// The test door has a port, so the drawn link is the home-network form; it is FOLLOWED, and the
+// board it opens must show that card. The two public forms are asked of the page's own function
+// (athena-flow.js cardHref) with a location handed in, on made-up host names.
+// One link per card on the page: the Releases fold names the same cards and shows "#<n>" unlinked
+// (the "no two links share a destination" test above holds that).
+// NEGATIVE: the page before this card is red (plain numbers); a link to another card's address,
+// and a card address that opens a board showing no such card, are each named.
+// Named limit: the public addresses are not opened from here (they are behind the real sign-in).
+// Page code read as drawn: platform/api/public/athena/facets.js, platform/api/public/athena/athena-flow.js.
+// =============================================================================================
+const CLEARING_V2_PORT = 3472;
+
+/** Run in the page: the Cards fold's id cells, and the Releases fold's card cells, as drawn. */
+function drawnCards() {
+  const text = (n) => (n?.textContent || '').replace(/\s+/g, ' ').trim();
+  const fold = (name) => [...document.querySelectorAll('details.fold')].find((f) => new RegExp(`^${name}\\b`).test(text(f.querySelector('summary'))));
+  const col = (f, header) => {
+    const table = f?.querySelector('table'); if (!table) return [];
+    const i = [...table.querySelectorAll('th')].findIndex((th) => text(th).toLowerCase() === header.toLowerCase());
+    return i < 0 ? [] : [...table.querySelectorAll('tr')].map((tr) => tr.cells[i]).filter((c) => c && c.tagName === 'TD');
+  };
+  const cell = (c) => ({ text: text(c), href: c.querySelector('a[href]')?.href || null });
+  return { cards: col(fold('Cards'), 'id').map(cell), releases: col(fold('Releases'), 'cardId').map(cell) };
+}
+
+/** Every card number that is not "#<n>" linked to that card's own address; `addressOf(n)` is the address wanted. */
+function cardFaults({ cards, releases }, addressOf) {
+  const out = [];
+  if (!cards.length) out.push('the Cards fold lists no card: nothing to link');
+  for (const c of cards) {
+    const n = (/^#(\d+)$/.exec(c.text) || [])[1];
+    if (!n) out.push(`Cards: "${c.text}" is not a card number written "#<n>"`);
+    else if (!c.href) out.push(`Cards: ${c.text} is plain text, not a link`);
+    else if (c.href !== addressOf(n)) out.push(`Cards: ${c.text} links to ${c.href}, the card is at ${addressOf(n)}`);
+  }
+  for (const r of releases) if (!/^#\d+$/.test(r.text)) out.push(`Releases: "${r.text}" is not written "#<n>"`);
+  return out;
+}
+
+/** Why a card's link does not show the card, or null: the board it opens must name that card. */
+async function cardLinkDead(tab, href, n) {
+  try {
+    const r = await tab.goto(href, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+    if (!r || r.status() !== 200) return `#${n}: ${href} answers ${r ? r.status() : 'nothing'}`;
+    if (new URL(tab.url()).searchParams.get('card') !== String(n)) return `#${n}: ${href} opens ${tab.url()}, which asks for no such card`;
+    // the board's card drawer writes the card's title, or "Card #<n> not found on board" (read 11-25).
+    // The number alone proves nothing: the drawer prints it for a card that does not exist too.
+    // Wait for its ANSWER, not its first text: the title holds a placeholder while the board looks the
+    // card up. The answer is "not found" in the title, or the card's own status line (#<n> …) under it.
+    await tab.waitForFunction((id) => /not found/i.test(document.getElementById('drawer-card-title')?.textContent || '')
+      || new RegExp(`#${id}\\b`).test(document.getElementById('drawer-card-cws')?.textContent || ''), String(n), { timeout: 30_000 });
+    const title = (await tab.evaluate(() => document.getElementById('drawer-card-title').textContent)).replace(/\s+/g, ' ').trim();
+    return /not found/i.test(title) ? `#${n}: the board says "${title}"` : null;
+  } catch (e) { return `#${n}: the board it opens does not show the card (${String(e.message || e).split('\n')[0]})`; }
 }
 
 for (const [where, mount] of MOUNTS_5041) {
@@ -147,7 +216,7 @@ for (const [where, mount] of MOUNTS_5041) {
     // The ops view is opened ONCE for the three tests. Each open runs the domain lint on the server
     // (12 s alone), and the door gives its upstream 30 s: three opens in a row, beside the other
     // suites, pushed one lint past that and the fold read "Cannot reach" (first run, 11-25 11:20).
-    let door, page, context, drawn;
+    let door, page, context, drawn, drawnAtStart;
     test.beforeAll(async ({ browser }) => {
       test.setTimeout(420_000);
       door = await startDoor({ mount });
@@ -158,6 +227,7 @@ for (const [where, mount] of MOUNTS_5041) {
       // view: every fold is filled…" test, which reads it through the door.
       await openOpsThroughDoor(page, door);
       drawn = await page.evaluate(drawnLinks);
+      drawnAtStart = await page.evaluate(drawnCards);   // #5044: read now; a later test takes this page elsewhere
     });
     test.afterAll(async () => { if (context) await context.close(); if (door) door.stop(); });
 
@@ -195,8 +265,60 @@ for (const [where, mount] of MOUNTS_5041) {
       expect(dead, `UI Pages routes that are not links or lead nowhere (of ${drawn.pages.length}):\n${dead.join('\n')}`).toEqual([]);
       expect(none.status(), 'a page that does not exist must not answer 200 through the door').not.toBe(200);
     });
+
+    test('#5044 every card number in the Cards fold is a link to that card, and one followed shows the card', async ({ browser }) => {
+      const cards = drawnAtStart;
+      // the door here stands on 127.0.0.1 with a port: the home-network form of the address
+      const addressOf = (n) => `http://127.0.0.1:${CLEARING_V2_PORT}/${n}`;
+      const faults = cardFaults(drawnAtStart, addressOf);
+      expect(faults, `card numbers that do not open their card:\n${faults.join('\n')}`).toEqual([]);
+      expect(cards.releases.length, 'the Releases fold lists its cards').toBeGreaterThan(0);
+      const tab = await browser.newPage();
+      const n = drawnAtStart.cards[0].text.slice(1);
+      const dead = await cardLinkDead(tab, drawnAtStart.cards[0].href, n);
+      // NEGATIVE, on the live board: the same address for a card that does not exist is named dead
+      const none = await cardLinkDead(tab, addressOf('99999999'), '99999999');
+      await tab.close();
+      expect(dead, 'the first card link, followed').toBeNull();
+      expect(none, 'a card the board does not hold').toMatch(/^#99999999: the board says "Card #99999999 not found/);
+    });
   });
 }
+
+test.describe('#5044 a card\'s address from each place a reader stands, and NEGATIVE: plain numbers and wrong addresses are named', () => {
+  const { openDomainPage: openOps, serveAthenaFilesAsOf } = require('./lib/athena-page-5034.cjs');
+  // main as #5041 landed it: the page before this card
+  const BEFORE_5044 = '9461b1d8d';
+
+  test('the page\'s own address for a card: under /chorus, on the chorus. host, and on the home network', async ({ page }) => {
+    test.setTimeout(240_000);
+    await openOps(page);
+    const at = (loc, id = '5033') => page.evaluate(([l, i]) => window.cardHref(i, l), [loc, id]);
+    expect(await at({ protocol: 'https:', hostname: 'garden.example', port: '' }), 'the public site: the same host').toBe('https://garden.example/clearing-v2/5033');
+    expect(await at({ protocol: 'https:', hostname: 'chorus.garden.example', port: '' }), 'the chorus. host has no Clearing v2: the apex host').toBe('https://garden.example/clearing-v2/5033');
+    expect(await at({ protocol: 'http:', hostname: 'library.local', port: '3340' }), 'the home network: Clearing v2\'s own port').toBe(`http://library.local:${CLEARING_V2_PORT}/5033`);
+    expect(await at({ protocol: 'https:', hostname: 'garden.example', port: '' }, '#5033'), 'a number written with its #').toBe('https://garden.example/clearing-v2/5033');
+    // NEGATIVE: what is not a card number gets no address (it is then drawn as plain text, never a dead link)
+    for (const bad of ['', 'abc', '50x3', '../board', null]) expect(await at({ protocol: 'https:', hostname: 'garden.example', port: '' }, bad), `"${bad}" is not a card number`).toBeNull();
+  });
+
+  test('NEGATIVE: the page before this card is red on every card number, and a link to another card is named', async ({ page }) => {
+    test.setTimeout(240_000);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await serveAthenaFilesAsOf(page, BASE, BEFORE_5044);
+    await page.goto(`${BASE}/athena/domain.html?d=${encodeURIComponent(DOMAIN)}`, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => [...document.querySelectorAll('#facets details.fold summary')].some((s) => /^Cards \(\d/.test(s.textContent)), null, { timeout: 120_000 });
+    const addressOf = (n) => `http://localhost:${CLEARING_V2_PORT}/${n}`;
+    const old = cardFaults(await page.evaluate(drawnCards), addressOf);
+    expect(old.filter((f) => /^Cards: #\d+ is plain text, not a link$/.test(f)).length, `the old page drew its card numbers as plain text:\n${old.join('\n')}`).toBeGreaterThan(0);
+    expect(old.join('\n'), 'and its Releases numbers without the #').toMatch(/^Releases: "\d+" is not written "#<n>"$/m);
+    // by hand: a right link is not named; a link to another card, and a cell that is not a number, are
+    expect(cardFaults({ cards: [{ text: '#5033', href: addressOf(5033) }], releases: [{ text: '#5033', href: null }] }, addressOf)).toEqual([]);
+    expect(cardFaults({ cards: [{ text: '#5033', href: addressOf(5021) }, { text: '5021', href: addressOf(5021) }], releases: [] }, addressOf)).toEqual([
+      `Cards: #5033 links to ${addressOf(5021)}, the card is at ${addressOf(5033)}`, 'Cards: "5021" is not a card number written "#<n>"']);
+    expect(cardFaults({ cards: [], releases: [] }, addressOf)).toEqual(['the Cards fold lists no card: nothing to link']);
+  });
+});
 
 test.describe('#5041 NEGATIVE: the link checks are red on the page Jeff walked, and on a policy the model does not hold', () => {
   test.setTimeout(420_000);

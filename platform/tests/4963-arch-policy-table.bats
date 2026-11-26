@@ -15,14 +15,16 @@ ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 PAGE="$ROOT/platform/api/public/loom/policy-counts.html"
 
 @test "the page reads the counts same-origin, never from localhost or another port" {
-  grep -q "fetch('/api/chorus/policies/counts?gate=" "$PAGE" || return 1
+  # #5044: the same read, through the mount (basePath), so it stays inside the sign-in door under /chorus
+  grep -q "fetch(basePath('/api/chorus/policies/counts?gate=" "$PAGE" || return 1
   ! grep -qE "localhost|127\.0\.0\.1|:33[0-9]{2}|:3360" "$PAGE" || { grep -nE "localhost|127\.0\.0\.1|:33[0-9]{2}" "$PAGE"; return 1; }
 }
 
 # boston_time <page> — the page shows times through the shared Boston clock (#4965: domain-flow-time
 # moved it off its own toLocaleString): it loads chorus-time/boston.js and calls bostonMinute
 boston_time() {
-  grep -q '<script src="/vendor/chorus-time/boston.js"></script>' "$1" || { echo "the page does not load chorus-time/boston.js"; return 1; }
+  # #5044: loaded by script through the mount; the root-fixed <script src> left the sign-in door under /chorus
+  grep -q "clock.src = basePath('/vendor/chorus-time/boston.js')" "$1" || { echo "the page does not load chorus-time/boston.js"; return 1; }
   grep -q 'chorusBoston.bostonMinute(' "$1" || { echo "the page does not format with chorusBoston.bostonMinute"; return 1; }
 }
 

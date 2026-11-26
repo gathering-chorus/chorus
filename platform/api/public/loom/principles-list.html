@@ -3,7 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <title>Chorus Principles — Alphabetical</title>
+  <!-- #5044: a phone draws the page at its own width (it had no viewport line, so a phone drew a
+       desktop page shrunk to fit), and keeps a small margin: the inch is for desktop and print -->
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
+    @media screen and (max-width: 600px) { body { padding: 0 16px !important; margin: 1.25rem auto !important; } }
     :root {
       --accent: #2f4f2f;
       --muted: #6b6b6b;
@@ -88,7 +92,11 @@
       const meta = document.getElementById('meta');
       try {
         // #4353 — the generated principles route, through the same-origin proxy
-        const res = await fetch('/owl/v1/principles/principles');
+        // #5044 — and through the mount ('/chorus' on the public apex; the rule of #3810): asked
+        // at the root, the read left the sign-in door and the page drew "Failed to load"
+        const p = location.pathname || '';
+        const base = (p === '/chorus' || p.indexOf('/chorus/') === 0) ? '/chorus' : '';
+        const res = await fetch(base + '/owl/v1/principles/principles');
         if (!res.ok) throw new Error('API ' + res.status);
         const body = await res.json();
         const rows = Array.isArray(body?.data) ? body.data : [];

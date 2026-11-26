@@ -70,6 +70,11 @@
 
 # Assets the pages need to render.
 /js/vendor
+# The shared Boston clock (chorus-sdk/time, one static script), which
+# /loom/policy-counts.html loads (#5044; Silas, 2026-11-25 18:28: "yes. Add only
+# that one directory line"). Without it that page drew "Could not load" on
+# Jeff's phone. This ONE directory: nothing else under /vendor is shared.
+/vendor/chorus-time
 # base-path.js is how a page learns it is mounted under /chorus (#3798/#3809).
 # Without it every model fetch escapes the mount and dies on the garden site —
 # the entrance loads its frame and never its content. One exact file.
