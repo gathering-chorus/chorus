@@ -58,17 +58,17 @@ function unread(name: StageName, what: string): Stage {
 
 /** The list a read carries under `key`, at the top or inside `data`; null when it carries none. */
 function listOf(res: unknown, key: string): unknown[] | null {
-  if (!res || typeof res !== 'object') return null;
-  const top = (res as Record<string, unknown>)[key];
+  // the named field of an object, looked up among its own entries (never obj[key])
+  const field = (o: unknown): unknown => (o && typeof o === 'object' ? Object.entries(o).find(([k]) => k === key)?.[1] : undefined);
+  const top = field(res);
   if (Array.isArray(top)) return top;
-  const data = (res as { data?: unknown }).data;
-  const inner = data && typeof data === 'object' ? (data as Record<string, unknown>)[key] : null;
+  const inner = field((res as { data?: unknown } | null)?.data);
   return Array.isArray(inner) ? inner : null;
 }
 
 /** Rows of the model door that name this domain: hasDomain is one name or several, bare or an IRI. */
 function onDomain(rows: unknown[], name: string): unknown[] {
-  const tail = (v: unknown): string => String(v ?? '').split('#').pop()!.replace(/^chorus:/, '');
+  const tail = (v: unknown): string => (typeof v === 'string' ? v : '').split('#').pop()!.replace(/^chorus:/, '');
   return rows.filter((r) => {
     const row = r as { hasDomain?: unknown; links?: { hasDomain?: unknown } };
     const named = row.hasDomain ?? row.links?.hasDomain ?? [];

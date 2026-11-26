@@ -194,8 +194,10 @@ function startCheck(domain: string, key: string, now: number, deps: PolicyCounts
  *   - checking says a check is running now; lastCheckFailed says why the last one kept nothing.
  * The kept result lives in this process: after a restart the first view reads "not measured yet".
  */
-export async function fetchDomainConformance(domain: string, deps: PolicyCountsDeps): Promise<{ status: number; body: unknown }> {
-  if (!isDomainName(domain)) return { status: 400, body: { error: 'domain must be a domain name, e.g. principles' } };
+export function fetchDomainConformance(domain: string, deps: PolicyCountsDeps): Promise<{ status: number; body: unknown }> {
+  // nothing here is waited on: the answer is ready when the function returns (a Promise only
+  // because the route and the gate read beside it share one shape)
+  if (!isDomainName(domain)) return Promise.resolve({ status: 400, body: { error: 'domain must be a domain name, e.g. principles' } });
   const now = (deps.now ?? Date.now)();
   const key = `domain:${domain}`;
   const hit = cache.get(key);
@@ -203,8 +205,8 @@ export async function fetchDomainConformance(domain: string, deps: PolicyCountsD
   if (stale) void startCheck(domain, key, now, deps);
   const failed = lastFailure.get(key);
   const state = { checking: inflight.has(key), ...(failed ? { lastCheckFailed: failed } : {}) };
-  if (hit) return { status: 200, body: { ...(hit.body as Record<string, unknown>), stale, ...state } };
-  return { status: 200, body: { domain, measuredAt: null, policies: [], stale: false, ...state } };
+  if (hit) return Promise.resolve({ status: 200, body: { ...(hit.body as Record<string, unknown>), stale, ...state } });
+  return Promise.resolve({ status: 200, body: { domain, measuredAt: null, policies: [], stale: false, ...state } });
 }
 
 /** The check running for a domain now, if any: resolves when it ends (tests wait on it). */
