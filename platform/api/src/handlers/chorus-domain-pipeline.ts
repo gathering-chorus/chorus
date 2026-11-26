@@ -160,7 +160,7 @@ export async function fetchChorusDomainPipeline(
   const start = now();
 
   const sdId = name.toLowerCase();
-  const dom = `/api/chorus/domain/${sdId}`;
+  const dom = `/api/chorus/domain/${encodeURIComponent(sdId)}`;   // a name is one path segment, whatever it holds
   // the same filter the folds send the model door (facets.js forDomain)
   const forDomain = `?hasDomain=${encodeURIComponent(sdId)}&limit=5000`;
 

@@ -107,7 +107,8 @@ if (typeof document !== 'undefined') {
   const soon = () => { if (!due) due = setTimeout(() => { due = null; markCutTables(document); }, 60); };
   document.addEventListener('DOMContentLoaded', () => {
     // the folds are drawn after their reads come back, one by one
-    new MutationObserver(muts => { if (muts.some(m => !(m.target.classList && m.target.classList.contains('cut-cue')))) soon(); })
+    // (the line this adds is itself a change: the pass it causes finds nothing to do, and it ends there)
+    new MutationObserver(soon)
       .observe(document.body, { childList: true, subtree: true });
     soon();
   });

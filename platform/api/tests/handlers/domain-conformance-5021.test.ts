@@ -109,11 +109,13 @@ test('NEGATIVE: a bad domain name is a 400, and starts no check', async () => {
   expect(runs).toBe(0);
 });
 
-test('NEGATIVE: a run that measured nothing is not kept; the next view starts the check again', async () => {
+test('NEGATIVE: a run that measured nothing is not kept; a view a minute later starts the check again', async () => {
   let runs = 0;
-  const d = { ...deps(''), runValidate: async () => { runs++; return ''; } };
+  let clock = T0;
+  const d = { ...deps(''), now: () => clock, runValidate: async () => { runs++; return ''; } };
   await fetchDomainConformance('principles', d);
   await domainCheckSettled('principles');
+  clock = T0 + 61 * 1000;
   const r = await fetchDomainConformance('principles', d);
   await domainCheckSettled('principles');
   expect((r.body as Kept).measuredAt).toBeNull();
@@ -199,15 +201,43 @@ test('#5044 NEGATIVE: a check that kept nothing is said so, with why; it is not 
   expect(none.lastCheckFailed).toBe('the check ran and measured nothing');
 });
 
+test('#5044 NEGATIVE: for a minute after a check that kept nothing, a read starts no new check; after it, one', async () => {
+  let runs = 0;
+  let clock = T0;
+  const d = { ...deps(''), now: () => clock, runValidate: async () => { runs++; return ''; } };
+  await fetchDomainConformance('principles', d);
+  await domainCheckSettled('principles');
+  // the page re-reads every 15 s while it waits: three more reads inside the minute
+  for (const s of [15, 30, 45]) { clock = T0 + s * 1000; const b = (await fetchDomainConformance('principles', d)).body as Kept; expect(b.checking).toBe(false); expect(b.lastCheckFailed).toBe('the check ran and measured nothing'); }
+  await domainCheckSettled('principles');
+  expect(runs).toBe(1);
+  clock = T0 + 61 * 1000;
+  expect(((await fetchDomainConformance('principles', d)).body as Kept).checking).toBe(true);
+  await domainCheckSettled('principles');
+  expect(runs).toBe(2);
+});
+
+test('#5044 a domain no check applies to is kept as an empty answer, with its time, and runs no lint', async () => {
+  let runs = 0;
+  const d = { ...deps(RED), fetchPolicies: async () => [{ name: 'only-values', checkKind: 'command', checkSpec: 'x', baseline: '0', gate: 'code', appliesTo: 'chorus:values' }], runValidate: async () => { runs++; return RED; } };
+  await fetchDomainConformance('principles', d);
+  await domainCheckSettled('principles');
+  const body = (await fetchDomainConformance('principles', d)).body as Kept;
+  expect([body.measuredAt, body.policies, body.checking, body.lastCheckFailed]).toEqual(['2026-11-20T23:30:00.000Z', [], false, undefined]);
+  expect(runs).toBe(0);
+});
+
 test('#5044 a later check that succeeds clears the failure', async () => {
   let out = '';
-  const d = { ...deps(RED), runValidate: async () => out };
+  let clock = T0;
+  const d = { ...deps(RED), now: () => clock, runValidate: async () => out };
   await fetchDomainConformance('principles', d);
   await domainCheckSettled('principles');
   out = RED;
+  clock = T0 + 61 * 1000;   // past the minute in which a failed check is not started again
   await fetchDomainConformance('principles', d);
   await domainCheckSettled('principles');
   const body = (await fetchDomainConformance('principles', d)).body as Kept;
   expect(body.lastCheckFailed).toBeUndefined();
-  expect(body.measuredAt).toBe('2026-11-20T23:30:00.000Z');
+  expect(body.measuredAt).toBe(new Date(T0 + 61 * 1000).toISOString());
 });

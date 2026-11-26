@@ -158,8 +158,11 @@ export function appliesTo(row: PolicyRow): string[] {
  * 503 on the read; see fetchDomainConformance below.)
  */
 const inflight = new Map<string, Promise<{ status: number; body: unknown }>>();
-/** why a domain's last check gave nothing to keep, until a later check succeeds (#5044) */
-const lastFailure = new Map<string, string>();
+/** why a domain's last check gave nothing to keep, and when, until a later check succeeds (#5044) */
+const lastFailure = new Map<string, { why: string; at: number }>();
+/** after a check that kept nothing, the next one is not started for this long: a page re-reads
+ *  every 15 s while it waits, and a failing lint must not be run again on each of those reads */
+const RETRY_MS = 60 * 1000;
 
 /** Start the domain's check, or join the one already running: one per domain at a time. */
 function startCheck(domain: string, key: string, now: number, deps: PolicyCountsDeps): Promise<{ status: number; body: unknown }> {
@@ -168,15 +171,17 @@ function startCheck(domain: string, key: string, now: number, deps: PolicyCounts
   const run = measureDomain(domain, key, now, deps)
     .then((r) => {
       const kept = cache.get(key)?.at === now;
+      const at = (deps.now ?? Date.now)();
       if (kept) lastFailure.delete(key);
-      else lastFailure.set(key, r.status === 200 ? 'the check ran and measured nothing' : String((r.body as { error?: string }).error ?? `HTTP ${r.status}`));
+      else lastFailure.set(key, { at, why: r.status === 200 ? 'the check ran and measured nothing' : String((r.body as { error?: string }).error ?? `HTTP ${r.status}`) });
       return r;
     })
     .catch((e: unknown) => {
-      lastFailure.set(key, `the check could not run: ${(e as Error).message}`);
+      lastFailure.set(key, { at: (deps.now ?? Date.now)(), why: `the check could not run: ${(e as Error).message}` });
       return { status: 500, body: { error: (e as Error).message } };
     })
-    .finally(() => inflight.delete(key));
+    // only this run's own entry: a cleared map may hold a newer run under the same key by now
+    .finally(() => { if (inflight.get(key) === run) inflight.delete(key); });
   inflight.set(key, run);
   return run;
 }
@@ -191,7 +196,8 @@ function startCheck(domain: string, key: string, now: number, deps: PolicyCounts
  *   - one older than ten minutes is answered with stale: true, and a fresh check starts behind
  *     the answer (one per domain at a time);
  *   - with nothing kept, the answer is measuredAt: null and the first check starts;
- *   - checking says a check is running now; lastCheckFailed says why the last one kept nothing.
+ *   - checking says a check is running now; lastCheckFailed says why the last one kept nothing,
+ *     and for a minute after such a check no new one is started (the page re-reads every 15 s).
  * The kept result lives in this process: after a restart the first view reads "not measured yet".
  */
 export function fetchDomainConformance(domain: string, deps: PolicyCountsDeps): Promise<{ status: number; body: unknown }> {
@@ -202,9 +208,10 @@ export function fetchDomainConformance(domain: string, deps: PolicyCountsDeps): 
   const key = `domain:${domain}`;
   const hit = cache.get(key);
   const stale = !hit || now - hit.at >= TTL_MS;
-  if (stale) void startCheck(domain, key, now, deps);
   const failed = lastFailure.get(key);
-  const state = { checking: inflight.has(key), ...(failed ? { lastCheckFailed: failed } : {}) };
+  const justFailed = !!failed && now - failed.at < RETRY_MS;
+  if (stale && !justFailed) void startCheck(domain, key, now, deps);
+  const state = { checking: inflight.has(key), ...(failed ? { lastCheckFailed: failed.why } : {}) };
   if (hit) return Promise.resolve({ status: 200, body: { ...(hit.body as Record<string, unknown>), stale, ...state } });
   return Promise.resolve({ status: 200, body: { domain, measuredAt: null, policies: [], stale: false, ...state } });
 }
@@ -224,6 +231,12 @@ async function measureDomain(domain: string, key: string, now: number, deps: Pol
   const rows = overlay(door, deps.loadPlans(), deps.runnable)
     .filter((r) => (r.checkKind ?? '') !== '' && r.checkKind !== 'runtime' && r.status !== 'retired')
     .filter((r) => { const s = appliesTo(r); return s.length === 0 || s.includes(domain); });
+  // a domain no check applies to is a true answer (an empty list, kept), not a run that measured nothing
+  if (rows.length === 0) {
+    const none = { domain, measuredAt: new Date(now).toISOString(), policies: [] };
+    cache.set(key, { at: now, body: none });
+    return { status: 200, body: none };
+  }
   const measured = new Map(parseValidate(await deps.runValidate(domain, rows, ['--domain', domain])).map((m) => [m.name, m]));
   const table = worstFirst(rows.map((r) => {
     const m = measured.get(r.name) ?? { name: r.name, verdict: 'broken' as const, count: null, baseline: null, reason: 'not measured' };
