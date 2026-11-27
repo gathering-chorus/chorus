@@ -107,14 +107,16 @@ pub fn model_rs(p: &Product, model_version: &str, settings: &[(String, String)])
     s.push_str("];\n\n");
     s.push_str(
         "#[derive(Clone, Copy)]\npub struct FieldDef {\n    pub name: &'static str,\n    /// #4995 — every predicate IRI with this name, the namespace's first (read: first with a value; write: all)\n    pub iris: &'static [&'static str],\n    pub link: bool,\n    pub datatype: &'static str,\n    pub required: bool,\n    pub many: bool,\n    pub allowed: &'static [&'static str],\n}\n\n\
-         pub struct ClassDef {\n    pub domain: &'static str,\n    pub name: &'static str,\n    pub kind: &'static str,\n    pub plural: &'static str,\n    pub segment: &'static str,\n    pub graph: &'static str,\n    /// #4766 — where the rows live: \"graph\" or \"spine\" (the spine log, read from its end)\n    pub store: &'static str,\n    /// #4742 — homed in another product and composed here: read-only\n    pub composed: bool,\n    pub fields: &'static [FieldDef],\n}\n\n\
+         pub struct ClassDef {\n    pub domain: &'static str,\n    pub name: &'static str,\n    pub kind: &'static str,\n    pub plural: &'static str,\n    pub segment: &'static str,\n    pub graph: &'static str,\n    /// #4766 — where the rows live: \"graph\" or \"spine\" (the spine log, read from its end)\n    pub store: &'static str,\n    /// #4742 — homed in another product and composed here: read-only\n    pub composed: bool,\n    /// #5042 — the class's own OpenAPI document (surfaces/<Class>.openapi.json), served at\n    /// <route>/openapi.json; a composed class has none here (its home product serves it)\n    pub openapi: Option<&'static str>,\n    pub fields: &'static [FieldDef],\n}\n\n\
          pub const CLASSES: &[ClassDef] = &[\n",
     );
     for d in &p.domains {
         for c in &d.classes {
             s.push_str(&format!(
-                "    ClassDef {{\n        domain: {}, name: {}, kind: {}, plural: {}, segment: {}, graph: {}, store: {}, composed: {},\n        fields: &[\n",
-                lit(&d.name), lit(&c.name), lit(&kebab(&c.name)), lit(&crate::model::pluralize(&c.name)), lit(&c.segment), lit(&c.graph), lit(&c.store), d.composed
+                "    ClassDef {{\n        domain: {}, name: {}, kind: {}, plural: {}, segment: {}, graph: {}, store: {}, composed: {},\n        openapi: {},\n        fields: &[\n",
+                lit(&d.name), lit(&c.name), lit(&kebab(&c.name)), lit(&crate::model::pluralize(&c.name)), lit(&c.segment), lit(&c.graph), lit(&c.store), d.composed,
+                // #5042 — embedded, so the served document is the file the generator wrote, never a second copy
+                if d.composed { "None".to_string() } else { format!("Some(include_str!({}))", lit(&format!("../surfaces/{}.openapi.json", c.name))) }
             ));
             for f in &c.fields {
                 let allowed: Vec<String> = f.allowed.iter().map(|a| lit(a)).collect();

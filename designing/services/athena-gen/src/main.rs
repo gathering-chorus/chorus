@@ -98,6 +98,24 @@ fn generate(store: &oxigraph::store::Store, root: &Path, unit: Unit, product: &s
         std::fs::write(&f, text).unwrap_or_else(|e| die(e));
         println!("wrote {}", f.display());
     }
+    // #5042 AC1 — the launch wrapper beside the crate, from the unit's rows
+    let name = format!("{}-api", p.name);
+    let service_files = [(out.join(format!("{name}-launch.sh")), athena_gen::surfaces::launcher_sh(&p, &settings))];
+    for (f, text) in service_files {
+        if let Some(dir) = f.parent() {
+            std::fs::create_dir_all(dir).unwrap_or_else(|e| die(e));
+        }
+        std::fs::write(&f, text).unwrap_or_else(|e| die(e));
+        // a launcher is executable; one that already is keeps its mode (another account may own it)
+        if f.extension().is_some_and(|e| e == "sh") {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&f).map(|m| m.permissions().mode()).unwrap_or(0);
+            if mode & 0o111 != 0o111 {
+                std::fs::set_permissions(&f, std::fs::Permissions::from_mode(0o755)).unwrap_or_else(|e| die(e));
+            }
+        }
+        println!("wrote {}", f.display());
+    }
 }
 
 /// #4547 — the touched products the generator builds: those that declare their own

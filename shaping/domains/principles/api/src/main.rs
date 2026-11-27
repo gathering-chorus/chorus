@@ -195,9 +195,29 @@ pub fn route(ctx: &Ctx, method: &str, url: &str, authorization: Option<&str>, bo
     if path == "/" && method == "GET" {
         let primitives: Vec<Value> = CLASSES
             .iter()
-            .map(|c| json!({ "kind": c.name, "collection": model::route_of(c), "composed": c.composed }))
+            .map(|c| {
+                let mut p = json!({ "kind": c.name, "collection": model::route_of(c), "composed": c.composed });
+                if c.openapi.is_some() {
+                    p["openapi"] = json!(format!("{}/openapi.json", model::route_of(c)));
+                }
+                p
+            })
             .collect();
         return (200, json!({ "apiVersion": API_VERSION, "service": format!("{PRODUCT}-api"), "kind": "Discovery", "count": primitives.len(), "primitives": primitives }));
+    }
+    // #5042 — each collection serves its own OpenAPI document at <collection>/openapi.json,
+    // the route athena-make's doors answer, so the model door forwards it unchanged and the
+    // domain page's API Contract fold links to it. The document is the file athena-gen wrote,
+    // embedded at build time; it is the API's public description, read without a caller.
+    if method == "GET" {
+        if let Some(base) = path.strip_suffix("/openapi.json") {
+            if let Some(doc) = CLASSES.iter().find(|c| model::route_of(c) == base).and_then(|c| c.openapi) {
+                return match serde_json::from_str::<Value>(doc) {
+                    Ok(v) => (200, v),
+                    Err(e) => error(500, "openapi", &format!("the embedded document does not parse: {e}")),
+                };
+            }
+        }
     }
     let mut parts: Vec<&str> = path.trim_matches('/').split('/').collect();
     // #4995 — a domain's crate serves /<domain>/<segment>; read it on the one dispatch

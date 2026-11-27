@@ -18,7 +18,7 @@
  * Each row, and the fold that reads the same thing:
  *   shape   the board's domain:<name> cards, Done included      (Cards)      5 or more: complete
  *   design  the Domain row's completeness, under its own name                80% or more: complete
- *   build   code files + test files + routes carrying hasDomain (Code, Tests, API Contract)   3 or more: complete
+ *   build   code files + test files + the domain's OpenAPI routes (Code, Tests, API Contract)   3 or more: complete
  *   prove   alert rules                                         (Alerts)     1 or more: complete
  *   ship    releases                                            (Releases)   1 or more: complete
  * A read that fails makes its row "could not read <what>", never "not started".
@@ -114,7 +114,7 @@ function buildBuildStage(name: string, filesRes: unknown, testsRes: unknown, end
   const endpoints = listOf(endpointsRes, 'data');
   if (!endpoints) return unread('build', 'routes');
   const code = onDomain(files, name).length;
-  const routes = onDomain(endpoints, name).length;
+  const routes = endpoints.length;   // #5042 — already the domain's own: its OpenAPI documents' routes
   const total = code + tests + routes;
   return {
     name: 'build',
@@ -152,6 +152,28 @@ function buildShipStage(releasesRes: unknown): Stage {
   };
 }
 
+/**
+ * #5042 — the domain's API routes, read as the API Contract fold reads them: each collection the
+ * model door's discovery lists under this domain with an OpenAPI document, one row per route and
+ * method the document describes. Null when the discovery or a document could not be read.
+ */
+async function apiRoutes(fetcher: ChorusDomainPipelineDeps['fetcher'], name: string): Promise<{ data: unknown[] } | null> {
+  const disc = (await fetcher('/owl/')) as { primitives?: Array<{ collection?: unknown; openapi?: unknown }> } | null;
+  if (!disc || !Array.isArray(disc.primitives)) return null;
+  const mine = disc.primitives.filter((p) => typeof p.openapi === 'string' && typeof p.collection === 'string' && p.collection.split('/')[2] === name);
+  const docs = await Promise.all(mine.map((p) => fetcher(`/owl${p.openapi as string}`)));
+  const rows: unknown[] = [];
+  for (const doc of docs) {
+    const paths = (doc as { paths?: unknown } | null)?.paths;
+    if (!paths || typeof paths !== 'object') return null;
+    for (const [route, ops] of Object.entries(paths)) {
+      if (!ops || typeof ops !== 'object') return null;   // a route with no operations: the document is not readable
+      for (const method of Object.keys(ops)) rows.push({ httpMethod: method.toUpperCase(), routePath: route });
+    }
+  }
+  return { data: rows };
+}
+
 export async function fetchChorusDomainPipeline(
   deps: ChorusDomainPipelineDeps,
   name: string,
@@ -170,7 +192,7 @@ export async function fetchChorusDomainPipeline(
     deps.fetcher(`/owl/domains/domains/${encodeURIComponent(sdId)}/completeness`),
     deps.fetcher(`/owl/code/files${forDomain}`),
     deps.fetcher(`${dom}/tests`),
-    deps.fetcher(`/owl/code/endpoints${forDomain}`),
+    apiRoutes(deps.fetcher, sdId),
     deps.fetcher(`${dom}/alerts`),
     deps.fetcher(`${dom}/releases`),
   ]);

@@ -397,7 +397,10 @@ function addGenerated(primitives: unknown[], answers: Array<{ domain: string; fo
     for (const p of found) {
       if (typeof p.kind !== 'string' || listed.has(p.kind)) continue;
       listed.add(p.kind);
-      primitives.push(typeof p.collection === 'string' ? { ...p, collection: `/v1${p.collection}` } : p);
+      // #5042 — the door's own OpenAPI route moves under /v1 with its collection, so the
+      // merged entry names an address the model door answers, as athena-make's entries do
+      const v1 = (r: unknown) => (typeof r === 'string' ? `/v1${r}` : r);
+      primitives.push({ ...p, collection: v1(p.collection), ...(p.openapi === undefined ? {} : { openapi: v1(p.openapi) }) });
     }
   }
   return unreachable;

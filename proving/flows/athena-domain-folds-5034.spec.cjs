@@ -379,7 +379,10 @@ test.describe(`#5041 the folds of the ${DOMAIN} ops view come in the reader's or
   // the Gaps fold. Every test here was green. This one reads where things sit: each fold's
   // heading, label included, is inside the fold's own box, and no fold lies over the next.
   test('every fold holds its own heading, and no fold lies over the next one, as the page starts', async ({ page }) => {
-    await openAsItStarts(page);
+    // #5042 (Wren, 11-27) — the negative below needs Conformance closed; live principles has a red
+    // policy, so it started open. The answer is planted, as the next test does.
+    await page.route(isPoliciesRead, policiesAnswer(['pass', 'pass', 'pass']));
+    await openAsItStarts(page, { plantedPolicies: true });
     const overlaps = () => page.evaluate(() => {
       const folds = [...document.querySelectorAll('details.fold')];
       const name = (f) => (f.querySelector(':scope > summary')?.childNodes[0]?.textContent || '').trim().replace(/\s*\(.*$/, '');
@@ -430,7 +433,9 @@ test.describe(`#5041 the folds of the ${DOMAIN} ops view come in the reader's or
     await page.setViewportSize(PHONE);
     await openOldDomainPage(page, BASE);
     const faults = orderFaults(await page.evaluate(foldsAsDrawn)).join('\n');
-    expect(faults, 'the old order').toMatch(/^order: drawn Vocabulary > Design doc > Gaps > Conformance > Services > Cards > /m);
+    // #5042 (Wren, 11-27) — the old page draws from live rows; #5045 removed principles' design doc and
+    // gaps, so those two folds are optional here. The old order itself (Conformance before Services) is still caught.
+    expect(faults, 'the old order').toMatch(/^order: drawn Vocabulary > (Design doc > )?(Gaps > )?Conformance > Services > Cards > /m);
     expect(faults, 'the second list of files').toMatch(/^a fold the order does not name: "Files"$/m);
     expect(faults, 'the embedded Model fold').toMatch(/^a fold the order does not name: "Model/m);
     expect(faults, 'the old Code fold started open').toMatch(/^Code starts open/m);

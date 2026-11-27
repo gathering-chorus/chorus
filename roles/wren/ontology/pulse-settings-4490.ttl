@@ -15,8 +15,8 @@ chorus:property-pulse-server-bind a chorus:Property ;
     chorus:propertyValueType "string" ; chorus:propertyScope "instance" .
 
 chorus:property-pulse-store-kind a chorus:Property ;
-    rdfs:label "pulse-api: which store backend (sparql today; embedded next)" ;
-    chorus:propertyKey "store.kind" ; chorus:propertyValue "sparql" ;
+    rdfs:label "pulse-api: which store backend (door: every write through the model door as principal-pulse, #4716; reads plain SPARQL)" ;
+    chorus:propertyKey "store.kind" ; chorus:propertyValue "door" ;
     chorus:propertyValueType "string" ; chorus:propertyScope "instance" .
 
 chorus:property-pulse-store-endpoint a chorus:Property ;

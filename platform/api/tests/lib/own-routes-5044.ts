@@ -46,8 +46,24 @@ import { fetchDomainGaps, type GapsDeps } from '../../src/handlers/domain-gaps';
 import type { BoardCard } from '../../src/handlers/domain-cards';
 
 const LIVE = (process.env.ATHENA_URL || 'http://localhost:3340').replace(/\/+$/, '');
+// #5042 — before the land the live principles door serves no OpenAPI document. The pipeline's sibling
+// reads meet the same stand-in the page meets: the one in proving/flows/lib/athena-page-5034.cjs
+// (asLanded for the discovery, landedDocument for the document; both off in the nightly).
+const landed = require(path.resolve(__dirname, '..', '..', '..', '..', 'proving/flows/lib/athena-page-5034.cjs')) as {
+  asLanded: (body: unknown) => unknown; landedDocument: (pathname: string) => string | null;
+};
+async function liveRead(rel: string): Promise<unknown> {
+  const doc = landed.landedDocument(rel);
+  if (doc !== null) return JSON.parse(doc);
+  const resp = await fetch(`${LIVE}${rel}`, { signal: AbortSignal.timeout(30_000) });
+  if (!resp.ok) return null;
+  const body: unknown = await resp.json();
+  return rel === '/owl/' ? landed.asLanded(body) : body;
+}
 const ROOT = path.resolve(__dirname, '..', '..', '..', '..');
-const SHARED = path.join(os.tmpdir(), 'own-routes-5044-lint');   // one real lint for every worker
+// one real lint for every worker OF THIS ACCOUNT (#5042: a role's run read EACCES on the file another
+// role's account had written in a /tmp both share; the lint is per account, so its file is too)
+const SHARED = path.join(os.tmpdir(), `own-routes-5044-lint-${os.userInfo().username}`);
 
 let clockAdd = 0;
 let lint: 'real' | 'hold' | 'empty' | 'down' = 'real';
@@ -143,7 +159,7 @@ const server = http.createServer(async (req, res) => {
       const r = await fetchChorusDomainPipeline({
         fetcher: async (rel) => {
           if (fail && rel.includes(fail)) return null;
-          try { const resp = await fetch(`${LIVE}${rel}`, { signal: AbortSignal.timeout(30_000) }); return resp.ok ? await resp.json() : null; } catch { return null; }
+          try { return await liveRead(rel); } catch { return null; }
         },
         envelope: (queryName, data, durationMs, extra) => ({ _meta: { source: 'athena', query_name: queryName, duration_ms: durationMs, ...extra }, data }),
       }, domain);

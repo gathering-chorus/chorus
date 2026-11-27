@@ -28,7 +28,7 @@ pub const SETTINGS: &[(&str, &str)] = &[
     ("server.bind", "127.0.0.1:3392"),
     ("store.endpoint", "http://localhost:3030/pods"),
     ("store.graph_prefix", "urn:chorus:domains:"),
-    ("store.kind", "sparql"),
+    ("store.kind", "door"),
     ("store.password_var", "FUSEKI_ADMIN_PASSWORD"),
     ("store.path", "/Users/jeffbridwell/.chorus/data/pulse-api"),
     ("store.row", "persistence-store-pods"),
@@ -58,12 +58,16 @@ pub struct ClassDef {
     pub store: &'static str,
     /// #4742 — homed in another product and composed here: read-only
     pub composed: bool,
+    /// #5042 — the class's own OpenAPI document (surfaces/<Class>.openapi.json), served at
+    /// <route>/openapi.json; a composed class has none here (its home product serves it)
+    pub openapi: Option<&'static str>,
     pub fields: &'static [FieldDef],
 }
 
 pub const CLASSES: &[ClassDef] = &[
     ClassDef {
         domain: "awareness", name: "Heartbeat", kind: "heartbeat", plural: "heartbeats", segment: "heartbeats", graph: "urn:chorus:domains:awareness", store: "graph", composed: false,
+        openapi: Some(include_str!("../surfaces/Heartbeat.openapi.json")),
         fields: &[
             FieldDef { name: "comment", iris: &["https://jeffbridwell.com/chorus#comment", "http://www.w3.org/2000/01/rdf-schema#comment"], link: false, datatype: "string", required: true, many: false, allowed: &[] },
             FieldDef { name: "label", iris: &["https://jeffbridwell.com/chorus#label", "http://www.w3.org/2000/01/rdf-schema#label"], link: false, datatype: "string", required: true, many: false, allowed: &[] },
@@ -77,6 +81,7 @@ pub const CLASSES: &[ClassDef] = &[
     },
     ClassDef {
         domain: "awareness", name: "Reading", kind: "reading", plural: "readings", segment: "readings", graph: "urn:chorus:domains:awareness", store: "graph", composed: false,
+        openapi: Some(include_str!("../surfaces/Reading.openapi.json")),
         fields: &[
             FieldDef { name: "comment", iris: &["https://jeffbridwell.com/chorus#comment", "http://www.w3.org/2000/01/rdf-schema#comment"], link: false, datatype: "string", required: true, many: false, allowed: &[] },
             FieldDef { name: "label", iris: &["https://jeffbridwell.com/chorus#label", "http://www.w3.org/2000/01/rdf-schema#label"], link: false, datatype: "string", required: true, many: false, allowed: &[] },
@@ -90,6 +95,7 @@ pub const CLASSES: &[ClassDef] = &[
     },
     ClassDef {
         domain: "awareness", name: "RoleState", kind: "role-state", plural: "rolestates", segment: "rolestates", graph: "urn:chorus:domains:awareness", store: "graph", composed: false,
+        openapi: Some(include_str!("../surfaces/RoleState.openapi.json")),
         fields: &[
             FieldDef { name: "comment", iris: &["https://jeffbridwell.com/chorus#comment", "http://www.w3.org/2000/01/rdf-schema#comment"], link: false, datatype: "string", required: true, many: false, allowed: &[] },
             FieldDef { name: "label", iris: &["https://jeffbridwell.com/chorus#label", "http://www.w3.org/2000/01/rdf-schema#label"], link: false, datatype: "string", required: true, many: false, allowed: &[] },
@@ -107,6 +113,7 @@ pub const CLASSES: &[ClassDef] = &[
     },
     ClassDef {
         domain: "awareness", name: "WaitingOn", kind: "waiting-on", plural: "waitingons", segment: "waitingons", graph: "urn:chorus:domains:awareness", store: "graph", composed: false,
+        openapi: Some(include_str!("../surfaces/WaitingOn.openapi.json")),
         fields: &[
             FieldDef { name: "comment", iris: &["https://jeffbridwell.com/chorus#comment", "http://www.w3.org/2000/01/rdf-schema#comment"], link: false, datatype: "string", required: true, many: false, allowed: &[] },
             FieldDef { name: "label", iris: &["https://jeffbridwell.com/chorus#label", "http://www.w3.org/2000/01/rdf-schema#label"], link: false, datatype: "string", required: true, many: false, allowed: &[] },
@@ -120,6 +127,7 @@ pub const CLASSES: &[ClassDef] = &[
     },
     ClassDef {
         domain: "streams", name: "StreamEvent", kind: "stream-event", plural: "streamevents", segment: "events", graph: "urn:chorus:domains:streams", store: "spine", composed: false,
+        openapi: Some(include_str!("../surfaces/StreamEvent.openapi.json")),
         fields: &[
             FieldDef { name: "ownedBy", iris: &["https://jeffbridwell.com/chorus#ownedBy"], link: true, datatype: "", required: false, many: false, allowed: &[] },
             FieldDef { name: "streamPhase", iris: &["https://jeffbridwell.com/chorus#streamPhase"], link: false, datatype: "string", required: true, many: false, allowed: &[] },
@@ -130,6 +138,7 @@ pub const CLASSES: &[ClassDef] = &[
     },
     ClassDef {
         domain: "alerts", name: "Alert", kind: "alert", plural: "alerts", segment: "alerts", graph: "urn:chorus:domains:alerts", store: "graph", composed: true,
+        openapi: None,
         fields: &[
             FieldDef { name: "label", iris: &["https://jeffbridwell.com/chorus#label", "http://www.w3.org/2000/01/rdf-schema#label"], link: false, datatype: "string", required: true, many: false, allowed: &[] },
             FieldDef { name: "alertFile", iris: &["https://jeffbridwell.com/chorus#alertFile"], link: false, datatype: "string", required: false, many: false, allowed: &[] },
@@ -148,6 +157,7 @@ pub const CLASSES: &[ClassDef] = &[
     },
     ClassDef {
         domain: "alerts", name: "AlertCase", kind: "alert-case", plural: "alertcases", segment: "cases", graph: "urn:chorus:domains:alerts", store: "graph", composed: true,
+        openapi: None,
         fields: &[
             FieldDef { name: "caseCause", iris: &["https://jeffbridwell.com/chorus#caseCause"], link: false, datatype: "string", required: true, many: false, allowed: &[] },
             FieldDef { name: "caseClosedAt", iris: &["https://jeffbridwell.com/chorus#caseClosedAt"], link: false, datatype: "dateTime", required: false, many: false, allowed: &[] },
@@ -161,6 +171,7 @@ pub const CLASSES: &[ClassDef] = &[
     },
     ClassDef {
         domain: "cards", name: "Card", kind: "card", plural: "cards", segment: "cards", graph: "urn:chorus:domains:cards", store: "graph", composed: true,
+        openapi: None,
         fields: &[
             FieldDef { name: "label", iris: &["https://jeffbridwell.com/chorus#label", "http://www.w3.org/2000/01/rdf-schema#label"], link: false, datatype: "string", required: true, many: false, allowed: &[] },
             FieldDef { name: "assignee", iris: &["https://jeffbridwell.com/chorus#assignee"], link: true, datatype: "", required: false, many: false, allowed: &[] },
@@ -172,6 +183,7 @@ pub const CLASSES: &[ClassDef] = &[
     },
     ClassDef {
         domain: "cards", name: "CardAC", kind: "card-a-c", plural: "cardacs", segment: "acs", graph: "urn:chorus:domains:cards", store: "graph", composed: true,
+        openapi: None,
         fields: &[
             FieldDef { name: "label", iris: &["https://jeffbridwell.com/chorus#label", "http://www.w3.org/2000/01/rdf-schema#label"], link: false, datatype: "string", required: true, many: false, allowed: &[] },
             FieldDef { name: "acFor", iris: &["https://jeffbridwell.com/chorus#acFor"], link: true, datatype: "", required: true, many: false, allowed: &[] },
@@ -185,6 +197,7 @@ pub const CLASSES: &[ClassDef] = &[
     },
     ClassDef {
         domain: "messages", name: "Channel", kind: "channel", plural: "channels", segment: "channels", graph: "urn:chorus:domains:messages", store: "graph", composed: true,
+        openapi: None,
         fields: &[
             FieldDef { name: "label", iris: &["https://jeffbridwell.com/chorus#label", "http://www.w3.org/2000/01/rdf-schema#label"], link: false, datatype: "string", required: true, many: false, allowed: &[] },
             FieldDef { name: "channelKind", iris: &["https://jeffbridwell.com/chorus#channelKind"], link: false, datatype: "string", required: true, many: false, allowed: &[] },
@@ -194,6 +207,7 @@ pub const CLASSES: &[ClassDef] = &[
     },
     ClassDef {
         domain: "messages", name: "Delivery", kind: "delivery", plural: "deliveries", segment: "deliveries", graph: "urn:chorus:domains:messages", store: "graph", composed: true,
+        openapi: None,
         fields: &[
             FieldDef { name: "label", iris: &["https://jeffbridwell.com/chorus#label", "http://www.w3.org/2000/01/rdf-schema#label"], link: false, datatype: "string", required: true, many: false, allowed: &[] },
             FieldDef { name: "deliveredAt", iris: &["https://jeffbridwell.com/chorus#deliveredAt"], link: false, datatype: "string", required: false, many: false, allowed: &[] },
@@ -207,6 +221,7 @@ pub const CLASSES: &[ClassDef] = &[
     },
     ClassDef {
         domain: "messages", name: "Message", kind: "message", plural: "messages", segment: "messages", graph: "urn:chorus:domains:messages", store: "graph", composed: true,
+        openapi: None,
         fields: &[
             FieldDef { name: "label", iris: &["https://jeffbridwell.com/chorus#label", "http://www.w3.org/2000/01/rdf-schema#label"], link: false, datatype: "string", required: true, many: false, allowed: &[] },
             FieldDef { name: "messageBody", iris: &["https://jeffbridwell.com/chorus#messageBody"], link: false, datatype: "string", required: true, many: false, allowed: &[] },
@@ -224,6 +239,7 @@ pub const CLASSES: &[ClassDef] = &[
     },
     ClassDef {
         domain: "messages", name: "Nudge", kind: "nudge", plural: "nudges", segment: "nudges", graph: "urn:chorus:domains:messages", store: "graph", composed: true,
+        openapi: None,
         fields: &[
             FieldDef { name: "label", iris: &["https://jeffbridwell.com/chorus#label", "http://www.w3.org/2000/01/rdf-schema#label"], link: false, datatype: "string", required: true, many: false, allowed: &[] },
             FieldDef { name: "messageBody", iris: &["https://jeffbridwell.com/chorus#messageBody"], link: false, datatype: "string", required: true, many: false, allowed: &[] },

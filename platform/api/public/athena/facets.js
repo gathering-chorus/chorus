@@ -37,8 +37,22 @@ async function renderFacetTables(el, fid, opts) {
   // #5041 — listed in the order a reader needs: what the domain exposes, whether it is healthy,
   // then the work and the code. A page that draws them all (no `only`) draws them in this order.
   // The NAMES are fixed by the model's Domain shape and the folds counter; only the order moved.
+  // #5042 — the domain's collections that serve an OpenAPI document, then each document
+  async function apiContract() {
+    const r = await fetch(OWL + '/');
+    if (!r.ok) return { _failed: 'HTTP ' + r.status };
+    const disc = await r.json();
+    const mine = (disc.primitives || []).filter(p => p.openapi && String(p.collection || '').split('/')[2] === dname);
+    const docs = await Promise.all(mine.map(p => fetch(OWL + p.openapi)
+      .then(d => d.ok ? d.json() : { _failed: 'HTTP ' + d.status }).catch(e => ({ _failed: e && e.message || 'no answer' }))
+      .then(doc => ({ href: OWL + p.openapi, at: p.openapi, doc }))));
+    return { _api: docs };
+  }
   const FACETS = [
-    { t: 'API Contract', u: OWL + '/code/endpoints' + forDomain, k: 'items', graph: true, filter: onDomain, cols: ['httpMethod', 'routePath', 'filePath'], src: 'chorus:Endpoint · hasDomain = ' + dname },
+    // #5042 — Jeff 11-25 10:31: "api contract must be link to generated open api doc". The fold is the
+    // domain's OpenAPI documents (each collection's, as the model door's discovery names them): a link
+    // to each, and the routes each describes. The code crawl's endpoints were chorus-api's old routes.
+    { t: 'API Contract', u: OWL + '/', k: '_api', load: apiContract, cols: ['httpMethod', 'routePath'], src: 'OpenAPI · model door discovery' },
     { t: 'Dependencies', u: DOM + fid + '/dependencies', k: '_deps' },
     { t: 'Decisions', u: DOM + fid + '/decisions', k: 'decisions', cols: ['id', 'title', 'type', 'date'] },
     // #5041 — Jeff, 2026-11-25 10:59: "the ui interfaces fold must give clickable links". A route
@@ -115,7 +129,7 @@ async function renderFacetTables(el, fid, opts) {
     : opts.except ? FACETS.filter(f => !opts.except.includes(f.t)) : FACETS;
   const bodies = await Promise.all(CHOSEN.map(f =>
     // #5021 — a read that fails is kept as a failure (status + message), never turned into an empty fold
-    fetch(f.u).then(async r => r.ok ? r.json() : { _failed: 'HTTP ' + r.status, _body: await r.json().catch(() => null) })
+    f.load ? f.load().catch(e => ({ _failed: 'no answer (' + (e && e.message || 'network') + ')' })) : fetch(f.u).then(async r => r.ok ? r.json() : { _failed: 'HTTP ' + r.status, _body: await r.json().catch(() => null) })
       .catch(e => ({ _failed: 'no answer (' + (e && e.message || 'network') + ')' }))));
   el.innerHTML = CHOSEN.map((f, i) => {
     const b = bodies[i];
@@ -125,7 +139,16 @@ async function renderFacetTables(el, fid, opts) {
       const heading = opts.heading ? opts.heading(f.t) : f.t;
       return `<details class="fold" open><summary>${esc(heading)} (?) <span class="src">could not read</span></summary><div class="body"><div class="bad">could not read ${esc(f.t)}: ${esc(b._failed)}${why ? ' &middot; ' + esc(why) : ''}</div></div></details>`;
     }
-    if (f.k === '_deps') {
+    if (f.k === '_api') {
+      const docs = b._api || [];
+      const rows = [];
+      for (const d of docs) for (const [route, ops] of Object.entries((d.doc && d.doc.paths) || {}))
+        for (const m of Object.keys(ops || {})) rows.push({ httpMethod: m.toUpperCase(), routePath: route });
+      count = rows.length;
+      const links = docs.map(d => `<div style="margin-bottom:6px"><span class="lbl">OpenAPI</span> <a class="edge" data-openapi href="${esc(d.href)}">${esc(d.at)}</a>${d.doc && d.doc._failed ? ` <span class="bad">could not read: ${esc(d.doc._failed)}</span>` : ''}</div>`).join('');
+      inner = docs.length ? links + (count ? table(rows, f.cols) : '<div class="empty">the document names no routes</div>')
+        : '<div class="empty">no OpenAPI document for this domain</div>';
+    } else if (f.k === '_deps') {
       const dd = (b && b.data) || {};
       const dir = dd.direct || { consumes: [], consumedBy: [] };
       count = (dir.consumes || []).length + (dir.consumedBy || []).length;
