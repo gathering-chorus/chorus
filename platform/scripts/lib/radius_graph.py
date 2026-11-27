@@ -30,7 +30,8 @@ CLASSES = ["Product", "Domain", "Service", "Pipeline", "ValueStream",
            "ValueStreamStep", "Skill", "PipelineStep", "StepSkill"]
 PREDS = ["hasDomain", "consumes", "partOf", "hosts", "atStep", "inStream",
          "automates", "hasStep", "forStep", "callsSkill", "ownedBy", "executor",
-         "stageOrder", "purpose", "status", "pipelineStatus", "inLayer", "implementedBy", "platform", "composes"]
+         "stageOrder", "purpose", "pipelineStatus", "inLayer", "implementedBy", "platform", "composes"]
+# #5045 — "status" is no longer read: a Domain carries no typed status (off the Domain shape).
 
 KIND = {
     "domain-no-purpose": "no purpose",
@@ -231,7 +232,6 @@ def derive(g):
         by_domain[d] = {
             "domain": d,
             "owner": g.owner(d),
-            "status": g.first("status", "Domain").get(d, ""),
             "products": sorted(products_of.get(d, ())),
             "step": step,
             "valueStream": stream_of_step.get(step, ""),

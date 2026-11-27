@@ -128,7 +128,26 @@ async function ownMeasured(domain) {
   for (let i = 0; i < 3 && a.status === 200 && JSON.parse(a.body).checking; i++) { await ownSettled(domain); a = await ask(); }
   return a;
 }
-async function serveOwnRoutes(page, { conformance = 'measured', always = false } = {}) {
+/**
+ * #5045 — a domain's Gaps read (GET /api/chorus/domain/<d>/gaps), answered by this tree's handler.
+ * `gaps` states what a Domain row holds, by domain: { principles: '5047,99999' } (card numbers),
+ * '' (none), or 'down' (the store does not answer). The rows that carry chorus:gapCard are written
+ * after the model deploy, so before the land the store holds none: a domain not named here reads
+ * the live store and answers as it stands. The board the numbers are joined to is always the live one.
+ */
+async function serveOwnGaps(page, gaps = {}) {
+  await page.route((url) => /\/api\/chorus\/domain\/[^/]+\/gaps$/.test(url.pathname), async (route) => {
+    const d = decodeURIComponent(new URL(route.request().url()).pathname.split('/').slice(-2)[0]);
+    const stated = Object.prototype.hasOwnProperty.call(gaps, d) ? gaps[d] : null;
+    const a = await own(`/gaps?domain=${encodeURIComponent(d)}${stated === 'down' ? '&store=down' : stated === null ? '' : '&cards=' + encodeURIComponent(stated)}`);
+    return route.fulfill({ status: a.status, contentType: 'application/json', body: a.body });
+  });
+}
+
+async function serveOwnRoutes(page, { conformance = 'measured', always = false, gaps = {} } = {}) {
+  // a test that states a row's gaps is steering the handler: it is served from this tree anywhere,
+  // the nightly included. With nothing stated, the nightly and the after-the-land check read the live route.
+  if (Object.keys(gaps).length || !LIVE_DISCOVERY || always) await serveOwnGaps(page, gaps);
   if (LIVE_DISCOVERY && !always) return;
   const hand = (route, a) => route.fulfill({ status: a.status, contentType: 'application/json', body: a.body });
   await page.route((url) => /\/api\/chorus\/domain\/[^/]+\/pipeline$/.test(url.pathname), async (route) =>
@@ -141,9 +160,9 @@ async function serveOwnRoutes(page, { conformance = 'measured', always = false }
 }
 
 /** Open the domain page at the given width and wait until its folds have drawn. */
-async function openDomainPage(page, { width = PHONE.width, height = PHONE.height, domain = DOMAIN, lint = 'once' } = {}) {
+async function openDomainPage(page, { width = PHONE.width, height = PHONE.height, domain = DOMAIN, lint = 'once', gaps = {} } = {}) {
   await page.setViewportSize({ width, height });
-  if (lint !== 'live') { await serveLintOnce(page); await serveOwnRoutes(page); }
+  if (lint !== 'live') { await serveLintOnce(page); await serveOwnRoutes(page, { gaps }); }
   await serveOwnAthenaFiles(page);
   await serveDiscoveryAsLanded(page);
   const errors = [];
@@ -421,4 +440,4 @@ async function openOldDomainPage(page, under, { domain = DOMAIN } = {}) {
     && !/loading the materialized view|loading live from the model|running the domain lint/.test(document.body.innerText), null, { timeout: 180_000 });
 }
 
-module.exports = { serveOwnRoutes, ownControl, ownSettled, ownMeasured, ownPipeline, serveLintOnce, BEFORE_5041, athenaFileAt, serveAthenaFilesAsOf, openOldDomainPage, LIVE_DISCOVERY, ROOT, ATHENA_DIR, BASE, DOMAIN, PHONE, ownAthenaFile, serveOwnAthenaFiles, serveOwnModelView, serveDiscoveryAsLanded, openDomainPage, openModelView, sameOriginLinks, deadLinks, doorTruth, startDoor, signedInPage };
+module.exports = { serveOwnGaps, serveOwnRoutes, ownControl, ownSettled, ownMeasured, ownPipeline, serveLintOnce, BEFORE_5041, athenaFileAt, serveAthenaFilesAsOf, openOldDomainPage, LIVE_DISCOVERY, ROOT, ATHENA_DIR, BASE, DOMAIN, PHONE, ownAthenaFile, serveOwnAthenaFiles, serveOwnModelView, serveDiscoveryAsLanded, openDomainPage, openModelView, sameOriginLinks, deadLinks, doorTruth, startDoor, signedInPage };

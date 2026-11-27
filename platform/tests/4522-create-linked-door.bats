@@ -27,7 +27,25 @@ setup() {
   TS="$("$REPO/platform/scripts/chorus-identity-token" silas 2>/dev/null)"; [ -n "$TS" ]
   D="doc-probe-4522-$$"; M="domain-probe-4522-$$"
   DOC='{"name":"'$D'","label":"Probe doc","docTitle":"Probe doc","docHref":"/probe.html","docState":"draft","comment":"probe","hasDomain":["'$M'"]}'
-  DOM='{"name":"'$M'","label":"probe","comment":"probe","purpose":"probe","gaps":"none","status":"building","atStep":"probe-4522","hasDesignDoc":"'$D'"}'
+  # #5045 — typed status and gaps leave the Domain shape. The private door runs the model that is
+  # DEPLOYED, so before that deploy it still requires both ("'gaps' is required by the shape", cicd
+  # run 3 of #5045) and after it refuses them as off-model. The body therefore carries exactly
+  # what the door's own published contract requires of a new Domain, read here, never assumed.
+  # A contract that cannot be read stops the test: a guess would pass or fail for the wrong reason.
+  REQUIRED="$(curl -s --max-time 15 "$OWL_URL/domains/domains/openapi.json" | domain_create_required)"
+  [ -n "$REQUIRED" ] || { echo "could not read DomainCreate.required from $OWL_URL/domains/domains/openapi.json"; return 1; }
+  DOM='{"name":"'$M'","label":"probe","comment":"probe","purpose":"probe","atStep":"probe-4522","hasDesignDoc":"'$D'"'"$(typed_fields "$REQUIRED")"'}'
+}
+# the fields the door's contract requires of a new Domain, one per line (empty when it cannot be read)
+domain_create_required() { python3 -c 'import sys, json
+try: print("\n".join(json.load(sys.stdin)["components"]["schemas"]["DomainCreate"]["required"]))
+except Exception: pass'; }
+# ,"gaps":"none" and ,"status":"building" for whichever of the two the contract still requires
+typed_fields() {
+  out=""
+  echo "$1" | grep -qx gaps && out="$out"',"gaps":"none"'
+  echo "$1" | grep -qx status && out="$out"',"status":"building"'
+  printf '%s' "$out"
 }
 post() { curl -s -o "$BATS_TEST_TMPDIR/body" -w '%{http_code}' -X POST -H "Authorization: Bearer $TS" -H "Content-Type: $1" --max-time 30 --data-binary "$2" "$OWL_URL/$3"; }
 

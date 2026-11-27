@@ -10,6 +10,8 @@
  *   GET /pipeline?domain=<d>   fetchChorusDomainPipeline; its sibling reads go to the live API
  *                              (&fail=<text>: a sibling read whose address holds the text fails)
  *   GET /counts?domain=<d>     fetchDomainConformance; the lint is this tree's policy-validate
+ *   GET /gaps?domain=<d>       #5045 fetchDomainGaps; &cards=<n,n> states the numbers the row holds,
+ *                              &store=down fails the store (see the route below)
  *   GET /settled?domain=<d>    { settled: true } when the check running for the domain (if any) has
  *                              ended; { settled: false } after 45 s if it has not (ask again)
  *   GET /control?…             a test's hands on the clock and the lint (below); answers the state
@@ -40,6 +42,8 @@ import { fetchChorusDomainPipeline } from '../../src/handlers/chorus-domain-pipe
 import {
   fetchDomainConformance, domainCheckSettled, clearPolicyCountsCache, type PolicyRow, type PolicyCountsDeps,
 } from '../../src/handlers/policy-counts';
+import { fetchDomainGaps, type GapsDeps } from '../../src/handlers/domain-gaps';
+import type { BoardCard } from '../../src/handlers/domain-cards';
 
 const LIVE = (process.env.ATHENA_URL || 'http://localhost:3340').replace(/\/+$/, '');
 const ROOT = path.resolve(__dirname, '..', '..', '..', '..');
@@ -143,6 +147,31 @@ const server = http.createServer(async (req, res) => {
         },
         envelope: (queryName, data, durationMs, extra) => ({ _meta: { source: 'athena', query_name: queryName, duration_ms: durationMs, ...extra }, data }),
       }, domain);
+      return json(res, r.status, r.body);
+    }
+    if (url.pathname === '/gaps') {
+      // #5045 — fetchDomainGaps, this tree's. The board is the live one, asked card by card. The
+      // store is the live one too, unless cards=<n,n> names the numbers the Domain row holds: the
+      // rows that carry chorus:gapCard are written after the model deploy, so before the land no
+      // domain has any, and a test states the row it means. store=down: the store does not answer.
+      const planted = url.searchParams.get('cards');
+      const down = url.searchParams.get('store') === 'down';
+      const sparql: GapsDeps['sparql'] = async (query) => {
+        if (down) throw new Error('ECONNREFUSED (own-routes: store=down)');
+        if (planted !== null) return { results: { bindings: planted.split(',').filter(Boolean).map((n) => ({ n: { value: n } })) } };
+        const resp = await fetch(`${LIVE}/sparql-read`, { method: 'POST', headers: { 'content-type': 'application/sparql-query', accept: 'application/sparql-results+json' }, body: query, signal: AbortSignal.timeout(20_000) });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        return (await resp.json()) as Awaited<ReturnType<GapsDeps['sparql']>>;
+      };
+      const numbers = (await sparql('').catch(() => ({ results: { bindings: [] } }))).results.bindings.map((b) => b.n.value);
+      const board: BoardCard[] = [];
+      for (const n of planted !== null ? numbers : []) {
+        const resp = await fetch(`${LIVE}/api/chorus/card-story/${encodeURIComponent(n)}`, { signal: AbortSignal.timeout(20_000) });
+        if (!resp.ok) continue;   // the board does not hold it: the handler says so
+        const c = (await resp.json()) as { card?: number; title?: string; owner?: string; status?: string };
+        if (c.title) board.push({ id: String(c.card ?? n), title: c.title, owner: c.owner ?? '', status: c.status ?? '', priority: '', tags: '' });
+      }
+      const r = await fetchDomainGaps({ sparql, getCards: () => board }, domain);
       return json(res, r.status, r.body);
     }
     if (url.pathname === '/counts') { const r = await fetchDomainConformance(domain, deps()); return json(res, r.status, r.body); }

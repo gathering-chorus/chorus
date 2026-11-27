@@ -20,6 +20,8 @@ interface DirectBinding {
   dir: BindingValue;
   other: BindingValue;
   label?: BindingValue;
+  via?: BindingValue;
+  types?: BindingValue;
 }
 interface LayerBinding {
   layer: BindingValue;
@@ -46,26 +48,40 @@ export interface ChorusDomainDependenciesDeps {
   now?: () => number;
 }
 
-type Entry = { id: string; label: string };
+type Entry = { id: string; label: string; kind?: 'service' | 'domain' };
 const localOf = (iri: string): string => iri.split('#').pop() || '';
 
 /** #4293 — dependsOn both ways from every graph, plus the legacy Domain->Domain consumes until #4289 migrates them. */
 async function readDirect(deps: ChorusDomainDependenciesDeps, sdUri: string): Promise<{ consumes: Entry[]; consumedBy: Entry[] }> {
   const q = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-SELECT ?dir ?other (SAMPLE(?l) AS ?label) WHERE {
-  { { GRAPH ?g { <${sdUri}> chorus:dependsOn ?other } } UNION { GRAPH ?g { <${sdUri}> chorus:consumes ?other . ?other a chorus:Domain } } BIND("consumes" AS ?dir) }
+SELECT ?dir ?other (SAMPLE(?l) AS ?label) (GROUP_CONCAT(DISTINCT ?v; separator=" ") AS ?via) (GROUP_CONCAT(DISTINCT STR(?t); separator=" ") AS ?types) WHERE {
+  { { GRAPH ?g { <${sdUri}> chorus:dependsOn ?other } BIND("dependsOn" AS ?v) } UNION { GRAPH ?g { <${sdUri}> chorus:consumes ?other . ?other a chorus:Domain } BIND("consumes" AS ?v) } BIND("consumes" AS ?dir) }
   UNION
-  { { GRAPH ?g { ?other chorus:dependsOn <${sdUri}> } } UNION { GRAPH ?g { ?other chorus:consumes <${sdUri}> . ?other a chorus:Domain } } BIND("consumedBy" AS ?dir) }
+  { { GRAPH ?g { ?other chorus:dependsOn <${sdUri}> } BIND("dependsOn" AS ?v) } UNION { GRAPH ?g { ?other chorus:consumes <${sdUri}> } BIND("consumes" AS ?v) } BIND("consumedBy" AS ?dir) }
   OPTIONAL { GRAPH ?lg { ?other rdfs:label ?l } }
+  OPTIONAL { GRAPH ?tg { ?other a ?t } }
 } GROUP BY ?dir ?other ORDER BY ?other`;
   const rows = ((await deps.sparql(q)) as BindingsOf<DirectBinding>).results.bindings;
   const out = { consumes: [] as Entry[], consumedBy: [] as Entry[] };
   for (const b of rows) {
     const id = localOf(b.other.value);
+    const kind = kindOf(b.types?.value);
+    // #5045 — a consumes edge names a reader only when a domain or a service holds it
+    // (the shape allows both). Before, only Domain rows counted, so a service that
+    // reads a domain was never listed. A dependsOn edge counts whatever holds it.
+    if (b.dir.value === 'consumedBy' && b.via?.value === 'consumes' && !kind) continue;
     const list = b.dir.value === 'consumes' ? out.consumes : out.consumedBy;
-    if (!list.some((e) => e.id === id)) list.push({ id, label: b.label?.value || id });
+    if (!list.some((e) => e.id === id)) list.push({ id, label: b.label?.value || id, ...(kind ? { kind } : {}) });
   }
   return out;
+}
+
+/** #5045 — 'service' or 'domain' from a row's space-separated type IRIs; undefined for anything else. */
+function kindOf(types: string | undefined): 'service' | 'domain' | undefined {
+  const local = (types || '').split(' ').map(localOf);
+  if (local.includes('Service')) return 'service';
+  if (local.includes('Domain')) return 'domain';
+  return undefined;
 }
 
 /** #4293 — the one layer the domain sits in, or null. */

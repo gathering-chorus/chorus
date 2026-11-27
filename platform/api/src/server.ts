@@ -1467,6 +1467,13 @@ app.get('/api/chorus/domain/:name/cards', (req: Request, res: Response) => {
   res.status(r.status).json(r.body);
 });
 
+// #5045 — the Gaps fold: the cards the Domain row names (chorus:gapCard), as the board holds them now
+import { fetchDomainGaps, type GapsDeps } from './handlers/domain-gaps';
+app.get('/api/chorus/domain/:name/gaps', async (req: Request, res: Response) => {
+  const r = await fetchDomainGaps({ sparql: athenaSparqlQuery as GapsDeps['sparql'], getCards: getBoardCards }, req.params.name);
+  res.status(r.status).json(r.body);
+});
+
 app.get('/api/chorus/domain/:name/tests', async (req: Request, res: Response) => {
   const r = await fetchDomainTests(domainFacetDeps(), req.params.name);
   res.status(r.status).json(r.body);

@@ -66,7 +66,7 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
       const purpose = d.purpose || d.comment || '';
       return `<div class="dcard">
 <h3><a href="domain.html?d=${encodeURIComponent(d.name)}">${esc(d.name)}</a>${off}${legacyPart}${legacyOwner}</h3>
-<div class="meta">${ownerDot(d.ownedBy)} &middot; ${stepBadge(d.atStep)} &middot; ${esc(d.status || 'no status')}</div>
+<div class="meta">${ownerDot(d.ownedBy)} &middot; ${stepBadge(d.atStep)}</div>
 <div class="purpose">${esc(purpose.slice(0, 150))}${purpose.length > 150 ? '…' : ''}</div>
 ${vocab.length ? `<span class="chip">${vocab.length} class${vocab.length !== 1 ? 'es' : ''}</span>` : '<span class="empty">no vocabulary yet</span>'}
 </div>`;

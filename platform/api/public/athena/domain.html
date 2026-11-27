@@ -64,6 +64,8 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
     // A class discovery does not name gets words, never a link that leads nowhere.
     const disc = vocab.length ? await fetchJSON('/').catch(() => null) : null;
     const collOf = v => ((disc && disc.primitives) || []).find(p => p.kind === v);
+    // #5045 — the fingerprint a served class reports, or null ("unversioned" is the API's own word for none)
+    const apiVersion = p => p && p.shapeVersion && p.shapeVersion !== 'unversioned' ? String(p.shapeVersion) : null;
     // #5041 — this row is the ONE route to the class's rows (Jeff, 2026-11-25 10:40: "we dont want
     // 2-3 links to same data"), and its label says how many there are, read live from the class's
     // own collection. A count that cannot be read is left out: "rows of Principle", never a guess.
@@ -82,25 +84,58 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
       const n = await rowCount(c.collection);
       // #5040 — the link opens the class's rows as a table (rows.html). It opened the collection
       // itself, which on a phone is a screen of raw data (Jeff, 08:14); the collection is named beside it.
-      return `<tr><td class="word">${esc(v)}</td><td><a class="edge" href="rows.html?kind=${encodeURIComponent(v)}">${n === null ? '' : n + ' '}${n === 1 ? 'row' : 'rows'} of ${esc(v)}</a> <span class="src">${esc(c.collection)}</span></td></tr>`;
+      return `<tr><td class="word">${esc(v)}</td><td><a class="edge" href="rows.html?kind=${encodeURIComponent(v)}">${n === null ? '' : n + ' '}${n === 1 ? 'row' : 'rows'} of ${esc(v)}</a> <span class="src">${esc(c.collection)} &middot; ${apiVersion(c) ? 'version ' + esc(apiVersion(c).slice(0, 8)) : 'version not reported'}</span></td></tr>`;
     }))).join('');
+
+    // #5045 — the tile that said a typed Status ("operating", written by hand, never checked) now
+    // says what is running: the version of the domain's API in production, read live from the
+    // model's own discovery (each served class reports the fingerprint of the shape it was
+    // generated from, ADR-047). A domain has no status of its own (Jeff, 2026-11-26 11:08: a
+    // version has a state; this card shows the one state that is read today, "in production").
+    // A domain serves one API per class, so one class shows its version and several show how many
+    // report one; each class's own version is beside it in the Vocabulary fold. Open cards never
+    // change this tile. Not reported and not served are said in words, never as "in production".
+    const served = vocab.map(collOf).filter(Boolean);
+    const versions = served.map(apiVersion).filter(Boolean);
+    const api = vocab.length && !disc ? { state: 'unread', v: 'could not read', l: 'API version' }
+      : !served.length ? { state: 'none', v: 'no API in production', l: 'API version' }
+      : !versions.length ? { state: 'unreported', v: 'version not reported', l: 'API version' }
+      : served.length === 1 ? { state: 'live', v: versions[0].slice(0, 8), l: 'API version &middot; in production' }
+      : { state: 'live', v: versions.length === served.length ? `${served.length} classes` : `${versions.length} of ${served.length} classes`, l: 'API versions &middot; in production' };
 
     // #5034 — the design doc link. The row holds either a Document row's name ("document-<name>")
     // or a file name under designing/docs. The page linked "/<value>", which answered 404 for
     // both. A Document row gives its own address (docHref); a value with neither gets words.
     // The edge is many-valued and may arrive with an IRI prefix (product.html reads it the same
     // way); every address goes through basePath so it stays inside the mount.
-    const designDocs = asArray(e.hasDesignDoc).map(v => String(v).split('#').pop().replace(/^chorus:/, '')).filter(Boolean);
-    const ddLink = (await Promise.all(designDocs.map(async dd => {
-      if (/^document-/.test(dd)) {
-        const env = await fetchJSON(`/knowledge/documents/${encodeURIComponent(dd.replace(/^document-/, ''))}`).catch(() => null);
-        const doc = env && (Array.isArray(env.data) ? env.data[0] : env.data);
-        return doc && doc.docHref ? `<a class="edge" href="${esc(window.basePath(doc.docHref))}">${esc(doc.docTitle || dd)}</a>`
-          : `${esc(dd)} <span class="empty">&mdash; the model holds no document by that name</span>`;
-      }
-      if (/^[\w.-]+\.html$/.test(dd)) return `<a class="edge" href="${esc(window.basePath('/designing/docs/' + dd))}">${esc(dd)}</a>`;
-      return `${esc(dd)} <span class="empty">&mdash; not a document name or a design file</span>`;
-    }))).join('<br>');
+    // #5045 — a document is offered only when the Document row ITSELF names this domain (its
+    // hasDomain) and it leads somewhere other than this page. The row's word alone was taken
+    // before: principles offered Loom's document, identity offered security's, and logs "linked"
+    // to the page the reader was already on (Jeff, 2026-11-25 15:47: "design doc is stale and not
+    // in graph"). A file name is not a Document row, so the model cannot say whose it is: it is
+    // not offered. What the row names and the page leaves out is said, with the reason.
+    const bareName = v => String(v).split('#').pop().replace(/^chorus:/, '');
+    const designDocs = asArray(e.hasDesignDoc).map(bareName).filter(Boolean);
+    const ownDocs = designDocs.length ? await fetchJSON(`/knowledge/documents?hasDomain=${encodeURIComponent(d)}&limit=200`).catch(() => null) : null;
+    // the door's filter is repeated here, so a door that ignored it could not widen what is shown
+    const mine = ((ownDocs && ownDocs.data) || []).filter(doc => asArray(doc.hasDomain).some(v => bareName(v) === d));
+    const isThisPage = href => { try { const u = new URL(window.basePath(href), location.href); return u.pathname === location.pathname && u.searchParams.get('d') === d; } catch (err) { return false; } };
+    const ddShown = [], ddLeftOut = [];
+    for (const dd of designDocs) {
+      if (!/^document-/.test(dd)) { ddLeftOut.push(`${dd} (a file name, not a document in the model)`); continue; }
+      const name = dd.replace(/^document-/, '');
+      const doc = mine.find(x => x.name === name);
+      if (!ownDocs) ddLeftOut.push(`${name} (the documents could not be read)`);
+      else if (!doc) ddLeftOut.push(`${name} (the model holds no document by that name that belongs to ${d})`);
+      else if (!doc.docHref) ddLeftOut.push(`${name} (the document has no address)`);
+      else if (isThisPage(doc.docHref)) ddLeftOut.push(`${name} (its address is this page)`);
+      else ddShown.push(`<a class="edge" href="${esc(window.basePath(doc.docHref))}">${esc(doc.docTitle || name)}</a>`);
+    }
+    const ddBody = (ddShown.length ? `<p>${ddShown.join('<br>')}</p>`
+      // class "note": this line IS the fold's written reason for holding no document (the folds
+      // suite's rule since #5021: a fold with nothing in it says why)
+      : `<p class="note">No design document in the model belongs to ${esc(d)}. This page is generated from the model: it is the design as built.</p>`)
+      + (ddLeftOut.length ? `<p class="src">Named by the domain's row and not shown: ${ddLeftOut.map(esc).join('; ')}.</p>` : '');
 
     // #5041 — the page says each thing once. A Description that only repeats the purpose line
     // above it (same words, whatever the spacing or capitals) is not drawn a second time, and a
@@ -119,7 +154,7 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
 <div class="stats">
   <div class="stat"><div class="v">${ownerDot(e.ownedBy)}</div><div class="l">Owner (ownedBy)</div></div>
   <div class="stat"><div class="v">${stepBadge(e.atStep)}</div><div class="l">Step (atStep)</div></div>
-  <div class="stat"><div class="v">${esc(e.status || 'no status')}</div><div class="l">Status</div></div>
+  <div class="stat" data-api="${api.state}"><div class="v">${esc(api.v)}</div><div class="l">${api.l}</div></div>
   <div class="stat"><div class="v">${part ? `<a class="edge" href="product.html?p=${encodeURIComponent(part)}">${esc(part)}</a>` : '<span class="empty">unclaimed</span>'}</div><div class="l">Product (partOf)</div></div>
   <div class="stat"><div class="v"><a class="edge" href="${esc(window.basePath('/domains/' + encodeURIComponent(d)))}">Shape and OWL</a></div><div class="l">Model view (#3761)</div></div>
 </div>
@@ -129,9 +164,9 @@ ${vocab.length ? `<table><tr><th>Class</th><th>Rows &middot; generated collectio
 <div id="facets-api"></div>
 <div id="svc-slot"></div>
 <div id="conf-slot"></div>
-<details class="fold" open><summary>Gaps <span class="src">chorus:gaps from the model</span></summary><div class="body">${e.gaps ? `<p>${esc(e.gaps)}</p>` : '<p class="empty">the model names no gap for this domain</p>'}</div></details>
+<div id="gaps-slot"></div>
 <div id="facets-deps"></div>
-${ddLink ? `<details class="fold" open><summary>Design doc <span class="src">chorus:hasDesignDoc</span></summary><div class="body"><p>${ddLink}</p></div></details>` : ''}
+<details class="fold" data-dd="${ddShown.length ? 'own' : 'none'}" open><summary>Design doc <span class="src">chorus:hasDesignDoc, where the document names this domain</span></summary><div class="body">${ddBody}</div></details>
 <div id="facets-decisions"></div>
 <div id="facets"><p class="empty">loading the materialized view (cards, alerts, tests, &hellip;)&hellip;</p></div>
 <div id="code-slot"></div>
@@ -143,8 +178,40 @@ ${srcNote(`GET /domains/${esc(d)} + the materialized facet endpoints (/api/choru
     renderServices(d, asArray(e.hosts).map(x => String(x).split('#').pop().replace(/^chorus:/, '')).filter(Boolean));
     renderCode(d);
     renderConformance(d);
+    renderGaps(d);
   } catch (e) { fetchFailed(main, e); }
 })();
+
+// #5045 — Gaps: a gap is the card that will close it. The Domain row holds card numbers
+// (chorus:gapCard) and nothing else; this fold reads them joined to the board
+// (GET /api/chorus/domain/<d>/gaps), so each gap is a link to its card with the card's own title,
+// owner and standing as they are now. A gap whose card is done reads "closed". Before, the fold
+// showed a sentence typed on the row that nobody kept true (Jeff, 2026-11-25 15:47: "how do we
+// resolve gaps"). A read that fails says so: an empty fold would read as "no gaps", which is a claim.
+async function renderGaps(d) {
+  const el = document.getElementById('gaps-slot');
+  const fold = (n, state, body) => `<details class="fold" data-gaps="${state}" open><summary>Gaps${n === null ? '' : ` (${n})`} <span class="src">chorus:gapCard &rarr; the board's card</span></summary><div class="body">${body}</div></details>`;
+  try {
+    const r = await fetch(window.basePath(`/api/chorus/domain/${encodeURIComponent(d)}/gaps`));
+    const b = await r.json();
+    if (!r.ok) throw new Error(b.error || ('HTTP ' + r.status));
+    const gaps = b.gaps || [];
+    if (!gaps.length) { el.innerHTML = fold(0, 'none', `<p class="note">No open gap is recorded for ${esc(d)}: its row names no card.</p>`); return; }
+    const open = gaps.filter(g => g.state !== 'closed').length;
+    const rows = gaps.map(g => {
+      const href = cardHref(g.id);
+      const num = href ? `<a class="edge" href="${esc(href)}">#${esc(g.id)}</a>` : `#${esc(g.id)}`;
+      // one block per gap, no table: on a phone a table here scrolled sideways and cut the title
+      // mid-word (read from the 390 px picture, 2026-11-26); a block wraps to the fold's width
+      const what = g.state === 'not on the board' ? '<span class="bad">not on the board</span>'
+        : `${esc(g.title || '')}<br><span class="src">${esc(g.owner || 'no owner')} &middot; ${esc(g.status || '')} &middot; ${g.state === 'closed' ? '<span class="ok">closed</span>' : 'open'}</span>`;
+      return `<p data-gap="${esc(g.id)}" data-state="${esc(g.state)}">${num} ${what}</p>`;
+    }).join('');
+    el.innerHTML = fold(open, open ? 'open' : 'closed', rows);
+  } catch (e) {
+    el.innerHTML = fold(null, 'unread', `<p class="bad">could not read Gaps: ${esc(String(e && e.message || e))}</p>`);
+  }
+}
 
 // #5021 — Conformance: every policy that applies to this domain (global, or appliesTo it)
 // with its last policy-validate --domain result, read live from the policies door and the
