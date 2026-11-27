@@ -56,7 +56,12 @@ EDGES = [
 ]
 # every role session reads principles at its start (chorus-hooks principles_inject, session
 # lifecycle); roles is the domain that owns session lifecycle, so roles consumes principles
-CONSUMES = [("roles", "principles")]
+#
+# NOT WRITTEN HERE (land of 2026-11-27 06:17 refused it): DomainShape gives consumes an sh:or, so
+# the door serves it as a repeated text field, and "a patch sets one value (a repeated text field
+# still goes through PUT)". No role verb does a PUT. The row waits for consumes to become an edge
+# in the model (Silas); until then principles shows no reader. Add ("roles", "principles") back then.
+CONSUMES = []
 
 
 def as_list(v):
