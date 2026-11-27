@@ -21,7 +21,10 @@ const RELEASES = '/api/chorus/domain/principles/releases';
 const TESTS = '/api/chorus/domain/principles/tests';
 const ALERTS = '/api/chorus/domain/principles/alerts';
 const FILES = '/owl/code/files?hasDomain=principles&limit=5000';
-const ENDPOINTS = '/owl/code/endpoints?hasDomain=principles&limit=5000';
+// #5042 — routes are read from the domain's OpenAPI documents, as the model door's discovery names them
+const DISCOVERY = '/owl/';
+const DOC = '/owl/v1/principles/principles/openapi.json';
+const LOOM_DOC = '/owl/v1/loom/pages/openapi.json';
 const COMPLETENESS = '/owl/domains/domains/principles/completeness';
 
 const card = (id: string, status: string) => ({ id, title: `card ${id}`, owner: 'wren', status, priority: 'P2' });
@@ -37,7 +40,12 @@ function live(over: Record<string, unknown> = {}): Record<string, unknown> {
     [TESTS]: { _meta: { count: 26 }, data: { domain: 'principles', tests: 26, total: 175 } },
     [ALERTS]: { _meta: { count: 3 }, data: { alerts: [{}, {}, {}] } },
     [FILES]: { data: [row(1), row(2), row(3, ['principles', 'loom'])] },
-    [ENDPOINTS]: { data: [row(1), row(2)] },
+    [DISCOVERY]: { kind: 'Discovery', primitives: [
+      { kind: 'Principle', collection: '/v1/principles/principles', openapi: '/v1/principles/principles/openapi.json' },
+      { kind: 'Page', collection: '/v1/loom/pages', openapi: '/v1/loom/pages/openapi.json' },
+    ] },
+    [DOC]: { openapi: '3.1.0', paths: { '/principles/principles': { get: {} }, '/principles/principles/{name}': { get: {} } } },
+    [LOOM_DOC]: { openapi: '3.1.0', paths: { '/loom/pages': { get: {}, post: {} } } },
     ...over,
   };
 }
@@ -87,6 +95,15 @@ describe('fetchChorusDomainPipeline (#5044: each row reads what the fold beside 
     expect(s.build.detail).toEqual({ code: 3, tests: 26, endpoints: 2 });
     expect(s.build.summary).toBe('3 files, 26 test files, 2 routes');
     expect(s.build.status).toBe('complete');
+  });
+
+  test('NEGATIVE: another domain\'s OpenAPI document is not counted, and an unreadable document leaves the row unread', async () => {
+    const d = reads(live());
+    const s = byName(await pipeline(d, 'principles'));
+    expect(d.asked).not.toContain(LOOM_DOC);
+    expect(s.build.detail.endpoints).toBe(2);
+    const broken = byName(await pipeline(reads(live({ [DOC]: null })), 'principles'));
+    expect(broken.build.summary).toBe('could not read routes');
   });
 
   test('NEGATIVE: a row of another domain that the door sent anyway is not counted', async () => {
@@ -139,7 +156,7 @@ describe('fetchChorusDomainPipeline (#5044: each row reads what the fold beside 
 
   test('NEGATIVE: build with one of its three reads failed does not print a count for it', async () => {
     const routes = live();
-    delete routes[ENDPOINTS];
+    delete routes[DISCOVERY];
     const s = byName(await pipeline(reads(routes), 'principles'));
     expect(s.build.status).toBe('could not read');
     expect(s.build.summary).toBe('could not read routes');
@@ -150,7 +167,7 @@ describe('fetchChorusDomainPipeline (#5044: each row reads what the fold beside 
     await pipeline(d, 'principles');
     expect(d.asked).not.toContain('/api/chorus/domain/principles');
     expect(d.asked.filter((u) => u.includes('/api/athena/domains'))).toEqual([]);
-    expect(d.asked).toEqual(expect.arrayContaining([CARDS, RELEASES, TESTS, ALERTS, FILES, ENDPOINTS]));
+    expect(d.asked).toEqual(expect.arrayContaining([CARDS, RELEASES, TESTS, ALERTS, FILES, DISCOVERY, DOC]));
   });
 
   test('statuses are plain words: no underscore reaches the page', async () => {

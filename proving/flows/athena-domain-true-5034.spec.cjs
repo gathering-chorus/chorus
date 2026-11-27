@@ -573,3 +573,123 @@ test.describe('#5045 AC1 the tile shows the API version in production, never a t
   });
 });
 }
+
+// =============================================================================================
+// #5042 AC3 — Jeff on the principles page, 2026-11-25 10:31: "api contract must be link to
+// generated open api doc". The API Contract fold links to the OpenAPI document each of the
+// domain's collections serves, and lists the routes that document describes. It listed the code
+// crawl's endpoints: chorus-api's old Loom routes (/api/loom/principles, /loom, /loom/:role).
+// Read from the drawn page through the sign-in door; the link is followed through the door too.
+// Before the land the live door serves no document: lib/landed-openapi-5042.json stands in the
+// landed answers (the merge's entry and the generator's own file), off in the nightly.
+// NEGATIVE: the page as it was before this card is red, named, on the same reads.
+{
+  const { startDoor, signedInPage, LANDED_OPENAPI: LANDED } = require('./lib/athena-page-5034.cjs');
+  const fsx = require('fs');
+  const pathx = require('path');
+  const BEFORE_5042 = 'bb3e8d009390bc6ab5ed1515b8a09c659f6705a5';
+
+  /** The API Contract fold as drawn: its document links and its route rows. */
+  const drawnContract = () => {
+    const fold = [...document.querySelectorAll('#main details.fold')].find((f) => /^\s*API Contract/.test(f.querySelector('summary')?.textContent || ''));
+    if (!fold) return null;
+    const clean = (n) => (n?.textContent || '').replace(/\s+/g, ' ').trim();
+    return {
+      links: [...fold.querySelectorAll('a[data-openapi]')].map((a) => a.href),
+      rows: [...fold.querySelectorAll('tr')].filter((tr) => tr.querySelector('td')).map((tr) => `${clean(tr.cells[0])} ${clean(tr.cells[1])}`),
+    };
+  };
+
+  /** What is wrong with the fold, given each linked document as the door answered it. */
+  function contractFaults(drawn, docs) {
+    if (!drawn) return ['the page draws no API Contract fold'];
+    const faults = [];
+    if (!drawn.links.length) faults.push('the fold links to no OpenAPI document');
+    const want = [];
+    for (const [href, d] of Object.entries(docs)) {
+      if (d.status !== 200 || d.body?.openapi !== '3.1.0') { faults.push(`${href} answered ${d.status}, not an OpenAPI 3.1 document`); continue; }
+      for (const [route, ops] of Object.entries(d.body.paths || {})) for (const m of Object.keys(ops)) want.push(`${m.toUpperCase()} ${route}`);
+    }
+    const extra = drawn.rows.filter((r) => !want.includes(r));
+    const missing = want.filter((r) => !drawn.rows.includes(r));
+    if (extra.length) faults.push(`the fold lists routes no linked document describes: ${extra.join(', ')}`);
+    if (missing.length) faults.push(`the fold leaves out routes its document describes: ${missing.join(', ')}`);
+    return faults;
+  }
+
+  /** Stand in the landed discovery entry and document under the door (off in the nightly: LANDED is empty). */
+  async function landedThroughDoor(page) {
+    for (const l of LANDED) {
+      await page.route((url) => url.pathname.endsWith('/owl' + l.openapi), (route) =>
+        route.fulfill({ status: 200, contentType: 'application/json', body: fsx.readFileSync(pathx.resolve(__dirname, '..', '..', l.file), 'utf8') }));
+    }
+    if (!LANDED.length) return;
+    await page.route((url) => url.pathname.endsWith('/owl/'), async (route) => {
+      const live = await route.fetch();
+      const body = await live.json();
+      for (const p of body.primitives || []) { const l = LANDED.find((x) => x.kind === p.kind); if (l && p.openapi === undefined) p.openapi = l.openapi; }
+      return route.fulfill({ response: live, json: body });
+    });
+  }
+
+  async function readContract(page, door) {
+    await page.waitForFunction(() => [...document.querySelectorAll('#main details.fold summary')].some((s) => /^\s*API Contract \(\d+\)/.test(s.textContent)), null, { timeout: 180_000 });
+    const drawn = await page.evaluate(drawnContract);
+    const docs = {};
+    for (const href of drawn?.links || []) {
+      // followed as the reader's click would be: through the door, signed in (the stand-in answers it before the land)
+      const body = await page.evaluate(async (u) => { const r = await fetch(u); return { status: r.status, body: await r.json().catch(() => null) }; }, href);
+      docs[href] = body;
+    }
+    return { drawn, docs };
+  }
+
+  test.describe('#5042 AC3 the API Contract fold links to the generated OpenAPI document', () => {
+    test.setTimeout(420_000);
+    let door;
+    test.beforeAll(async () => { door = await startDoor({ mount: '/chorus' }); });
+    test.afterAll(async () => { if (door) door.stop(); });
+
+    test('through the sign-in door: the fold links each document, the link answers it, and the rows are its routes', async ({ browser }) => {
+      const { page, context } = await signedInPage(browser, door);
+      try {
+        await landedThroughDoor(page);
+        await page.goto(`${door.origin}${door.mount}/athena/domain.html?d=principles`, { waitUntil: 'domcontentloaded' });
+        const { drawn, docs } = await readContract(page, door);
+        const faults = contractFaults(drawn, docs);
+        expect(faults, faults.join('\n')).toEqual([]);
+        expect(drawn.links.every((h) => h.startsWith(door.origin + door.mount + '/owl/')), `a document link leaves the door: ${drawn.links}`).toBe(true);
+        expect(drawn.rows.some((r) => /\/api\/loom/.test(r)), `the old Loom routes are still listed: ${drawn.rows}`).toBe(false);
+      } finally { await context.close(); }
+    });
+
+    // the dead-link check reads the stand-in for a stood-in route only (lib deadLinkReason): it replaces
+    // the live GET of /owl/v1/principles/principles/openapi.json, which answers 404 until the land
+    test('NEGATIVE: the dead-link check still names a route that opens nothing, and a stood-in route whose document is gone', async ({ page }) => {
+      const { deadLinks } = require('./lib/athena-page-5034.cjs');
+      const dead = await deadLinks(page, [`${BASE}/owl/v1/principles/nosuch/openapi.json`]);
+      expect(dead.join('\n'), 'a route no door answers was not named dead').toMatch(/nosuch\/openapi\.json — HTTP 404$/m);
+      if (!LANDED.length) return;   // the nightly: nothing is stood in, the live door answers
+      const file = LANDED[0].file;
+      LANDED[0].file = 'shaping/no-such-5042.openapi.json';
+      try {
+        const gone = await deadLinks(page, [`${BASE}/owl${LANDED[0].openapi}`]);
+        expect(gone.join('\n'), 'a stood-in route whose document is gone was not named dead').toMatch(/the stood-in document does not read/);
+      } finally { LANDED[0].file = file; }
+      expect(await deadLinks(page, [`${BASE}/owl${LANDED[0].openapi}`]), 'the stood-in route with its document is dead').toEqual([]);
+    });
+
+    test('NEGATIVE: the fold as it was before this card is red, named', async ({ browser }) => {
+      const { page, context } = await signedInPage(browser, door);
+      try {
+        await landedThroughDoor(page);
+        const { serveAthenaFilesAsOf } = require('./lib/athena-page-5034.cjs');
+        await serveAthenaFilesAsOf(page, door.origin + door.mount, BEFORE_5042);
+        await page.goto(`${door.origin}${door.mount}/athena/domain.html?d=principles`, { waitUntil: 'domcontentloaded' });
+        const { drawn, docs } = await readContract(page, door);
+        const faults = contractFaults(drawn, docs);
+        expect(faults, 'the old fold passed: this check cannot tell it from the fix').toContain('the fold links to no OpenAPI document');
+      } finally { await context.close(); }
+    });
+  });
+}

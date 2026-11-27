@@ -57,12 +57,16 @@ pub struct ClassDef {
     pub store: &'static str,
     /// #4742 — homed in another product and composed here: read-only
     pub composed: bool,
+    /// #5042 — the class's own OpenAPI document (surfaces/<Class>.openapi.json), served at
+    /// <route>/openapi.json; a composed class has none here (its home product serves it)
+    pub openapi: Option<&'static str>,
     pub fields: &'static [FieldDef],
 }
 
 pub const CLASSES: &[ClassDef] = &[
     ClassDef {
         domain: "principles", name: "Principle", kind: "principle", plural: "principles", segment: "principles", graph: "urn:chorus:domains:principles", store: "graph", composed: false,
+        openapi: Some(include_str!("../surfaces/Principle.openapi.json")),
         fields: &[
             FieldDef { name: "comment", iris: &["https://jeffbridwell.com/chorus#comment", "http://www.w3.org/2000/01/rdf-schema#comment"], link: false, datatype: "string", required: true, many: false, allowed: &[] },
             FieldDef { name: "label", iris: &["https://jeffbridwell.com/chorus#label", "http://www.w3.org/2000/01/rdf-schema#label"], link: false, datatype: "string", required: true, many: false, allowed: &[] },

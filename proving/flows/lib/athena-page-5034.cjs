@@ -202,13 +202,25 @@ const isModelViewPath = (p) => p === '/domains' || p.startsWith('/domains/');
 // byte for byte, or not exist.
 const LANDED_ENTRIES = [];
 const LIVE_DISCOVERY = process.env.ATHENA_DISCOVERY === 'live' || process.env.WERK_TEST_NIGHTLY === '1';
+// #5042 — the generated door's OpenAPI route, as the merge lists it once the door that serves it is
+// live, and the document itself: the file the generator wrote, which the door embeds. Both stand in
+// only until the land (the same list feeds platform/api/tests/lib/own-routes-5044.ts).
+const LANDED_OPENAPI = LIVE_DISCOVERY ? [] : JSON.parse(fs.readFileSync(path.join(__dirname, 'landed-openapi-5042.json'), 'utf8'));
 function asLanded(body) {
   if (LIVE_DISCOVERY) return body;
   for (const p of LANDED_ENTRIES) if (!(body.primitives || []).some((x) => x.kind === p.kind)) (body.primitives ||= []).push(p);
+  for (const p of body.primitives || []) { const l = LANDED_OPENAPI.find((x) => x.kind === p.kind); if (l && p.openapi === undefined) p.openapi = l.openapi; }
   return body;
+}
+async function serveOpenapiAsLanded(page) {
+  for (const l of LANDED_OPENAPI) {
+    await page.route((url) => url.pathname.endsWith('/owl' + l.openapi), (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: fs.readFileSync(path.join(ROOT, l.file), 'utf8') }));
+  }
 }
 async function serveDiscoveryAsLanded(page, omit = []) {
   if (LIVE_DISCOVERY && !omit.length) return;
+  await serveOpenapiAsLanded(page);
   await page.route((url) => url.origin === new URL(BASE).origin && url.pathname === '/owl/', async (route) => {
     const live = await route.fetch();
     const body = asLanded(await live.json());
@@ -300,6 +312,13 @@ async function deadLinkReason(page, href) {
     } catch (e) {
       return `did not draw: ${String(e.message || e).split('\n')[0]}`;
     } finally { await tab.close(); }
+  }
+  // #5042 — before the land a generated door's OpenAPI route is stood in (LANDED_OPENAPI): the link
+  // answers what the stand-in serves, the generator's own file, which must exist and parse
+  const landed = LANDED_OPENAPI.find((l) => u.pathname.endsWith('/owl' + l.openapi));
+  if (landed) {
+    try { return JSON.parse(fs.readFileSync(path.join(ROOT, landed.file), 'utf8')).openapi ? null : 'the stood-in document is not OpenAPI'; }
+    catch (e) { return `the stood-in document does not read: ${e.message}`; }
   }
   try {
     const r = await page.request.get(href, { timeout: 20_000 });
@@ -440,4 +459,4 @@ async function openOldDomainPage(page, under, { domain = DOMAIN } = {}) {
     && !/loading the materialized view|loading live from the model|running the domain lint/.test(document.body.innerText), null, { timeout: 180_000 });
 }
 
-module.exports = { serveOwnGaps, serveOwnRoutes, ownControl, ownSettled, ownMeasured, ownPipeline, serveLintOnce, BEFORE_5041, athenaFileAt, serveAthenaFilesAsOf, openOldDomainPage, LIVE_DISCOVERY, ROOT, ATHENA_DIR, BASE, DOMAIN, PHONE, ownAthenaFile, serveOwnAthenaFiles, serveOwnModelView, serveDiscoveryAsLanded, openDomainPage, openModelView, sameOriginLinks, deadLinks, doorTruth, startDoor, signedInPage };
+module.exports = { LANDED_OPENAPI, serveOwnGaps, serveOwnRoutes, ownControl, ownSettled, ownMeasured, ownPipeline, serveLintOnce, BEFORE_5041, athenaFileAt, serveAthenaFilesAsOf, openOldDomainPage, LIVE_DISCOVERY, ROOT, ATHENA_DIR, BASE, DOMAIN, PHONE, ownAthenaFile, serveOwnAthenaFiles, serveOwnModelView, serveDiscoveryAsLanded, openDomainPage, openModelView, sameOriginLinks, deadLinks, doorTruth, startDoor, signedInPage };

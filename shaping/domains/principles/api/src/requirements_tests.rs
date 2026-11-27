@@ -368,3 +368,38 @@ fn negative_proof_only_get_reads_the_discovery() {
         assert_ne!(out["kind"], "Discovery", "{method} / answered the discovery: {out}");
     }
 }
+
+// #5042 — Jeff 11-25 10:31: "api contract must be link to generated open api doc". Every
+// collection this API owns serves its own OpenAPI document at <collection>/openapi.json,
+// unsigned, and the discovery names that route.
+#[test]
+fn every_owned_collection_serves_its_openapi_document() {
+    let store = Mem(Mutex::new(BTreeMap::new()));
+    let who = Box::leak(Box::new(auth::build("http://127.0.0.1:9/", |_| None)));
+    let private = Ctx { store: &store, who, events: String::new(), reads_public: false };
+    let (_, disc) = crate::route(&private, "GET", "/", None, "");
+    for c in CLASSES.iter().filter(|c| !c.composed) {
+        let at = format!("{}/openapi.json", crate::model::route_of(c));
+        let (code, out) = crate::route(&private, "GET", &at, None, "");
+        assert_eq!(code, 200, "{at}: {out}");
+        assert_eq!(out["openapi"], "3.1.0", "{at}: {out}");
+        assert!(out["paths"].get(crate::model::route_of(c).as_str()).is_some(), "{at} does not describe its own route: {out}");
+        let listed = disc["primitives"].as_array().unwrap().iter().any(|p| p["openapi"] == at.as_str());
+        assert!(listed, "discovery does not name {at}: {disc}");
+    }
+}
+
+/// NEGATIVE PROOF: a route that is no collection of this API, and a composed class (its home
+/// product serves its document), answer no document.
+#[test]
+fn negative_proof_no_document_where_no_owned_collection_is() {
+    let store = Mem(Mutex::new(BTreeMap::new()));
+    let who = Box::leak(Box::new(auth::build("http://127.0.0.1:9/", |_| None)));
+    let public = Ctx { store: &store, who, events: String::new(), reads_public: true };
+    let (code, out) = crate::route(&public, "GET", "/nosuch/nosuch/openapi.json", None, "");
+    assert_eq!(code, 404, "{out}");
+    for c in CLASSES.iter().filter(|c| c.composed) {
+        let (code, out) = crate::route(&public, "GET", &format!("{}/openapi.json", crate::model::route_of(c)), None, "");
+        assert_eq!(code, 404, "composed {} served a document: {out}", c.name);
+    }
+}

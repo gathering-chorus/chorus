@@ -17,7 +17,7 @@ import type { AddressInfo } from 'net';
 import app from '../../src/server';
 import { resetGeneratedApisCache, setReadTimeoutMs } from '../../src/handlers/owl-generated-apis';
 
-type Primitive = { kind: string; collection: string; composed?: boolean };
+type Primitive = { kind: string; collection: string; composed?: boolean; openapi?: string };
 type Discovery = { kind?: string; count?: number; primitives?: Primitive[]; unreachable?: string[] };
 type Echo = { from: string; url: string };
 type Row = Record<string, unknown>;
@@ -148,6 +148,22 @@ describe('#5034 — /owl/ discovery lists what the generated APIs serve', () => 
       expect(r.body.count).toBe(3);
       expect(r.body.unreachable).toBeUndefined();
     }
+  });
+
+  // #5042 — the generated door names its own OpenAPI route; the merged entry names it under /v1,
+  // the address the model door forwards, as athena-make's entries do. NEGATIVE: an entry with no
+  // document gets no openapi field, never one made up from its collection.
+  test('a generated OpenAPI route is listed under /v1 beside its collection; none is made up', async () => {
+    principlesPrimitives = [
+      { kind: 'Principle', collection: '/principles/principles', composed: false, openapi: '/principles/principles/openapi.json' },
+      { kind: 'Turn', collection: '/principles/turns', composed: true },
+    ];
+    rows(generated('principles', bindOf(principles)));
+    resetGeneratedApisCache();
+    const r = await hit<Discovery>(app.listen(0), '/owl/');
+    expect(r.body.primitives?.find((p) => p.kind === 'Principle')).toEqual(
+      { kind: 'Principle', collection: '/v1/principles/principles', composed: false, openapi: '/v1/principles/principles/openapi.json' });
+    expect(r.body.primitives?.find((p) => p.kind === 'Turn')).toEqual({ kind: 'Turn', collection: '/v1/principles/turns', composed: true });
   });
 
   test('NEGATIVE: no Domain row carries a server.bind Property → Principle is absent, and its path stays on athena-make', async () => {

@@ -46,8 +46,28 @@ import { fetchDomainGaps, type GapsDeps } from '../../src/handlers/domain-gaps';
 import type { BoardCard } from '../../src/handlers/domain-cards';
 
 const LIVE = (process.env.ATHENA_URL || 'http://localhost:3340').replace(/\/+$/, '');
+// #5042 — before the land the live principles door serves no OpenAPI document. Until then the
+// discovery entry and the document are the landed answers: the entry as the merge writes it and the
+// document the generator wrote (the file the door embeds). Off in the nightly and the after-the-land
+// check, which read the server as served. The same list feeds the page's stand-in (athena-page-5034.cjs).
+const LIVE_DISCOVERY = process.env.ATHENA_DISCOVERY === 'live' || process.env.WERK_TEST_NIGHTLY === '1';
+type Landed = { kind: string; openapi: string; file: string };
+const LANDED_OPENAPI: Landed[] = LIVE_DISCOVERY ? [] : JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '..', '..', 'proving', 'flows', 'lib', 'landed-openapi-5042.json'), 'utf8'));
+async function liveRead(rel: string): Promise<unknown> {
+  const doc = LANDED_OPENAPI.find((l) => `/owl${l.openapi}` === rel);
+  if (doc) return JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '..', '..', doc.file), 'utf8'));
+  const resp = await fetch(`${LIVE}${rel}`, { signal: AbortSignal.timeout(30_000) });
+  if (!resp.ok) return null;
+  const body = (await resp.json()) as { primitives?: Array<Record<string, unknown>> };
+  if (rel === '/owl/' && Array.isArray(body.primitives)) {
+    for (const p of body.primitives) { const l = LANDED_OPENAPI.find((x) => x.kind === p.kind); if (l && p.openapi === undefined) p.openapi = l.openapi; }
+  }
+  return body;
+}
 const ROOT = path.resolve(__dirname, '..', '..', '..', '..');
-const SHARED = path.join(os.tmpdir(), 'own-routes-5044-lint');   // one real lint for every worker
+// one real lint for every worker OF THIS ACCOUNT (#5042: a role's run read EACCES on the file another
+// role's account had written in a /tmp both share; the lint is per account, so its file is too)
+const SHARED = path.join(os.tmpdir(), `own-routes-5044-lint-${os.userInfo().username}`);
 
 let clockAdd = 0;
 let lint: 'real' | 'hold' | 'empty' | 'down' = 'real';
@@ -143,7 +163,7 @@ const server = http.createServer(async (req, res) => {
       const r = await fetchChorusDomainPipeline({
         fetcher: async (rel) => {
           if (fail && rel.includes(fail)) return null;
-          try { const resp = await fetch(`${LIVE}${rel}`, { signal: AbortSignal.timeout(30_000) }); return resp.ok ? await resp.json() : null; } catch { return null; }
+          try { return await liveRead(rel); } catch { return null; }
         },
         envelope: (queryName, data, durationMs, extra) => ({ _meta: { source: 'athena', query_name: queryName, duration_ms: durationMs, ...extra }, data }),
       }, domain);

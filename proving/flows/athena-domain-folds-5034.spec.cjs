@@ -430,7 +430,9 @@ test.describe(`#5041 the folds of the ${DOMAIN} ops view come in the reader's or
     await page.setViewportSize(PHONE);
     await openOldDomainPage(page, BASE);
     const faults = orderFaults(await page.evaluate(foldsAsDrawn)).join('\n');
-    expect(faults, 'the old order').toMatch(/^order: drawn Vocabulary > Design doc > Gaps > Conformance > Services > Cards > /m);
+    // #5042 (Wren, 11-27) — the old page draws from live rows; #5045 removed principles' design doc and
+    // gaps, so those two folds are optional here. The old order itself (Conformance before Services) is still caught.
+    expect(faults, 'the old order').toMatch(/^order: drawn Vocabulary > (Design doc > )?(Gaps > )?Conformance > Services > Cards > /m);
     expect(faults, 'the second list of files').toMatch(/^a fold the order does not name: "Files"$/m);
     expect(faults, 'the embedded Model fold').toMatch(/^a fold the order does not name: "Model/m);
     expect(faults, 'the old Code fold started open').toMatch(/^Code starts open/m);
