@@ -46,23 +46,19 @@ import { fetchDomainGaps, type GapsDeps } from '../../src/handlers/domain-gaps';
 import type { BoardCard } from '../../src/handlers/domain-cards';
 
 const LIVE = (process.env.ATHENA_URL || 'http://localhost:3340').replace(/\/+$/, '');
-// #5042 — before the land the live principles door serves no OpenAPI document. Until then the
-// discovery entry and the document are the landed answers: the entry as the merge writes it and the
-// document the generator wrote (the file the door embeds). Off in the nightly and the after-the-land
-// check, which read the server as served. The same list feeds the page's stand-in (athena-page-5034.cjs).
-const LIVE_DISCOVERY = process.env.ATHENA_DISCOVERY === 'live' || process.env.WERK_TEST_NIGHTLY === '1';
-type Landed = { kind: string; openapi: string; file: string };
-const LANDED_OPENAPI: Landed[] = LIVE_DISCOVERY ? [] : JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '..', '..', 'proving', 'flows', 'lib', 'landed-openapi-5042.json'), 'utf8'));
+// #5042 — before the land the live principles door serves no OpenAPI document. The pipeline's sibling
+// reads meet the same stand-in the page meets: the one in proving/flows/lib/athena-page-5034.cjs
+// (asLanded for the discovery, landedDocument for the document; both off in the nightly).
+const landed = require(path.resolve(__dirname, '..', '..', '..', '..', 'proving/flows/lib/athena-page-5034.cjs')) as {
+  asLanded: (body: unknown) => unknown; landedDocument: (pathname: string) => string | null;
+};
 async function liveRead(rel: string): Promise<unknown> {
-  const doc = LANDED_OPENAPI.find((l) => `/owl${l.openapi}` === rel);
-  if (doc) return JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '..', '..', doc.file), 'utf8'));
+  const doc = landed.landedDocument(rel);
+  if (doc !== null) return JSON.parse(doc);
   const resp = await fetch(`${LIVE}${rel}`, { signal: AbortSignal.timeout(30_000) });
   if (!resp.ok) return null;
-  const body = (await resp.json()) as { primitives?: Array<Record<string, unknown>> };
-  if (rel === '/owl/' && Array.isArray(body.primitives)) {
-    for (const p of body.primitives) { const l = LANDED_OPENAPI.find((x) => x.kind === p.kind); if (l && p.openapi === undefined) p.openapi = l.openapi; }
-  }
-  return body;
+  const body: unknown = await resp.json();
+  return rel === '/owl/' ? landed.asLanded(body) : body;
 }
 const ROOT = path.resolve(__dirname, '..', '..', '..', '..');
 // one real lint for every worker OF THIS ACCOUNT (#5042: a role's run read EACCES on the file another

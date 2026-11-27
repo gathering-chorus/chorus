@@ -585,8 +585,6 @@ test.describe('#5045 AC1 the tile shows the API version in production, never a t
 // NEGATIVE: the page as it was before this card is red, named, on the same reads.
 {
   const { startDoor, signedInPage, LANDED_OPENAPI: LANDED } = require('./lib/athena-page-5034.cjs');
-  const fsx = require('fs');
-  const pathx = require('path');
   const BEFORE_5042 = 'bb3e8d009390bc6ab5ed1515b8a09c659f6705a5';
 
   /** The API Contract fold as drawn: its document links and its route rows. */
@@ -617,20 +615,8 @@ test.describe('#5045 AC1 the tile shows the API version in production, never a t
     return faults;
   }
 
-  /** Stand in the landed discovery entry and document under the door (off in the nightly: LANDED is empty). */
-  async function landedThroughDoor(page) {
-    for (const l of LANDED) {
-      await page.route((url) => url.pathname.endsWith('/owl' + l.openapi), (route) =>
-        route.fulfill({ status: 200, contentType: 'application/json', body: fsx.readFileSync(pathx.resolve(__dirname, '..', '..', l.file), 'utf8') }));
-    }
-    if (!LANDED.length) return;
-    await page.route((url) => url.pathname.endsWith('/owl/'), async (route) => {
-      const live = await route.fetch();
-      const body = await live.json();
-      for (const p of body.primitives || []) { const l = LANDED.find((x) => x.kind === p.kind); if (l && p.openapi === undefined) p.openapi = l.openapi; }
-      return route.fulfill({ response: live, json: body });
-    });
-  }
+  /** The one stand-in (lib serveDiscoveryAsLanded), under the door's mount; off in the nightly. */
+  const landedThroughDoor = (page, door) => serveDiscoveryAsLanded(page, [], door.origin + door.mount);
 
   async function readContract(page, door) {
     await page.waitForFunction(() => [...document.querySelectorAll('#main details.fold summary')].some((s) => /^\s*API Contract \(\d+\)/.test(s.textContent)), null, { timeout: 180_000 });
@@ -653,7 +639,7 @@ test.describe('#5045 AC1 the tile shows the API version in production, never a t
     test('through the sign-in door: the fold links each document, the link answers it, and the rows are its routes', async ({ browser }) => {
       const { page, context } = await signedInPage(browser, door);
       try {
-        await landedThroughDoor(page);
+        await landedThroughDoor(page, door);
         await page.goto(`${door.origin}${door.mount}/athena/domain.html?d=principles`, { waitUntil: 'domcontentloaded' });
         const { drawn, docs } = await readContract(page, door);
         const faults = contractFaults(drawn, docs);
@@ -682,7 +668,7 @@ test.describe('#5045 AC1 the tile shows the API version in production, never a t
     test('NEGATIVE: the fold as it was before this card is red, named', async ({ browser }) => {
       const { page, context } = await signedInPage(browser, door);
       try {
-        await landedThroughDoor(page);
+        await landedThroughDoor(page, door);
         const { serveAthenaFilesAsOf } = require('./lib/athena-page-5034.cjs');
         await serveAthenaFilesAsOf(page, door.origin + door.mount, BEFORE_5042);
         await page.goto(`${door.origin}${door.mount}/athena/domain.html?d=principles`, { waitUntil: 'domcontentloaded' });
