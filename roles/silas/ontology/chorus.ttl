@@ -796,6 +796,11 @@ chorus:security chorus:hosts chorus:service-identity .
 # authN/authZ cut, exact domain IRI to confirm at gate-arch.
 chorus:roles chorus:hosts chorus:service-loom .
 
+# #5042 — each generated API is its own Service, hosted by the domain it is generated for (a
+# product's by the first domain it owns: Silas, 11-27). def: service-instances.ttl.
+chorus:principles chorus:hosts chorus:service-principles-api .
+chorus:awareness chorus:hosts chorus:service-pulse-api .
+
 # The pulse DOMAIN is RETIRED (#4010, Jeff 2026-08-25: "pulse is a product not a
 # domain... we remove the domains and keep the product compositions").
 #

@@ -379,7 +379,10 @@ test.describe(`#5041 the folds of the ${DOMAIN} ops view come in the reader's or
   // the Gaps fold. Every test here was green. This one reads where things sit: each fold's
   // heading, label included, is inside the fold's own box, and no fold lies over the next.
   test('every fold holds its own heading, and no fold lies over the next one, as the page starts', async ({ page }) => {
-    await openAsItStarts(page);
+    // #5042 (Wren, 11-27) — the negative below needs Conformance closed; live principles has a red
+    // policy, so it started open. The answer is planted, as the next test does.
+    await page.route(isPoliciesRead, policiesAnswer(['pass', 'pass', 'pass']));
+    await openAsItStarts(page, { plantedPolicies: true });
     const overlaps = () => page.evaluate(() => {
       const folds = [...document.querySelectorAll('details.fold')];
       const name = (f) => (f.querySelector(':scope > summary')?.childNodes[0]?.textContent || '').trim().replace(/\s*\(.*$/, '');
