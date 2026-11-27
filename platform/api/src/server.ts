@@ -49,6 +49,7 @@ import { loadSensors, renderSensorsSection } from './handlers/sensors-panel';
 import { findRun, buildReadout, renderReadoutText, previousFinished, type NightlyRunRecord } from './handlers/nightly-readout';
 import { fetchLoomAnalytics, LoomCardRow } from './handlers/loom-analytics';
 import { domainsViewStatus, generatedApis, mergeDiscovery, routeOwl } from './handlers/owl-generated-apis'; // #5034
+import { API_DOCS_MOUNT, apiDocsViewer } from './handlers/api-docs-viewer'; // #5042
 
 /** Extract a string message from an unknown error. #2463 wave 1: replaces `catch (err: any)` + `err.message`. */
 function errMsg(e: unknown): string {
@@ -2586,6 +2587,15 @@ app.use('/owl', async (req: Request, res: Response) => {
     res.status(502).json({ error: `${route.upstream} unreachable through the proxy` });
   }
 });
+
+// #5042 — the API Contract link opens a page drawn from the generated API's OpenAPI document
+// (swagger-ui-express, Gathering's viewer), read through the same routing as /owl; read-only.
+app.use(`${API_DOCS_MOUNT}/:domain/:collection`, ...apiDocsViewer(async (owlPath) => {
+  const owlUpstream = process.env.OWL_UPSTREAM || 'http://127.0.0.1:3360';
+  const apis = await generatedApis(owlUpstream, fetch, PORT);
+  const r = await fetch(routeOwl(owlPath, apis, owlUpstream).target, { headers: { Accept: 'application/json' } });
+  return { status: r.status, body: r.ok ? await r.json().catch(() => null) : null };
+}));
 
 // ── same-origin SPARQL read proxy (#4004) ────────────────────────────
 // Jeff's 2026-08-25 phone photo: the ontology ER page renders its frame and then

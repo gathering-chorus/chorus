@@ -144,6 +144,21 @@ async function serveOwnGaps(page, gaps = {}) {
   });
 }
 
+// #5042 AC5 — the API page (/athena/api-docs/<domain>/<collection>/ and its viewer files), answered
+// by this tree's handler before the land (own-routes-5044.ts); off in the nightly and after the land.
+async function ownApiDocs(url) {
+  const u = new URL(url);
+  const o = await ownRoutes();
+  const r = await fetch(o.origin + u.pathname.slice(u.pathname.indexOf('/athena/api-docs/')) + u.search, { redirect: 'manual', signal: AbortSignal.timeout(60_000) });
+  const headers = {};
+  for (const k of ['content-type', 'location']) { const v = r.headers.get(k); if (v) headers[k] = v; }
+  return { status: r.status, headers, body: Buffer.from(await r.arrayBuffer()) };
+}
+async function serveOwnApiDocs(page) {
+  if (LIVE_DISCOVERY) return;
+  await page.route((url) => url.pathname.includes('/athena/api-docs/'), async (route) => route.fulfill(await ownApiDocs(route.request().url())));
+}
+
 async function serveOwnRoutes(page, { conformance = 'measured', always = false, gaps = {} } = {}) {
   // a test that states a row's gaps is steering the handler: it is served from this tree anywhere,
   // the nightly included. With nothing stated, the nightly and the after-the-land check read the live route.
@@ -321,6 +336,11 @@ async function deadLinkReason(page, href) {
       return `did not draw: ${String(e.message || e).split('\n')[0]}`;
     } finally { await tab.close(); }
   }
+  // #5042 AC5 — before the land the API page is this tree's (own-routes-5044.ts): its answer, not the live one
+  if (!LIVE_DISCOVERY && u.pathname.includes('/athena/api-docs/')) {
+    try { const a = await ownApiDocs(href); return a.status < 400 ? null : `HTTP ${a.status} (this tree's API page)`; }
+    catch (e) { return `no answer from this tree's API page: ${String(e.message || e).split('\n')[0]}`; }
+  }
   // #5042 — before the land a generated door's OpenAPI route is stood in (LANDED_OPENAPI): the link
   // answers what the stand-in serves, the generator's own file, which must exist and parse
   if (LANDED_OPENAPI.some((l) => u.pathname.endsWith('/owl' + l.openapi))) {
@@ -466,4 +486,4 @@ async function openOldDomainPage(page, under, { domain = DOMAIN } = {}) {
     && !/loading the materialized view|loading live from the model|running the domain lint/.test(document.body.innerText), null, { timeout: 180_000 });
 }
 
-module.exports = { LANDED_OPENAPI, asLanded, landedDocument, serveOwnGaps, serveOwnRoutes, ownControl, ownSettled, ownMeasured, ownPipeline, serveLintOnce, BEFORE_5041, athenaFileAt, serveAthenaFilesAsOf, openOldDomainPage, LIVE_DISCOVERY, ROOT, ATHENA_DIR, BASE, DOMAIN, PHONE, ownAthenaFile, serveOwnAthenaFiles, serveOwnModelView, serveDiscoveryAsLanded, openDomainPage, openModelView, sameOriginLinks, deadLinks, doorTruth, startDoor, signedInPage };
+module.exports = { serveOwnApiDocs, ownApiDocs, LANDED_OPENAPI, asLanded, landedDocument, serveOwnGaps, serveOwnRoutes, ownControl, ownSettled, ownMeasured, ownPipeline, serveLintOnce, BEFORE_5041, athenaFileAt, serveAthenaFilesAsOf, openOldDomainPage, LIVE_DISCOVERY, ROOT, ATHENA_DIR, BASE, DOMAIN, PHONE, ownAthenaFile, serveOwnAthenaFiles, serveOwnModelView, serveDiscoveryAsLanded, openDomainPage, openModelView, sameOriginLinks, deadLinks, doorTruth, startDoor, signedInPage };

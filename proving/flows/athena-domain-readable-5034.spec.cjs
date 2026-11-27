@@ -511,3 +511,112 @@ test.describe('#5045 AC5 the four parts read on a phone, through the sign-in doo
   });
 });
 }
+
+// =============================================================================================
+// #5042 AC5 — Jeff, 2026-11-27 16:26, after tapping API Contract opened the document itself:
+// "This is not open api to me… giving me a link to json is crap". Tapping the fold's link opens
+// a page he can read on his phone: the API's title, then each route with its method, drawn by
+// swagger-ui-express (Gathering's viewer at /api-docs) from the document the generated API
+// serves. Read-only: nothing on it sends a request ("Try it out" is off). Through the sign-in
+// door, so the viewer's own files pass the door's allow-list; for principles (principles-api)
+// and decisions (athena-make).
+// NEGATIVE: the raw document is red, named; the same page with "Try it out" on is red, named.
+{
+  const { startDoor, signedInPage, PHONE, serveOwnApiDocs, ownApiDocs, LIVE_DISCOVERY: LIVE } = require('./lib/athena-page-5034.cjs');
+
+  /** What the reader sees on the opened page, its first route opened as a tap would open it. */
+  async function readApiPage(page) {
+    await page.waitForFunction(() => document.contentType !== 'text/html' || document.querySelector('.swagger-ui .opblock, .api-docs-refused'), null, { timeout: 60_000 }).catch(() => {});
+    const first = page.locator('.swagger-ui .opblock-summary').first();
+    if (await first.count()) { await first.click(); await page.locator('.swagger-ui .opblock.is-open .opblock-section-header').first().waitFor({ timeout: 10_000 }); }
+    return page.evaluate(() => {
+      const clean = (n) => (n?.textContent || '').replace(/\s+/g, ' ').trim();
+      return {
+        type: document.contentType,
+        title: clean(document.querySelector('.swagger-ui .info .title')),
+        routes: [...document.querySelectorAll('.swagger-ui .opblock')].map((o) => `${clean(o.querySelector('.opblock-summary-method'))} ${clean(o.querySelector('.opblock-summary-path'))}`),
+        // a button that would send: "Try it out", or "Execute" once trying is on
+        tryItOut: [...document.querySelectorAll('.swagger-ui button')].some((b) => /try it out|execute/i.test(b.textContent)),
+        sideways: document.documentElement.scrollWidth - window.innerWidth,
+      };
+    });
+  }
+
+  /** What is wrong with the page a reader landed on. */
+  function apiPageFaults(p) {
+    if (p.type !== 'text/html') return [`the link opens the raw document (${p.type}), not a page`];
+    const f = [];
+    if (!p.title) f.push('the page names no API title');
+    if (!p.routes.length) f.push('the page draws no route');
+    if (p.routes.some((r) => !/^(GET|POST|PUT|PATCH|DELETE) \//.test(r))) f.push(`a route is drawn without its method: ${p.routes.join(', ')}`);
+    if (p.tryItOut) f.push('the page offers "Try it out": it can send a request');
+    if (p.sideways > 1) f.push(`the page scrolls sideways by ${p.sideways}px at phone width`);
+    return f;
+  }
+
+  async function openFromFold(page, door, domain) {
+    await page.goto(`${door.origin}${door.mount}/athena/domain.html?d=${domain}`, { waitUntil: 'domcontentloaded' });
+    const link = page.locator('#main details.fold a[data-openapi]').first();
+    await link.waitFor({ state: 'attached', timeout: 180_000 });
+    const href = await link.getAttribute('href');
+    await page.goto(new URL(href, page.url()).href, { waitUntil: 'domcontentloaded' });
+    return href;
+  }
+
+  test.describe('#5042 AC5 tapping API Contract opens a readable, read-only API page on a phone', () => {
+    test.setTimeout(420_000);
+    let door;
+    test.beforeAll(async () => { door = await startDoor({ mount: '/chorus' }); });
+    test.afterAll(async () => { if (door) door.stop(); });
+
+    for (const domain of ['principles', 'decisions']) {
+      test(`${domain}: the link opens a drawn page with its routes and nothing that sends`, async ({ browser }) => {
+        const { page, context } = await signedInPage(browser, door, PHONE);
+        try {
+          await serveOwnApiDocs(page);
+          const href = await openFromFold(page, door, domain);
+          expect(href, 'the link stays under the door').toMatch(/\/athena\/api-docs\/[a-z0-9-]+\/[a-z0-9-]+\/$/);
+          const p = await readApiPage(page);
+          const faults = apiPageFaults(p);
+          expect(faults, `${page.url()}\n${faults.join('\n')}`).toEqual([]);
+        } finally { await context.close(); }
+      });
+    }
+
+    test('the door passes the page and its viewer files (the allow-list holds /athena); an address off it is refused', async ({ browser }) => {
+      const { context } = await signedInPage(browser, door, PHONE);
+      try {
+        const refusedByDoor = async (r) => r.status() === 404 && /^path not shared\b/.test((await r.text()).trim());   // the door's own words for an address off its list
+        const at = `${door.origin}${door.mount}/athena/api-docs/principles/principles/`;
+        for (const f of ['', 'swagger-ui.css', 'swagger-ui-bundle.js', 'swagger-ui-standalone-preset.js', 'swagger-ui-init.js']) {
+          const r = await context.request.get(at + f, { timeout: 30_000, maxRedirects: 0 });
+          expect(await refusedByDoor(r), `the door refused ${at + f}`).toBe(false);
+        }
+        const off = await context.request.get(`${door.origin}${door.mount}/api-docs/principles/principles/`, { timeout: 30_000, maxRedirects: 0 });
+        expect(await refusedByDoor(off), `an address off the list was not refused: HTTP ${off.status()}`).toBe(true);
+      } finally { await context.close(); }
+    });
+
+    test('NEGATIVE: the raw document, and the same page with "Try it out" on, are each named', async ({ browser }) => {
+      const { page, context } = await signedInPage(browser, door, PHONE);
+      try {
+        await serveOwnApiDocs(page);
+        const raw = `${door.origin}${door.mount}/owl/v1/principles/principles/openapi.json`;
+        await page.goto(raw, { waitUntil: 'domcontentloaded' });
+        expect(apiPageFaults(await readApiPage(page)).join('\n')).toMatch(/opens the raw document/);
+        // the viewer's own init script, with submitting turned back on: what the page would be without the setting
+        await page.route((u) => u.pathname.endsWith('/athena/api-docs/principles/principles/swagger-ui-init.js'), async (route) => {
+          // the page's own answer (this tree's before the land, the live door's after it)
+          const r = LIVE ? await route.fetch().then(async (x) => ({ status: x.status(), headers: x.headers(), body: await x.body() })) : await ownApiDocs(route.request().url());
+          const body = r.body.toString().replace('"supportedSubmitMethods": []', '"supportedSubmitMethods": ["get","post","put","patch","delete"]');
+          await route.fulfill({ status: r.status, headers: r.headers, body });
+        });
+        await page.goto(`${door.origin}${door.mount}/athena/api-docs/principles/principles/`, { waitUntil: 'domcontentloaded' });
+        expect(apiPageFaults(await readApiPage(page)).join('\n')).toMatch(/offers "Try it out"/);
+        // and a link to an API page whose document does not exist leads nowhere (what the link checks read before the land)
+        const nowhere = LIVE ? (await context.request.get(`${door.origin}${door.mount}/athena/api-docs/principles/nosuch/`)).status() : (await ownApiDocs(`${door.origin}${door.mount}/athena/api-docs/principles/nosuch/`)).status;
+        expect(nowhere, 'an API page with no document answered as if it led somewhere').toBe(404);
+      } finally { await context.close(); }
+    });
+  });
+}

@@ -12,6 +12,8 @@
  *   GET /counts?domain=<d>     fetchDomainConformance; the lint is this tree's policy-validate
  *   GET /gaps?domain=<d>       #5045 fetchDomainGaps; &cards=<n,n> states the numbers the row holds,
  *                              &store=down fails the store (see the route below)
+ *   GET /athena/api-docs/<domain>/<collection>/…  #5042 AC5: the API page and its viewer files, by
+ *                              this tree's handler (the document is the live door's)
  *   GET /settled?domain=<d>    { settled: true } when the check running for the domain (if any) has
  *                              ended; { settled: false } after 45 s if it has not (ask again)
  *   GET /control?…             a test's hands on the clock and the lint (below); answers the state
@@ -43,6 +45,8 @@ import {
   fetchDomainConformance, domainCheckSettled, clearPolicyCountsCache, type PolicyRow, type PolicyCountsDeps,
 } from '../../src/handlers/policy-counts';
 import { fetchDomainGaps, type GapsDeps } from '../../src/handlers/domain-gaps';
+import express from 'express';
+import { API_DOCS_MOUNT, apiDocsViewer } from '../../src/handlers/api-docs-viewer';
 import type { BoardCard } from '../../src/handlers/domain-cards';
 
 const LIVE = (process.env.ATHENA_URL || 'http://localhost:3340').replace(/\/+$/, '');
@@ -149,9 +153,17 @@ const json = (res: http.ServerResponse, status: number, body: unknown): void => 
   res.end(JSON.stringify(body));
 };
 
+// #5042 AC5 — this tree's API page (the handler the route calls), its document read from the live door
+const viewer = express();
+viewer.use(`${API_DOCS_MOUNT}/:domain/:collection`, ...apiDocsViewer(async (owlPath) => {
+  const r = await fetch(`${LIVE}/owl${owlPath}`, { signal: AbortSignal.timeout(30_000) });
+  return { status: r.status, body: r.ok ? await r.json().catch(() => null) : null };
+}));
+
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url ?? '/', 'http://own');
+    if (url.pathname.startsWith(API_DOCS_MOUNT + '/')) return viewer(req, res);
     const domain = url.searchParams.get('domain') ?? '';
     if (url.pathname === '/pipeline') {
       // fail=<text>: a sibling read whose address holds the text does not answer (a test's negative proof)

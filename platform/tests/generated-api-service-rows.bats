@@ -60,7 +60,7 @@ PY
   echo "$output" | grep -q '^ADD    services/principles-api' || { echo "$output"; return 1; }
   echo "$output" | grep -q '^ADD    services/pulse-api' || { echo "$output"; return 1; }
   echo "$output" | grep -q '^CHANGE domains/principles' || { echo "$output"; return 1; }
-  echo "$output" | grep -q '^CHANGE domains/awareness .*"hosts": \["service-pulse-api"\]' || { echo "$output"; return 1; }
+  echo "$output" | grep -q '^CHANGE domains/awareness .*"hosts": \["pulse-api"\]' || { echo "$output"; return 1; }
   echo "$output" | grep -q '2 add, 2 change, 0 delete; 0 same' || { echo "$output"; return 1; }
 }
 
@@ -73,7 +73,7 @@ PY
 @test "#5042 NEGATIVE: no hosts edge is a change, and a dry run calls no runner" {
   door done "" kept
   echo "$output" | grep -q '0 add, 1 change, 0 delete; 2 same' || { echo "a missing hosts edge read as same: $output"; return 1; }
-  echo "$output" | grep -q '^CHANGE domains/principles .*"hosts": \["service-principles-api"\]' || { echo "$output"; return 1; }
+  echo "$output" | grep -q '^CHANGE domains/principles .*"hosts": \["principles-api"\]' || { echo "$output"; return 1; }
   test ! -e "$T/runner.log" || { echo "a dry run called the runner"; return 1; }
 }
 
@@ -85,7 +85,7 @@ PY
 
 @test "#5042 a host already hosting another service keeps it beside the new one" {
   door done "service-other" kept
-  echo "$output" | grep -q '^CHANGE domains/principles .*"hosts": \["service-other", "service-principles-api"\]' || { echo "$output"; return 1; }
+  echo "$output" | grep -q '^CHANGE domains/principles .*"hosts": \["other", "principles-api"\]' || { echo "$output"; return 1; }
 }
 
 @test "#5042 the plan is the hosting Domain owner's: another role, even with --apply, writes nothing and is told who runs it" {
@@ -96,6 +96,32 @@ PY
   echo "$output" | grep -q '^OTHER  wren: 4 row(s), run as wren' || { echo "$output"; return 1; }
   echo "$output" | grep -q '0 add, 0 change, 0 delete; 0 same — applied' || { echo "$output"; return 1; }
   test ! -e "$T/runner.log" || { echo "a run as kade called the runner"; return 1; }
+}
+
+@test "#5042 NEGATIVE: every edge is written bare; a prefixed one (the door's double prefix) is red" {
+  door none "" stale
+  test "$status" -eq 0 || { echo "$output"; return 1; }
+  # every edge value the plan writes, one per line: "<field> <value>" (the printed plan is cut at 160 characters)
+  edges() {
+    LAND_LIVE_JSON="$T/live.json" LAND_SERVICE_FILES="$PRINCIPLES:$PULSE" python3 - "$LAND" <<'PY'
+import importlib.machinery, importlib.util, sys
+loader = importlib.machinery.SourceFileLoader("land5042", sys.argv[1])
+m = importlib.util.module_from_spec(importlib.util.spec_from_loader("land5042", loader)); loader.exec_module(m)
+for _, _, w, _ in m.full_plan(m.load_live()):
+    for f in ("hasDesignDoc", "hosts"):
+        for v in (w.get(f) if isinstance(w.get(f), list) else [w.get(f)] if f in w else []):
+            print(f, v)
+PY
+  }
+  # the check itself: an edge value holding its kind's prefix is named
+  prefixed() { grep -E '^(hasDesignDoc document-|hosts service-)'; }
+  run edges
+  test "$status" -eq 0 || { echo "$output"; return 1; }
+  echo "$output" | grep -qx 'hasDesignDoc athena-product-design' || { echo "no bare hasDesignDoc: $output"; return 1; }
+  echo "$output" | grep -qx 'hosts pulse-api' || { echo "no bare hosts edge: $output"; return 1; }
+  ! echo "$output" | prefixed || { echo "a prefixed edge is planned: $output"; return 1; }
+  echo 'hasDesignDoc document-athena-product-design' | prefixed >/dev/null || { echo "the check did not name a prefixed hasDesignDoc"; return 1; }
+  echo 'hosts service-pulse-api' | prefixed >/dev/null || { echo "the check did not name a prefixed hosts edge"; return 1; }
 }
 
 @test "#5042 NEGATIVE: a service.json that names no host is refused, never planned without its hosts edge" {

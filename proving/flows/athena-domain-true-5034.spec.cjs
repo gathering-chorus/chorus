@@ -580,8 +580,8 @@ test.describe('#5045 AC1 the tile shows the API version in production, never a t
 // domain's collections serves, and lists the routes that document describes. It listed the code
 // crawl's endpoints: chorus-api's old Loom routes (/api/loom/principles, /loom, /loom/:role).
 // Read from the drawn page through the sign-in door; the link is followed through the door too.
-// Before the land the live door serves no document: lib/landed-openapi-5042.json stands in the
-// landed answers (the merge's entry and the generator's own file), off in the nightly.
+// Before the land the live door served no document: lib/athena-page-5034.cjs LANDED_OPENAPI stood in
+// the landed answers (the merge's entry and the generator's own file), off in the nightly.
 // NEGATIVE: the page as it was before this card is red, named, on the same reads.
 {
   const { startDoor, signedInPage, LANDED_OPENAPI: LANDED } = require('./lib/athena-page-5034.cjs');
@@ -593,7 +593,8 @@ test.describe('#5045 AC1 the tile shows the API version in production, never a t
     if (!fold) return null;
     const clean = (n) => (n?.textContent || '').replace(/\s+/g, ' ').trim();
     return {
-      links: [...fold.querySelectorAll('a[data-openapi]')].map((a) => a.href),
+      // #5042 (16:26) — the link opens the drawn page; the document it draws is named on the link
+      links: [...fold.querySelectorAll('a[data-openapi]')].map((a) => new URL(a.dataset.openapi, location.href).href),
       rows: [...fold.querySelectorAll('tr')].filter((tr) => tr.querySelector('td')).map((tr) => `${clean(tr.cells[0])} ${clean(tr.cells[1])}`),
     };
   };

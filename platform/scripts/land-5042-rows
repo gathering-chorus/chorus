@@ -58,10 +58,20 @@ def facts():
     return [json.load(open(f)) for f in files]
 
 
+# An edge is written as the bare name: the door mints the kind's prefix and refuses a prefixed one
+# as a double prefix (ADR-040 Rule 0; Wren's apply after the 11-27 land, 4 of 4 refused). The door
+# serves an edge with its prefix, so what it holds is compared bare too.
+EDGE_PREFIX = {"hasDesignDoc": "document-", "hosts": "service-"}
+
+
+def bare(field, v):
+    return str(v).rsplit("#", 1)[-1].removeprefix("chorus:").removeprefix(EDGE_PREFIX[field])
+
+
 def as_list(v):
     if v in (None, ""):
         return []
-    return [str(x).rsplit("#", 1)[-1].removeprefix("chorus:") for x in (v if isinstance(v, list) else [v])]
+    return [bare("hosts", x) for x in (v if isinstance(v, list) else [v])]
 
 
 def full_plan(live):
@@ -70,8 +80,8 @@ def full_plan(live):
         s, h = f["service"], f.get("hostedBy")
         if not h:
             raise RuntimeError(f"{s['name']}: the generator names no Domain row that hosts it")
-        rows.append(("services", s["name"], {k: v for k, v in s.items() if k != "name"}, h["name"]))
-        hosts.setdefault(h["name"], []).append(h["hosts"])
+        rows.append(("services", s["name"], {k: bare(k, v) if k in EDGE_PREFIX else v for k, v in s.items() if k != "name"}, h["name"]))
+        hosts.setdefault(h["name"], []).append(bare("hosts", h["hosts"]))
     for host, svcs in sorted(hosts.items()):
         have = live["domains"].get(host)
         if have is None:
@@ -109,7 +119,11 @@ def load_live():
     """The collection rows; each existing Service row completed with the two fields the collection does not serve."""
     live = _load_collections()
     if os.environ.get("LAND_LIVE_JSON"):
-        return live  # a fixture row carries them itself
+        # a fixture row carries them itself, as the door serves them
+        for row in live["services"].values():
+            if row.get("hasDesignDoc"):
+                row["hasDesignDoc"] = bare("hasDesignDoc", row["hasDesignDoc"])
+        return live
     for f in facts():
         name, want = f["service"]["name"], f["service"]
         row = live["services"].get(name)
@@ -117,7 +131,7 @@ def load_live():
             continue
         with urllib.request.urlopen(f"{land.DOOR}{land.DOOR_CLASS['services'][0]}/{name}", timeout=15) as r:
             links = json.load(r).get("links") or {}
-        row["hasDesignDoc"] = str(links.get("hasDesignDoc", "")).removeprefix("chorus:")
+        row["hasDesignDoc"] = bare("hasDesignDoc", links.get("hasDesignDoc", ""))
         # docState is required by the Service shape and served nowhere (measured 11-25): it is written
         # when the row is created and cannot be compared afterwards, so an existing row is taken to hold it
         row["docState"] = want["docState"]

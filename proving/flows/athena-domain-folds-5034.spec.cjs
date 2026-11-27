@@ -104,7 +104,7 @@ test.describe(`#5034 every fold on the ${DOMAIN} domain page is filled or says w
 // a cell connection, and the read budget below is the only stand-in for one.
 // =============================================================================================
 const { execFileSync } = require('child_process');
-const { startDoor, signedInPage, BASE, ROOT } = require('./lib/athena-page-5034.cjs');
+const { startDoor, signedInPage, BASE, ROOT, ownApiDocs, LIVE_DISCOVERY } = require('./lib/athena-page-5034.cjs');
 
 const MOUNTS = [['under /chorus (the public apex)', '/chorus'], ['at the root (the door\'s own host)', '']];
 const DOOR_NO_ANSWER = /could not read|cannot reach|cannot measure|cannot read|fetch failure|no answer|load failed|HTTP \d{3}|loading the materialized view|loading live from the model|running the domain lint|reading the last check|not measured yet|gave no result/i;
@@ -210,6 +210,12 @@ for (const [where, mount] of MOUNTS) {
         for (const h of links) {
           if (!h.startsWith(door.origin + '/')) continue; // another site: not this door's to answer
           if (!h.startsWith(door.origin + door.mount + '/') && h !== door.origin + door.mount) { dead.push(`${p}: ${h.replace(door.origin, '')} — leaves the door`); continue; }
+          // #5042 AC5 — before the land the API page is this tree's (the door passing it: the readable suite's allow-list test)
+          if (!LIVE_DISCOVERY && h.includes('/athena/api-docs/')) {
+            const a = await ownApiDocs(h).catch((e) => ({ status: 0, _e: String(e.message).split('\n')[0] }));
+            if (a.status !== 200) dead.push(`${p}: ${h.replace(door.origin, '')} — ${a.status || a._e} (this tree's API page)`);
+            continue;
+          }
           const r = await context.request.get(h, { timeout: 30_000, maxRedirects: 0 }).catch((e) => ({ status: () => 0, _e: String(e.message).split('\n')[0] }));
           if (r.status() !== 200) dead.push(`${p}: ${h.replace(door.origin, '')} — ${r.status() || r._e}`);
         }

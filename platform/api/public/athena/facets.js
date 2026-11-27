@@ -45,7 +45,9 @@ async function renderFacetTables(el, fid, opts) {
     const mine = (disc.primitives || []).filter(p => p.openapi && String(p.collection || '').split('/')[2] === dname);
     const docs = await Promise.all(mine.map(p => fetch(OWL + p.openapi)
       .then(d => d.ok ? d.json() : { _failed: 'HTTP ' + d.status }).catch(e => ({ _failed: e && e.message || 'no answer' }))
-      .then(doc => ({ href: OWL + p.openapi, at: p.openapi, doc }))));
+      // #5042 (Jeff 16:26: "giving me a link to json is crap") — the link opens the document drawn as a
+      // page (swagger-ui-express, read-only), not the raw document
+      .then(doc => ({ href: window.basePath('/athena/api-docs' + String(p.collection).replace(/^\/v1/, '') + '/'), docHref: OWL + p.openapi, at: p.openapi, doc }))));
     return { _api: docs };
   }
   const FACETS = [
@@ -145,7 +147,7 @@ async function renderFacetTables(el, fid, opts) {
       for (const d of docs) for (const [route, ops] of Object.entries((d.doc && d.doc.paths) || {}))
         for (const m of Object.keys(ops || {})) rows.push({ httpMethod: m.toUpperCase(), routePath: route });
       count = rows.length;
-      const links = docs.map(d => `<div style="margin-bottom:6px"><span class="lbl">OpenAPI</span> <a class="edge" data-openapi href="${esc(d.href)}">${esc(d.at)}</a>${d.doc && d.doc._failed ? ` <span class="bad">could not read: ${esc(d.doc._failed)}</span>` : ''}</div>`).join('');
+      const links = docs.map(d => `<div style="margin-bottom:6px"><span class="lbl">OpenAPI</span> <a class="edge" data-openapi="${esc(d.docHref)}" href="${esc(d.href)}">${esc(d.at)}</a>${d.doc && d.doc._failed ? ` <span class="bad">could not read: ${esc(d.doc._failed)}</span>` : ''}</div>`).join('');
       inner = docs.length ? links + (count ? table(rows, f.cols) : '<div class="empty">the document names no routes</div>')
         : '<div class="empty">no OpenAPI document for this domain</div>';
     } else if (f.k === '_deps') {
