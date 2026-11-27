@@ -30,12 +30,13 @@ EOF
   export LAND_LIVE_JSON="$F"
 }
 
-@test "#5045 wren's plan clears principles' status, gaps and wrong design doc, and adds roles consumes principles" {
+@test "#5045 wren's plan clears principles' status, gaps and wrong design doc, and leaves roles' consumes alone" {
   run python3 "$S" --as wren
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   # its one gap is now card 5047 (five value rows name removed principles), held by number
   echo "$output" | grep -q 'CHANGE domains/principles  {"gapCard": \["5047"\], "gaps": null, "hasDesignDoc": null, "status": null}'
-  echo "$output" | grep -q 'CHANGE domains/roles  {"consumes": \["time", "principles"\]}'
+  # the door refuses a patch of consumes (a repeated text field): the land of 11-27 06:17 stopped on it
+  ! echo "$output" | grep -q 'domains/roles' || return 1
   ! echo "$output" | grep -q 'CHANGE documents/' || return 1  # a Document keeps its one domain (DocumentShape minCount 1)
 }
 

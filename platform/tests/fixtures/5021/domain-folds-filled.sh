@@ -9,9 +9,13 @@ d="$1"
 mkdir -p "$d/owl/v1/domains/domains" "$d/owl/code" "$d/owl/logs" "$d/api/chorus/domain/x" "$d/api/chorus/domain/y"
 for n in x y; do
   note=''; [ "$n" = x ] && note='"foldNote": ["Infrastructure: none of its own, it runs on Library"],'
+  # #5045: x names no gap card and no design doc; neither is counted (the page writes its own
+  # reason for those two folds), so x's one violation is still Releases alone.
+  doc='"hasDesignDoc": "chorus:doc",'; card='"gapCard": "1",'
+  [ "$n" = x ] && { doc=''; card=''; }
   cat > "$d/owl/v1/domains/domains/$n" <<J
-{"data": {"comment": "c", "gaps": "g", $note "label": "$n"},
- "links": {"definesVocabulary": "chorus:T", "hasDesignDoc": "chorus:doc", "hosts": "chorus:svc"}}
+{"data": {"comment": "c", $card $note "label": "$n"},
+ "links": {"definesVocabulary": "chorus:T", $doc "hosts": "chorus:svc"}}
 J
   printf '{"data": {"direct": {"consumes": ["chorus:time"], "consumedBy": []}}}' > "$d/api/chorus/domain/$n/dependencies"
   printf '{"domain": "%s", "cards": [{"id": "1"}]}' "$n" > "$d/api/chorus/domain/$n/cards"
