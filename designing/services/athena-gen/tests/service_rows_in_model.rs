@@ -1,14 +1,14 @@
 // @domain: domains
 // @test-type: unit — the repo's model through the generator's own functions; no service, no store
 //! #5042 AC2 — the generator states the model facts that make a generated API a service
-//! (surfaces/service.json: its Service row, the Domain row that hosts it, its launchd unit), and
-//! the model the athena land loads holds exactly those facts: the Service row in
-//! designing/data/service-instances.ttl, the hosts edge in roles/silas/ontology/chorus.ttl
-//! (Silas, 11-27 12:09), and the unit tied to it in platform/config/service-instance-map.json.
-//! For principles: Service principles-api, hosted by principles, unit com.chorus.principles-api;
-//! for pulse: Service pulse-api, hosted by awareness, unit com.chorus.pulse-api.
-//! NEGATIVE PROOF: with the hosts edge left out, or one field changed, the difference is named.
-use oxigraph::model::{NamedNodeRef, Term};
+//! (surfaces/service.json: its Service row, the Domain row that hosts it, its launchd unit). The
+//! Service row is authored in designing/data/service-instances.ttl, where the crawler reads every
+//! Service, and the unit is tied to it in platform/config/service-instance-map.json; this holds
+//! both equal to what the generator states. (Rows live in the store, #4432: the land's rows step,
+//! platform/scripts/land-5042-rows, writes the rows and the hosts edges through the door; Silas,
+//! 11-27 12:28. platform/tests/generated-api-service-rows.bats holds that plan.)
+//! NEGATIVE PROOF: a missing Service row, or one field changed, is named.
+use oxigraph::model::Term;
 use oxigraph::sparql::{QueryResults, SparqlEvaluator};
 use oxigraph::store::Store;
 use serde_json::Value;
@@ -67,10 +67,6 @@ fn faults(store: &Store, facts: &Value) -> Vec<String> {
             out.push(format!("{iri}.{k}: the model holds {have:?}, the generator states {v}"));
         }
     }
-    let host = facts["hostedBy"]["name"].as_str().unwrap();
-    if !values(store, host, "hosts").contains(&iri) {
-        out.push(format!("{host} does not host {iri}"));
-    }
     out
 }
 
@@ -96,25 +92,14 @@ fn the_model_holds_what_the_generator_states_for_each_generated_api() {
 }
 
 #[test]
-fn negative_proof_a_missing_hosts_edge_and_a_changed_field_are_named() {
+fn negative_proof_a_missing_row_and_a_changed_field_are_named() {
     let store = model();
     let facts = stated(&store, "principles", true);
-    let s = NamedNodeRef::new(&format!("{NS}principles")).unwrap().into_owned();
-    let p = NamedNodeRef::new(&format!("{NS}hosts")).unwrap().into_owned();
-    let o = NamedNodeRef::new(&format!("{NS}service-principles-api")).unwrap().into_owned();
-    // the edge is held wherever the model put it: remove it from every graph
-    let quads: Vec<_> = store.quads_for_pattern(Some(s.as_ref().into()), Some(p.as_ref()), Some(o.as_ref().into()), None).map(|q| q.unwrap()).collect();
-    assert!(!quads.is_empty(), "the model holds no hosts edge for principles-api; this proof would pass vacuously");
-    for q in &quads {
-        store.remove(q).unwrap();
-    }
-    let f = faults(&store, &facts);
-    assert!(f.iter().any(|x| x == "principles does not host service-principles-api"), "{f:?}");
-    for q in &quads {
-        store.insert(q).unwrap();
-    }
     let mut changed = facts.clone();
     changed["service"]["overview"] = Value::String("hand-written".into());
     let f = faults(&store, &changed);
     assert!(f.iter().any(|x| x.starts_with("service-principles-api.overview:")), "{f:?}");
+    let mut missing = facts.clone();
+    missing["service"]["name"] = Value::String("nobody-wrote-this-api".into());
+    assert_eq!(faults(&store, &missing), vec!["service-nobody-wrote-this-api: no Service row in the model".to_string()]);
 }

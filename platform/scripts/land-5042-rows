@@ -1,0 +1,140 @@
+#!/usr/bin/env python3
+"""#5042: a generated API is a service the model knows. DRY RUN unless --apply.
+# @domain: services
+
+Jeff, on the principles domain page, 2026-11-25 10:28: "i expect to see principles service here
+yes?". athena-gen states the facts that make each generated API a service in the crate's own
+surfaces/service.json (designing/services/athena-gen/src/surfaces.rs service_json): its Service
+row, the Domain row that hosts it, and its launchd unit. This script writes those facts through
+the door, for every generated crate in the tree (shaping/domains/*/api, directing/products/*/api):
+  1. services/<name>        the Service row, every field as the generator wrote it;
+  2. domains/<host>         hosts service-<name>, beside what it already hosts (an edge: the door
+                            takes a list for it). A foldNote is NOT written: it is a repeated text
+                            field, and the door refuses a patch that sets more than one value
+                            (athena-make lib.rs, "a patch sets one value"). An empty fold shows its
+                            note; once the domain hosts its service the Services fold is not empty.
+The unit is tied to the service by platform/config/service-instance-map.json, changed in the same
+land and held equal to service.json by platform/tests/generated-api-service-rows.bats.
+
+Each row is written by the owner of the hosting Domain row (the new Service row goes with it, so
+the door stamps that owner on it): the plan holds only rows whose host the caller owns (--as
+<role>, default $CHORUS_ROLE) and names every other owner's rows, so nothing is skipped silently.
+The door, the runner, the compare, the 403 wait and the exit codes are land-4960-rows' own. One
+thing is added (Wren's #5041 draft): the services collection serves neither hasDesignDoc nor
+docState, so an existing Service row is completed from its entity read before the compare;
+without that the plan would read CHANGE on every run.
+Exit 0 = plan printed (or applied); 1 = a write was refused; 2 = the door, the plan or a
+service.json could not be read, or the caller's role is unknown.
+"""
+import glob
+import importlib.machinery
+import importlib.util
+import json
+import os
+import sys
+import urllib.request
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+_loader = importlib.machinery.SourceFileLoader("land4960", os.path.join(HERE, "land-4960-rows"))
+_spec = importlib.util.spec_from_loader("land4960", _loader)
+land = importlib.util.module_from_spec(_spec)
+_loader.exec_module(land)
+
+land.DOOR_CLASS = {
+    "services": ("/v1/services/services", "services", "services"),
+    "domains": ("/v1/domains/domains", "domains", "domains"),
+}
+
+CRATES = ("shaping/domains/*/api", "directing/products/*/api")
+
+
+def facts():
+    """Every generated crate's service.json, in path order. LAND_SERVICE_FILES (a fixture) names them instead."""
+    named = os.environ.get("LAND_SERVICE_FILES")
+    files = named.split(os.pathsep) if named else sorted(
+        f for pat in CRATES for f in glob.glob(os.path.join(land.ROOT, pat, "surfaces", "service.json")))
+    if not files:
+        raise RuntimeError("no generated crate has a surfaces/service.json: run athena-gen generate")
+    return [json.load(open(f)) for f in files]
+
+
+def as_list(v):
+    if v in (None, ""):
+        return []
+    return [str(x).rsplit("#", 1)[-1].removeprefix("chorus:") for x in (v if isinstance(v, list) else [v])]
+
+
+def full_plan(live):
+    rows, hosts = [], {}
+    for f in facts():
+        s, h = f["service"], f.get("hostedBy")
+        if not h:
+            raise RuntimeError(f"{s['name']}: the generator names no Domain row that hosts it")
+        rows.append(("services", s["name"], {k: v for k, v in s.items() if k != "name"}, h["name"]))
+        hosts.setdefault(h["name"], []).append(h["hosts"])
+    for host, svcs in sorted(hosts.items()):
+        have = live["domains"].get(host)
+        if have is None:
+            raise RuntimeError(f"domains/{host} is not on the door")
+        w = {}
+        held = as_list(have.get("hosts"))
+        if any(x not in held for x in svcs):
+            w["hosts"] = held + [x for x in svcs if x not in held]
+        if w:
+            rows.append(("domains", host, w, host))
+    return rows
+
+
+def plan(live):
+    role = os.environ.get("LAND_AS") or os.environ.get("CHORUS_ROLE", "")
+    if not role:
+        raise RuntimeError("caller role unknown: pass --as <role> or set CHORUS_ROLE")
+    owner = lambda host: str(live["domains"][host].get("ownedBy", "")).rsplit("#", 1)[-1].removeprefix("chorus:").removeprefix("principal-")
+    mine, others = [], {}
+    for coll, name, w, host in full_plan(live):
+        o = owner(host)
+        if o == role:
+            mine.append((coll, name, w))
+        else:
+            others.setdefault(o or "unowned", []).append(f"{coll}/{name}")
+    for o, names in sorted(others.items()):
+        print(f"OTHER  {o}: {len(names)} row(s), run as {o}: {', '.join(names)}")
+    return mine
+
+
+_load_collections = land.load_live
+
+
+def load_live():
+    """The collection rows; each existing Service row completed with the two fields the collection does not serve."""
+    live = _load_collections()
+    if os.environ.get("LAND_LIVE_JSON"):
+        return live  # a fixture row carries them itself
+    for f in facts():
+        name, want = f["service"]["name"], f["service"]
+        row = live["services"].get(name)
+        if row is None:
+            continue
+        with urllib.request.urlopen(f"{land.DOOR}{land.DOOR_CLASS['services'][0]}/{name}", timeout=15) as r:
+            links = json.load(r).get("links") or {}
+        row["hasDesignDoc"] = str(links.get("hasDesignDoc", "")).removeprefix("chorus:")
+        # docState is required by the Service shape and served nowhere (measured 11-25): it is written
+        # when the row is created and cannot be compared afterwards, so an existing row is taken to hold it
+        row["docState"] = want["docState"]
+    return live
+
+
+land.plan = plan
+land.load_live = load_live
+land.policy_rows = lambda: []  # --ttl: no policy rows in this plan
+
+if __name__ == "__main__":
+    argv = sys.argv[1:]
+    if "--as" in argv:
+        i = argv.index("--as")
+        if i + 1 >= len(argv):
+            print("--as needs a role")
+            sys.exit(2)
+        os.environ["LAND_AS"] = argv[i + 1]
+        del argv[i:i + 2]
+    sys.exit(land.main(argv))

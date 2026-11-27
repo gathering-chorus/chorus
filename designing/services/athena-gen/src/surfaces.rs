@@ -159,9 +159,9 @@ pub fn host_of(p: &Product) -> Option<String> {
 /// generated door is its own Service, hosted by the domain or product it is generated for"):
 /// its Service row, the row that hosts it, and the launchd unit tied to it. Every text is made
 /// from the model only (names, bind, classes), so a second generate writes the same file and
-/// the model holds them once. The model holds them in designing/data/service-instances.ttl (the
-/// Service row) and roles/silas/ontology/chorus.ttl (the hosts edge), loaded by the athena land;
-/// tests/service_rows_in_model.rs holds the two equal (Silas, 11-27 12:09).
+/// the model holds them once: the Service row is authored in designing/data/service-instances.ttl
+/// (tests/service_rows_in_model.rs holds the two equal), and the land's rows step,
+/// platform/scripts/land-5042-rows, writes the rows and the hosts edges to the store (Silas, 11-27).
 pub fn service_json(p: &Product, settings: &[(String, String)]) -> String {
     use serde_json::json;
     let bind = setting(settings, "server.bind");
