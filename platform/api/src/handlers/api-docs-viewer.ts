@@ -35,7 +35,7 @@ export const VIEWER_OPTIONS = {
 export type ReadDocument = (owlPath: string) => Promise<{ status: number; body: unknown }>;
 
 function page(status: number, text: string): [number, string] {
-  const esc = text.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] as string));
+  const esc = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   return [status, `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>API</title><p class="api-docs-refused">${esc}</p>`];
 }
 
