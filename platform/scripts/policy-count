@@ -777,8 +777,11 @@ def domain_folds_filled(domain):
     folds = {
         "Description": bool(data.get("comment")),
         "Vocabulary": bool(links.get("definesVocabulary")),
-        "Design doc": bool(links.get("hasDesignDoc")),
-        "Gaps": bool(data.get("gaps")),
+        # #5045: Design doc and Gaps are not counted. The typed gaps text left the model (a gap is
+        # a card number now, chorus:gapCard), and when either fold has nothing the page writes its
+        # own reason ("its row names no card"; "this page is generated from the model: it is the
+        # design as built"), which the folds browser suite holds it to. Reading the retired
+        # chorus:gaps here counted Gaps empty on all 64 domains (cicd run 8, 631 > 627).
         "Services": bool(links.get("hosts")),
         "Cards": bool(_rows(api_json(d + "/cards"), "cards")),
         "Dependencies": bool((direct.get("consumes") or []) + (direct.get("consumedBy") or [])),
