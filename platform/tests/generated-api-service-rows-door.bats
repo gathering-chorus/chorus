@@ -31,8 +31,10 @@ INSERT DATA { GRAPH <urn:chorus:domains:domains> { c:principles c:ownedBy c:prin
   fi
 }
 teardown_file() {
-  # a door that never started left nothing to stop (its dataset was refused, not made)
-  [ -z "${PRIVATE_DOOR_WHY:-}" ] || return 0
+  # a door that started is stopped even when it answered too late to be used (#5042 runs 6 and 7:
+  # private_door set WHY after its 30 s wait, this returned early, and the door it left running kept
+  # bats waiting for good); a door never launched has no pid, and nothing is stopped
+  [ -n "${PRIVATE_DOOR_PID:-}" ] || return 0
   source "$BATS_TEST_DIRNAME/lib/test-store.sh"
   private_door_stop
 }
