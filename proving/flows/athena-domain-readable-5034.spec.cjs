@@ -554,13 +554,17 @@ test.describe('#5045 AC5 the four parts read on a phone, through the sign-in doo
     return f;
   }
 
+  /** Why the link's words would not read as a page to open, or null (Wren 22:23: a path looks like the JSON he called crap). */
+  const linkTextFault = (text) => /\.json\b|^\/|\/v1\//.test(text) ? 'reads like a file path, not words' : /^Browse the [a-z0-9-]+ API$/.test(text) ? null : 'does not say what it opens';
+
   async function openFromFold(page, door, domain) {
     await page.goto(`${door.origin}${door.mount}/athena/domain.html?d=${domain}`, { waitUntil: 'domcontentloaded' });
     const link = page.locator('#main details.fold a[data-openapi]').first();
     await link.waitFor({ state: 'attached', timeout: 180_000 });
     const href = await link.getAttribute('href');
+    const text = ((await link.textContent()) || '').trim();
     await page.goto(new URL(href, page.url()).href, { waitUntil: 'domcontentloaded' });
-    return href;
+    return { href, text };
   }
 
   test.describe('#5042 AC5 tapping API Contract opens a readable, read-only API page on a phone', () => {
@@ -574,8 +578,9 @@ test.describe('#5045 AC5 the four parts read on a phone, through the sign-in doo
         const { page, context } = await signedInPage(browser, door, PHONE);
         try {
           await serveOwnApiDocs(page);
-          const href = await openFromFold(page, door, domain);
+          const { href, text } = await openFromFold(page, door, domain);
           expect(href, 'the link stays under the door').toMatch(/\/athena\/api-docs\/[a-z0-9-]+\/[a-z0-9-]+\/$/);
+          expect(linkTextFault(text), `the link reads "${text}"`).toBeNull();
           const p = await readApiPage(page);
           const faults = apiPageFaults(p);
           expect(faults, `${page.url()}\n${faults.join('\n')}`).toEqual([]);
@@ -604,6 +609,8 @@ test.describe('#5045 AC5 the four parts read on a phone, through the sign-in doo
         const raw = `${door.origin}${door.mount}/owl/v1/principles/principles/openapi.json`;
         await page.goto(raw, { waitUntil: 'domcontentloaded' });
         expect(apiPageFaults(await readApiPage(page)).join('\n')).toMatch(/opens the raw document/);
+        // and a link labelled with the document's path is named, as the fold drew it before
+        expect(linkTextFault('/v1/principles/principles/openapi.json')).toBe('reads like a file path, not words');
         // the viewer's own init script, with submitting turned back on: what the page would be without the setting
         await page.route((u) => u.pathname.endsWith('/athena/api-docs/principles/principles/swagger-ui-init.js'), async (route) => {
           // the page's own answer (this tree's before the land, the live door's after it)

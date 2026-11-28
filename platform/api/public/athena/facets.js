@@ -46,8 +46,9 @@ async function renderFacetTables(el, fid, opts) {
     const docs = await Promise.all(mine.map(p => fetch(OWL + p.openapi)
       .then(d => d.ok ? d.json() : { _failed: 'HTTP ' + d.status }).catch(e => ({ _failed: e && e.message || 'no answer' }))
       // #5042 (Jeff 16:26: "giving me a link to json is crap") — the link opens the document drawn as a
-      // page (swagger-ui-express, read-only), not the raw document
-      .then(doc => ({ href: window.basePath('/athena/api-docs' + String(p.collection).replace(/^\/v1/, '') + '/'), docHref: OWL + p.openapi, at: p.openapi, doc }))));
+      // page (swagger-ui-express, read-only), not the raw document; its words say so (Wren 22:23: a
+      // label that reads like a .json path looks like the link he called crap)
+      .then(doc => ({ href: window.basePath('/athena/api-docs' + String(p.collection).replace(/^\/v1/, '') + '/'), docHref: OWL + p.openapi, at: 'Browse the ' + String(p.collection).split('/').pop() + ' API', doc }))));
     return { _api: docs };
   }
   const FACETS = [
