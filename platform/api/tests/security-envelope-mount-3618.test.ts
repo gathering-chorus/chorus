@@ -11,6 +11,7 @@
  * Own world (#3528): in-process express app on an ephemeral port, injected
  * verifier (generated EC key + stub JWKS/sparql, #3719)/emit — no live stack.
  */
+import { once } from 'events';
 import express from 'express';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
@@ -70,7 +71,7 @@ function makeApp(opts: { enabled: boolean; surfaces: SecuredSurface[] }) {
 describe('securityEnvelope mount (#3618)', () => {
   test('disabled (default deploy state): secured path passes through, zero events', async () => {
     const { app, events } = makeApp({ enabled: false, surfaces: [SURFACE] });
-    const server = app.listen(0);
+    const server = app.listen(0, '127.0.0.1'); await once(server, 'listening'); // a named host binds after a lookup, so the port is known only once listening
     const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     const res = await fetch(`${base}/api/chorus/reindex`, { method: 'POST' });
     expect(res.status).toBe(200);
@@ -80,7 +81,7 @@ describe('securityEnvelope mount (#3618)', () => {
 
   test('enabled + no token → 401 (the flip is live)', async () => {
     const { app, events } = makeApp({ enabled: true, surfaces: [SURFACE] });
-    const server = app.listen(0);
+    const server = app.listen(0, '127.0.0.1'); await once(server, 'listening'); // a named host binds after a lookup, so the port is known only once listening
     const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     const res = await fetch(`${base}/api/chorus/reindex`, { method: 'POST' });
     expect(res.status).toBe(401);
@@ -90,7 +91,7 @@ describe('securityEnvelope mount (#3618)', () => {
 
   test('enabled + valid ES256 identity token (model-granted) → 200', async () => {
     const { app } = makeApp({ enabled: true, surfaces: [SURFACE] });
-    const server = app.listen(0);
+    const server = app.listen(0, '127.0.0.1'); await once(server, 'listening'); // a named host binds after a lookup, so the port is known only once listening
     const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     const res = await fetch(`${base}/api/chorus/reindex`, {
       method: 'POST', headers: { Authorization: `Bearer ${token()}` },
@@ -101,7 +102,7 @@ describe('securityEnvelope mount (#3618)', () => {
 
   test('enabled but table not yet loaded (empty) → passes through (boot-race safety)', async () => {
     const { app } = makeApp({ enabled: true, surfaces: [] });
-    const server = app.listen(0);
+    const server = app.listen(0, '127.0.0.1'); await once(server, 'listening'); // a named host binds after a lookup, so the port is known only once listening
     const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     const res = await fetch(`${base}/api/chorus/reindex`, { method: 'POST' });
     expect(res.status).toBe(200); // no surface loaded yet → nothing to gate
@@ -110,7 +111,7 @@ describe('securityEnvelope mount (#3618)', () => {
 
   test('live table swap takes effect without re-mount', async () => {
     const { app, state } = makeApp({ enabled: true, surfaces: [] });
-    const server = app.listen(0);
+    const server = app.listen(0, '127.0.0.1'); await once(server, 'listening'); // a named host binds after a lookup, so the port is known only once listening
     const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     let res = await fetch(`${base}/api/chorus/reindex`, { method: 'POST' });
     expect(res.status).toBe(200); // empty table

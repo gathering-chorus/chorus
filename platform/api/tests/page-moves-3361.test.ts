@@ -33,7 +33,7 @@ const close = (srv: Server) => new Promise<void>((r) => srv.close(() => r()));
 
 describe('#3361 — moved chorus pages serve from chorus at their building/ home', () => {
   test('werk-process serves at building/products/werk', async () => {
-    const srv = app.listen(0);
+    const srv = app.listen(0, '127.0.0.1');
     try {
       const r = await hit(srv, '/building/products/werk/werk-process.html');
       expect(r.status).toBe(200);
@@ -44,7 +44,7 @@ describe('#3361 — moved chorus pages serve from chorus at their building/ home
   });
 
   test('nifi integration doc serves at building/products/convergence', async () => {
-    const srv = app.listen(0);
+    const srv = app.listen(0, '127.0.0.1');
     try {
       const r = await hit(srv, '/building/products/convergence/nifi-chorus-integration-design.html');
       expect(r.status).toBe(200);
@@ -55,7 +55,7 @@ describe('#3361 — moved chorus pages serve from chorus at their building/ home
   });
 
   test('extensionless path resolves the .html page (extensions:[html])', async () => {
-    const srv = app.listen(0);
+    const srv = app.listen(0, '127.0.0.1');
     try {
       const r = await hit(srv, '/building/products/werk/werk-process');
       expect(r.status).toBe(200);
@@ -69,7 +69,7 @@ describe('#3361 — server-rendered chorus pages serve from chorus-api (EJS move
   // Move home now; client-side data may be broken until ported (Jeff 2026-06-13).
   // These assert the page SHELL renders from chorus, not that live data is wired.
   test('/chorus renders the chorus-system page from chorus-api', async () => {
-    const srv = app.listen(0);
+    const srv = app.listen(0, '127.0.0.1');
     try {
       const r = await hit(srv, '/chorus');
       expect(r.status).toBe(200);
@@ -77,7 +77,7 @@ describe('#3361 — server-rendered chorus pages serve from chorus-api (EJS move
     } finally { await close(srv); }
   });
   test('/chorus-model-data renders from chorus-api', async () => {
-    const srv = app.listen(0);
+    const srv = app.listen(0, '127.0.0.1');
     try {
       const r = await hit(srv, '/chorus-model-data');
       expect(r.status).toBe(200);
@@ -85,7 +85,7 @@ describe('#3361 — server-rendered chorus pages serve from chorus-api (EJS move
     } finally { await close(srv); }
   });
   test('/borg-assessment renders from chorus-api', async () => {
-    const srv = app.listen(0);
+    const srv = app.listen(0, '127.0.0.1');
     try {
       const r = await hit(srv, '/borg-assessment');
       expect(r.status).toBe(200);
@@ -93,7 +93,7 @@ describe('#3361 — server-rendered chorus pages serve from chorus-api (EJS move
     } finally { await close(srv); }
   });
   test('/harvesting/icd renders the ICD page from chorus-api', async () => {
-    const srv = app.listen(0);
+    const srv = app.listen(0, '127.0.0.1');
     try {
       const r = await hit(srv, '/harvesting/icd');
       expect(r.status).toBe(200);
@@ -101,7 +101,7 @@ describe('#3361 — server-rendered chorus pages serve from chorus-api (EJS move
     } finally { await close(srv); }
   });
   test('/harvesting/convergence renders the ICD page from chorus-api', async () => {
-    const srv = app.listen(0);
+    const srv = app.listen(0, '127.0.0.1');
     try {
       const r = await hit(srv, '/harvesting/convergence');
       expect(r.status).toBe(200);
@@ -109,7 +109,7 @@ describe('#3361 — server-rendered chorus pages serve from chorus-api (EJS move
     } finally { await close(srv); }
   });
   test('/werk renders from chorus-api with empty-workflow fallback', async () => {
-    const srv = app.listen(0);
+    const srv = app.listen(0, '127.0.0.1');
     try {
       const r = await hit(srv, '/werk');
       expect(r.status).toBe(200);
@@ -117,7 +117,7 @@ describe('#3361 — server-rendered chorus pages serve from chorus-api (EJS move
     } finally { await close(srv); }
   });
   test('/harvest-manifests renders from chorus-api with empty fallback', async () => {
-    const srv = app.listen(0);
+    const srv = app.listen(0, '127.0.0.1');
     try {
       const r = await hit(srv, '/harvest-manifests');
       expect(r.status).toBe(200);
@@ -125,7 +125,7 @@ describe('#3361 — server-rendered chorus pages serve from chorus-api (EJS move
     } finally { await close(srv); }
   });
   test('/chorus/system redirects to /chorus', async () => {
-    const srv = app.listen(0);
+    const srv = app.listen(0, '127.0.0.1');
     try {
       const r = await hit(srv, '/chorus/system', 'manual');
       expect(r.status).toBe(301);
@@ -133,7 +133,7 @@ describe('#3361 — server-rendered chorus pages serve from chorus-api (EJS move
     } finally { await close(srv); }
   });
   test('/harvesting/mapper redirects to /harvesting/icd', async () => {
-    const srv = app.listen(0);
+    const srv = app.listen(0, '127.0.0.1');
     try {
       const r = await hit(srv, '/harvesting/mapper', 'manual');
       expect(r.status).toBe(301);
@@ -147,7 +147,7 @@ describe('#3361 — service-backed chorus pages serve a shell from chorus-api (d
   // SparqlService) is the prioritized follow-on. The route must always serve a
   // valid page (real view if it renders, shell fallback otherwise) — never 500.
   test('/loom serves a page from chorus-api', async () => {
-    const srv = app.listen(0);
+    const srv = app.listen(0, '127.0.0.1');
     try {
       const r = await hit(srv, '/loom');
       expect(r.status).toBe(200);
@@ -155,7 +155,7 @@ describe('#3361 — service-backed chorus pages serve a shell from chorus-api (d
     } finally { await close(srv); }
   });
   test('/loom/:role serves a page from chorus-api', async () => {
-    const srv = app.listen(0);
+    const srv = app.listen(0, '127.0.0.1');
     try {
       const r = await hit(srv, '/loom/kade');
       expect(r.status).toBe(200);
@@ -163,7 +163,7 @@ describe('#3361 — service-backed chorus pages serve a shell from chorus-api (d
     } finally { await close(srv); }
   });
   test('/flow serves a page from chorus-api', async () => {
-    const srv = app.listen(0);
+    const srv = app.listen(0, '127.0.0.1');
     try {
       const r = await hit(srv, '/flow');
       expect(r.status).toBe(200);
@@ -171,7 +171,7 @@ describe('#3361 — service-backed chorus pages serve a shell from chorus-api (d
     } finally { await close(srv); }
   });
   test('/model-data serves a page from chorus-api', async () => {
-    const srv = app.listen(0);
+    const srv = app.listen(0, '127.0.0.1');
     try {
       const r = await hit(srv, '/model-data');
       expect(r.status).toBe(200);
@@ -179,7 +179,7 @@ describe('#3361 — service-backed chorus pages serve a shell from chorus-api (d
     } finally { await close(srv); }
   });
   test('/ontology-views/:domain serves a page from chorus-api', async () => {
-    const srv = app.listen(0);
+    const srv = app.listen(0, '127.0.0.1');
     try {
       const r = await hit(srv, '/ontology-views/photos');
       expect(r.status).toBe(200);

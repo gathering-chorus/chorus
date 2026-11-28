@@ -76,7 +76,7 @@ afterAll(async () => {
 });
 
 async function hit(api: Express, path: string): Promise<Answer> {
-  const srv = api.listen(0);
+  const srv = api.listen(0, '127.0.0.1');
   await new Promise<void>((r) => (srv.listening ? r() : srv.once('listening', () => r())));
   try {
     const res = await fetch(`http://127.0.0.1:${(srv.address() as AddressInfo).port}${path}`);

@@ -109,7 +109,7 @@ describe('#4508 the alert carries what was in flight', () => {
 
 describe('#4508 served files reach the ledger and the access log', () => {
   test('a static file serve shows up in /eventloop/in-flight with its size', async () => {
-    const srv = app.listen(0);
+    const srv = app.listen(0, '127.0.0.1');
     await ready(srv);
     const port = (srv.address() as AddressInfo).port;
     const from = Date.now();
@@ -133,7 +133,7 @@ describe('#4508 served files reach the ledger and the access log', () => {
   });
 
   test('a bad window is refused, not answered with everything', async () => {
-    const srv = app.listen(0);
+    const srv = app.listen(0, '127.0.0.1');
     await ready(srv);
     const port = (srv.address() as AddressInfo).port;
     try {

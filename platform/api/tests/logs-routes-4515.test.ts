@@ -56,7 +56,7 @@ async function ask(srv: Server, p: string): Promise<{ status: number; loki: URL 
 
 describe('#4515 the logs routes the runner calls', () => {
   test('a card log read covers the window asked for', async () => {
-    const r = await ask(app.listen(0), '/api/chorus/logs/card/4515?window=1h');
+    const r = await ask(app.listen(0, '127.0.0.1'), '/api/chorus/logs/card/4515?window=1h');
     expect(r.status).toBe(200);
     expect(r.loki!.searchParams.get('query')).toContain('card_id');
     expect(r.loki!.searchParams.get('query')).toContain('4515');
@@ -64,11 +64,11 @@ describe('#4515 the logs routes the runner calls', () => {
   });
 
   test('no window keeps the old default of a day', async () => {
-    expect(span((await ask(app.listen(0), '/api/chorus/logs/trace/abc123')).loki!)).toBe(86400);
+    expect(span((await ask(app.listen(0, '127.0.0.1'), '/api/chorus/logs/trace/abc123')).loki!)).toBe(86400);
   });
 
   test('recent errors, narrowed to one role', async () => {
-    const r = await ask(app.listen(0), '/api/chorus/logs/errors?role=kade&window=6h');
+    const r = await ask(app.listen(0, '127.0.0.1'), '/api/chorus/logs/errors?role=kade&window=6h');
     expect(r.status).toBe(200);
     const q = r.loki!.searchParams.get('query')!;
     expect(q).toContain('error');
@@ -77,7 +77,7 @@ describe('#4515 the logs routes the runner calls', () => {
   });
 
   test('recent errors default to the last hour, every role', async () => {
-    const r = await ask(app.listen(0), '/api/chorus/logs/errors');
+    const r = await ask(app.listen(0, '127.0.0.1'), '/api/chorus/logs/errors');
     expect(span(r.loki!)).toBe(3600);
     expect(r.loki!.searchParams.get('query')).not.toContain('"role');
   });
@@ -85,7 +85,7 @@ describe('#4515 the logs routes the runner calls', () => {
   test.each(['/api/chorus/logs/card/4515?window=1y', '/api/chorus/logs/trace/abc?window=forever', '/api/chorus/logs/errors?window=2h'])(
     'NEGATIVE PROOF: %s is refused by name and Loki is never asked',
     async (p) => {
-      const r = await ask(app.listen(0), p);
+      const r = await ask(app.listen(0, '127.0.0.1'), p);
       expect(r.status).toBe(400);
       expect(r.loki).toBeUndefined();
     },
@@ -94,7 +94,7 @@ describe('#4515 the logs routes the runner calls', () => {
 
 describe('#4515 the flow report route the runner calls', () => {
   test.each(['0', '721', '1.5', 'week'])('NEGATIVE PROOF: hours=%s is refused before any report runs', async (h) => {
-    const r = await ask(app.listen(0), `/api/chorus/flow-report?hours=${h}`);
+    const r = await ask(app.listen(0, '127.0.0.1'), `/api/chorus/flow-report?hours=${h}`);
     expect(r.status).toBe(400);
   });
 });

@@ -35,7 +35,7 @@ const close = (srv: Server) => new Promise<void>((r) => srv.close(() => r()));
 
 describe('#3408 — /werk cockpit data endpoints serve from chorus-api', () => {
   test('/api/werk/schema returns the spine-events schema JSON', async () => {
-    const srv = app.listen(0);
+    const srv = app.listen(0, '127.0.0.1');
     try {
       const r = await get(srv, '/api/werk/schema');
       expect(r.status).toBe(200);
@@ -46,7 +46,7 @@ describe('#3408 — /werk cockpit data endpoints serve from chorus-api', () => {
   });
 
   test('/api/werk/activity returns {entries:[]} contract shape (the cockpit feed)', async () => {
-    const srv = app.listen(0);
+    const srv = app.listen(0, '127.0.0.1');
     try {
       const r = await get(srv, '/api/werk/activity?hours=168');
       expect(r.status).toBe(200);
@@ -56,7 +56,7 @@ describe('#3408 — /werk cockpit data endpoints serve from chorus-api', () => {
   });
 
   test('/api/loom-metrics returns the fitness-panel shape (board/weekly_throughput/reject_stats/operations)', async () => {
-    const srv = app.listen(0);
+    const srv = app.listen(0, '127.0.0.1');
     try {
       const r = await get(srv, '/api/loom-metrics');
       expect(r.status).toBe(200);

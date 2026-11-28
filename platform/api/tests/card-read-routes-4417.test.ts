@@ -34,7 +34,7 @@ import app from '../src/server';
 import type { AddressInfo } from 'net';
 
 let base = '';
-const srv = app.listen(0);
+const srv = app.listen(0, '127.0.0.1');
 beforeAll(async () => {
   await new Promise<void>((r) => (srv.listening ? r() : srv.once('listening', () => r())));
   base = `http://127.0.0.1:${(srv.address() as AddressInfo).port}`;

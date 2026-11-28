@@ -108,9 +108,9 @@ describe('#5034 — a bind the rule allows is used', () => {
   test('127.0.0.1 on a port inside the range: the path goes to the generated API and discovery lists its kind', async () => {
     propertyRows = [...PROD_RULE, bindRow(`127.0.0.1:${portOf(target)}`)];
     resetGeneratedApisCache();
-    expect(await hit<Echo>(app.listen(0), GARDENS)).toEqual({ from: 'gardens', url: '/gardens/gardens' });
+    expect(await hit<Echo>(app.listen(0, '127.0.0.1'), GARDENS)).toEqual({ from: 'gardens', url: '/gardens/gardens' });
     expect(targetHits).toEqual(['/gardens/gardens']);
-    const d = await hit<Discovery>(app.listen(0), '/owl/');
+    const d = await hit<Discovery>(app.listen(0, '127.0.0.1'), '/owl/');
     expect(d.primitives?.map((p) => p.kind)).toEqual(['Domain', 'Garden']);
     expect(logged).toEqual([]);
   });
@@ -118,7 +118,7 @@ describe('#5034 — a bind the rule allows is used', () => {
   test('a comma list of hosts allows each of them, by exact string', async () => {
     propertyRows = [hostsRow('10.0.0.5, 127.0.0.1'), portsRow('1024-65535'), bindRow(`127.0.0.1:${portOf(target)}`)];
     resetGeneratedApisCache();
-    expect((await hit<Echo>(app.listen(0), GARDENS)).from).toBe('gardens');
+    expect((await hit<Echo>(app.listen(0, '127.0.0.1'), GARDENS)).from).toBe('gardens');
   });
 });
 
@@ -126,8 +126,8 @@ describe('#5034 — NEGATIVE: a bind the rule refuses is never fetched', () => {
   test('a host not in the list, 10.0.0.5:3393 → athena-make answers, absent from discovery, logged by row and reason', async () => {
     propertyRows = [...PROD_RULE, bindRow('10.0.0.5:3393')];
     resetGeneratedApisCache();
-    expect(await hit<Echo>(app.listen(0), GARDENS)).toEqual({ from: 'make', url: '/v1/gardens/gardens' });
-    const d = await hit<Discovery>(app.listen(0), '/owl/');
+    expect(await hit<Echo>(app.listen(0, '127.0.0.1'), GARDENS)).toEqual({ from: 'make', url: '/v1/gardens/gardens' });
+    const d = await hit<Discovery>(app.listen(0, '127.0.0.1'), '/owl/');
     expect(d.primitives?.map((p) => p.kind)).toEqual(['Domain']);
     expect(d.unreachable).toBeUndefined();
     expect(targetHits).toEqual([]);
@@ -137,7 +137,7 @@ describe('#5034 — NEGATIVE: a bind the rule refuses is never fetched', () => {
   test('localhost is not 127.0.0.1: the stub it would reach sees no request', async () => {
     propertyRows = [...PROD_RULE, bindRow(`localhost:${portOf(target)}`)];
     resetGeneratedApisCache();
-    expect((await hit<Echo>(app.listen(0), GARDENS)).from).toBe('make');
+    expect((await hit<Echo>(app.listen(0, '127.0.0.1'), GARDENS)).from).toBe('make');
     expect(targetHits).toEqual([]);
     expect(logged[0]).toContain('host localhost is not in');
   });
@@ -148,7 +148,7 @@ describe('#5034 — NEGATIVE: a bind the rule refuses is never fetched', () => {
     const range = port < 30000 ? '30000-65535' : '1024-29999';
     propertyRows = [hostsRow('127.0.0.1'), portsRow(range), bindRow(`127.0.0.1:${port}`)];
     resetGeneratedApisCache();
-    expect((await hit<Echo>(app.listen(0), GARDENS)).from).toBe('make');
+    expect((await hit<Echo>(app.listen(0, '127.0.0.1'), GARDENS)).from).toBe('make');
     expect(targetHits).toEqual([]);
     expect(logged[0]).toContain(`port ${port} is outside owl.proxy.port_range ${range}`);
   });
@@ -156,12 +156,12 @@ describe('#5034 — NEGATIVE: a bind the rule refuses is never fetched', () => {
   test('port 80 is outside 1024-65535', async () => {
     propertyRows = [...PROD_RULE, bindRow('127.0.0.1:80')];
     resetGeneratedApisCache();
-    expect((await hit<Echo>(app.listen(0), GARDENS)).from).toBe('make');
+    expect((await hit<Echo>(app.listen(0, '127.0.0.1'), GARDENS)).from).toBe('make');
     expect(logged[0]).toContain('port 80 is outside');
   });
 
   test('a bind on the port chorus-api itself listens on is a loop, and is not used', async () => {
-    const srv = app.listen(0);
+    const srv = app.listen(0, '127.0.0.1');
     await new Promise<void>((r) => (srv.listening ? r() : srv.once('listening', () => r())));
     propertyRows = [...PROD_RULE, bindRow(`127.0.0.1:${portOf(srv)}`)];
     resetGeneratedApisCache();
@@ -174,7 +174,7 @@ describe('#5034 — NEGATIVE: a bind the rule refuses is never fetched', () => {
   test('a refused bind is logged once per map read, not once per request', async () => {
     propertyRows = [...PROD_RULE, bindRow('10.0.0.5:3393')];
     resetGeneratedApisCache();
-    const srv = app.listen(0);
+    const srv = app.listen(0, '127.0.0.1');
     try {
       await get<Echo>(srv, GARDENS);
       await get<Echo>(srv, GARDENS);
@@ -206,8 +206,8 @@ describe('#5034 — NEGATIVE: without a readable rule no generated API is used',
   test.each(cases)('%s → the allowed-looking bind is not fetched, and the rule is logged as unreadable', async (_name, rule, reason) => {
     propertyRows = [...rule(), allowed()];
     resetGeneratedApisCache();
-    expect((await hit<Echo>(app.listen(0), GARDENS)).from).toBe('make');
-    const d = await hit<Discovery>(app.listen(0), '/owl/');
+    expect((await hit<Echo>(app.listen(0, '127.0.0.1'), GARDENS)).from).toBe('make');
+    const d = await hit<Discovery>(app.listen(0, '127.0.0.1'), '/owl/');
     expect(d.primitives?.map((p) => p.kind)).toEqual(['Domain']);
     expect(targetHits).toEqual([]);
     expect(logged.join('\n')).toContain('bind rule unreadable, no generated API is used');
@@ -217,11 +217,11 @@ describe('#5034 — NEGATIVE: without a readable rule no generated API is used',
   test('the same rows with the rule restored: the bind is fetched, so the check can tell the two states apart', async () => {
     propertyRows = [hostsRow('127.0.0.1'), allowed()];
     resetGeneratedApisCache();
-    expect((await hit<Echo>(app.listen(0), GARDENS)).from).toBe('make');
+    expect((await hit<Echo>(app.listen(0, '127.0.0.1'), GARDENS)).from).toBe('make');
     expect(targetHits).toEqual([]);
     propertyRows = [...PROD_RULE, allowed()];
     resetGeneratedApisCache();
-    expect((await hit<Echo>(app.listen(0), GARDENS)).from).toBe('gardens');
+    expect((await hit<Echo>(app.listen(0, '127.0.0.1'), GARDENS)).from).toBe('gardens');
     expect(targetHits).toEqual(['/gardens/gardens']);
   });
 });

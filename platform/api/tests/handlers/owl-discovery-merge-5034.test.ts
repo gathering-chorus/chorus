@@ -138,7 +138,7 @@ describe('#5034 — /owl/ discovery lists what the generated APIs serve', () => 
     rows(generated('principles', bindOf(principles)));
     resetGeneratedApisCache();
     for (const path of ['/owl/', '/owl', '/owl/?x=1']) {
-      const r = await hit<Discovery>(app.listen(0), path);
+      const r = await hit<Discovery>(app.listen(0, '127.0.0.1'), path);
       expect(r.status).toBe(200);
       expect(r.body.kind).toBe('Discovery');
       expect(r.body.primitives).toEqual([
@@ -160,7 +160,7 @@ describe('#5034 — /owl/ discovery lists what the generated APIs serve', () => 
     ];
     rows(generated('principles', bindOf(principles)));
     resetGeneratedApisCache();
-    const r = await hit<Discovery>(app.listen(0), '/owl/');
+    const r = await hit<Discovery>(app.listen(0, '127.0.0.1'), '/owl/');
     expect(r.body.primitives?.find((p) => p.kind === 'Principle')).toEqual(
       { kind: 'Principle', collection: '/v1/principles/principles', composed: false, openapi: '/v1/principles/principles/openapi.json' });
     expect(r.body.primitives?.find((p) => p.kind === 'Turn')).toEqual({ kind: 'Turn', collection: '/v1/principles/turns', composed: true });
@@ -170,11 +170,11 @@ describe('#5034 — /owl/ discovery lists what the generated APIs serve', () => 
     // the principles stub is up and would answer; only the rows differ from the test above
     rows();
     resetGeneratedApisCache();
-    const r = await hit<Discovery>(app.listen(0), '/owl/');
+    const r = await hit<Discovery>(app.listen(0, '127.0.0.1'), '/owl/');
     expect(r.status).toBe(200);
     expect(kinds(r.body)).toEqual(['Domain', 'ADR']);
     expect(r.body.count).toBe(2);
-    const row = await hit<Echo>(app.listen(0), '/owl/v1/principles/principles');
+    const row = await hit<Echo>(app.listen(0, '127.0.0.1'), '/owl/v1/principles/principles');
     expect(row.body.from).toBe('make');
   });
 
@@ -182,14 +182,14 @@ describe('#5034 — /owl/ discovery lists what the generated APIs serve', () => 
     const g = generated('principles', bindOf(principles));
     rows({ domain: g.domain, property: { ...g.property, propertyKey: 'server.port' } });
     resetGeneratedApisCache();
-    const r = await hit<Discovery>(app.listen(0), '/owl/');
+    const r = await hit<Discovery>(app.listen(0, '127.0.0.1'), '/owl/');
     expect(kinds(r.body)).toEqual(['Domain', 'ADR']);
   });
 
   test('a generated API that is down → still 200 with the entries of athena-make, and it is named in unreachable', async () => {
     rows(generated('principles', '127.0.0.1:1'), generated('gardens', bindOf(gardens)));
     resetGeneratedApisCache();
-    const r = await hit<Discovery>(app.listen(0), '/owl/');
+    const r = await hit<Discovery>(app.listen(0, '127.0.0.1'), '/owl/');
     expect(r.status).toBe(200);
     expect(kinds(r.body)).toEqual(['Domain', 'ADR', 'Garden']);
     expect(r.body.count).toBe(3);
@@ -203,7 +203,7 @@ describe('#5034 — /owl/ discovery lists what the generated APIs serve', () => 
     ];
     rows(generated('principles', bindOf(principles)));
     resetGeneratedApisCache();
-    const r = await hit<Discovery>(app.listen(0), '/owl/');
+    const r = await hit<Discovery>(app.listen(0, '127.0.0.1'), '/owl/');
     expect(kinds(r.body)).toEqual(['Domain', 'ADR', 'Principle']);
     expect(r.body.primitives?.find((p) => p.kind === 'ADR')?.collection).toBe('/v1/decisions/adrs');
     expect(r.body.count).toBe(3);
@@ -214,11 +214,11 @@ describe('#5034 — which domains have a generated API comes from the rows', () 
   test('a second domain with its own bind is routed to its own API, /v1 dropped, query kept', async () => {
     rows(generated('principles', bindOf(principles)), generated('gardens', bindOf(gardens)));
     resetGeneratedApisCache();
-    let r = await hit<Echo>(app.listen(0), '/owl/v1/gardens/gardens/bed-1?x=1');
+    let r = await hit<Echo>(app.listen(0, '127.0.0.1'), '/owl/v1/gardens/gardens/bed-1?x=1');
     expect(r.body).toEqual({ from: 'gardens', url: '/gardens/gardens/bed-1?x=1' });
-    r = await hit<Echo>(app.listen(0), '/owl/v1/principles/principles');
+    r = await hit<Echo>(app.listen(0, '127.0.0.1'), '/owl/v1/principles/principles');
     expect(r.body).toEqual({ from: 'principles', url: '/principles/principles' });
-    const d = await hit<Discovery>(app.listen(0), '/owl/');
+    const d = await hit<Discovery>(app.listen(0, '127.0.0.1'), '/owl/');
     expect(kinds(d.body)).toEqual(['Domain', 'ADR', 'Principle', 'Garden']);
     expect(d.body.count).toBe(4);
   });
@@ -226,11 +226,11 @@ describe('#5034 — which domains have a generated API comes from the rows', () 
   test('NEGATIVE: a path that only starts with the name of the domain, and the domain once its row is gone, stay on athena-make', async () => {
     rows(generated('gardens', bindOf(gardens)));
     resetGeneratedApisCache();
-    let r = await hit<Echo>(app.listen(0), '/owl/v1/gardensx/gardens');
+    let r = await hit<Echo>(app.listen(0, '127.0.0.1'), '/owl/v1/gardensx/gardens');
     expect(r.body).toEqual({ from: 'make', url: '/v1/gardensx/gardens' });
     rows();
     resetGeneratedApisCache();
-    r = await hit<Echo>(app.listen(0), '/owl/v1/gardens/gardens');
+    r = await hit<Echo>(app.listen(0, '127.0.0.1'), '/owl/v1/gardens/gardens');
     expect(r.body).toEqual({ from: 'make', url: '/v1/gardens/gardens' });
   });
 
@@ -238,7 +238,7 @@ describe('#5034 — which domains have a generated API comes from the rows', () 
     domainRows = [{ name: 'gardens', hasProperty: 'gardens-server-bind' }];
     propertyRows = [...RULE, { name: 'property-gardens-server-bind', propertyKey: 'server.bind', propertyValue: bindOf(gardens) }];
     resetGeneratedApisCache();
-    const r = await hit<Echo>(app.listen(0), '/owl/v1/gardens/gardens');
+    const r = await hit<Echo>(app.listen(0, '127.0.0.1'), '/owl/v1/gardens/gardens');
     expect(r.body.from).toBe('gardens');
   });
 });
@@ -271,7 +271,7 @@ describe('#5034 — an upstream that accepts the request and never answers does 
     resetGeneratedApisCache();
     hangDiscovery = true;
     setReadTimeoutMs(TIMEOUT_MS);
-    const r = await timed(app.listen(0), '/owl/');
+    const r = await timed(app.listen(0, '127.0.0.1'), '/owl/');
     expect(r.status).toBe(502);
     expect(r.text).toContain('athena-make unreachable');
     expect(r.ms).toBeLessThan(WITHIN_MS);
@@ -281,7 +281,7 @@ describe('#5034 — an upstream that accepts the request and never answers does 
     rows(generated('principles', bindOf(hung)), generated('gardens', bindOf(gardens)));
     resetGeneratedApisCache();
     setReadTimeoutMs(TIMEOUT_MS);
-    const r = await timed(app.listen(0), '/owl/');
+    const r = await timed(app.listen(0, '127.0.0.1'), '/owl/');
     expect(r.status).toBe(200);
     const d = JSON.parse(r.text) as Discovery;
     expect(kinds(d)).toEqual(['Domain', 'ADR', 'Garden']);
@@ -294,7 +294,7 @@ describe('#5034 — an upstream that accepts the request and never answers does 
     resetGeneratedApisCache();
     hangDiscovery = true;
     setReadTimeoutMs(TIMEOUT_MS);
-    const r = await timed(app.listen(0), '/domains/principles/hemenway-observe');
+    const r = await timed(app.listen(0, '127.0.0.1'), '/domains/principles/hemenway-observe');
     expect(r.status).toBe(502);
     expect(r.ms).toBeLessThan(WITHIN_MS);
   });
@@ -303,7 +303,7 @@ describe('#5034 — an upstream that accepts the request and never answers does 
     rows(generated('principles', bindOf(principles)));
     resetGeneratedApisCache();
     setReadTimeoutMs(TIMEOUT_MS);
-    const r = await timed(app.listen(0), '/owl/');
+    const r = await timed(app.listen(0, '127.0.0.1'), '/owl/');
     expect(r.status).toBe(200);
     expect(kinds(JSON.parse(r.text) as Discovery)).toEqual(['Domain', 'ADR', 'Principle']);
   });

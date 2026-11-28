@@ -47,7 +47,7 @@ const close = (srv: Server) => new Promise<void>((r) => srv.close(() => r()));
 
 describe('#3644 — /owl same-origin proxy', () => {
   test('GET /owl/products proxies the model API', async () => {
-    const srv = app.listen(0);
+    const srv = app.listen(0, '127.0.0.1');
     try {
       const r = await hit(srv, '/owl/products');
       expect(r.status).toBe(200);
@@ -58,7 +58,7 @@ describe('#3644 — /owl same-origin proxy', () => {
   });
 
   test('upstream 404 passes through honestly', async () => {
-    const srv = app.listen(0);
+    const srv = app.listen(0, '127.0.0.1');
     try {
       const r = await hit(srv, '/owl/no-such-collection');
       expect(r.status).toBe(404);
@@ -68,7 +68,7 @@ describe('#3644 — /owl same-origin proxy', () => {
   });
 
   test('write verbs are 405 at the proxy — never reach athena-make', async () => {
-    const srv = app.listen(0);
+    const srv = app.listen(0, '127.0.0.1');
     try {
       for (const method of ['POST', 'PUT', 'DELETE', 'PATCH']) {
         const r = await hit(srv, '/owl/products', method);
