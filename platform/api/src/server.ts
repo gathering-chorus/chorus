@@ -2594,7 +2594,7 @@ app.use(`${API_DOCS_MOUNT}/:domain/:collection`, ...apiDocsViewer(async (owlPath
   const owlUpstream = process.env.OWL_UPSTREAM || 'http://127.0.0.1:3360';
   const apis = await generatedApis(owlUpstream, fetch, PORT);
   const r = await fetch(routeOwl(owlPath, apis, owlUpstream).target, { headers: { Accept: 'application/json' } });
-  return { status: r.status, body: r.ok ? await r.json().catch(() => null) : null };
+  return { status: r.status, text: await r.text() };
 }));
 
 // ── same-origin SPARQL read proxy (#4004) ────────────────────────────

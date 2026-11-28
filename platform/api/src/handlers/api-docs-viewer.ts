@@ -32,7 +32,20 @@ export const VIEWER_OPTIONS = {
   swaggerOptions: { supportedSubmitMethods: [] as string[], tryItOutEnabled: false },
 };
 
-export type ReadDocument = (owlPath: string) => Promise<{ status: number; body: unknown }>;
+/** The document as the /owl routing answered it: its status and its body as text (parsed here, so a
+ * body that is not JSON is named, not dropped). */
+export type ReadDocument = (owlPath: string) => Promise<{ status: number; text: string }>;
+export type Log = (line: string) => void;
+
+/** What the read gave: the OpenAPI document, or why there is none (named for the reader and the log). */
+export function documentFrom(owlPath: string, status: number, text: string): { doc: object } | { status: number; why: string } {
+  if (status !== 200) return { status: status === 404 ? 404 : 502, why: `no OpenAPI document at ${owlPath} (HTTP ${status})` };
+  let body: unknown;
+  try { body = JSON.parse(text); } catch (e) { return { status: 502, why: `${owlPath} answered 200 with a body that is not JSON (${(e as Error).message})` }; }
+  const doc = body as { openapi?: unknown } | null;
+  if (!doc || typeof doc !== 'object' || typeof doc.openapi !== 'string') return { status: 502, why: `${owlPath} answered 200 with JSON that is not an OpenAPI document` };
+  return { doc };
+}
 
 function page(status: number, text: string): [number, string] {
   const esc = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -43,7 +56,7 @@ function page(status: number, text: string): [number, string] {
  * Express handlers for `${API_DOCS_MOUNT}/:domain/:collection`: the document is read for the
  * page and for its init script; the viewer's own files are served as they are.
  */
-export function apiDocsViewer(read: ReadDocument) {
+export function apiDocsViewer(read: ReadDocument, log: Log = (line) => console.error(line)) {
   const loadDocument = async (req: Request, res: Response, next: NextFunction) => {
     const owlPath = documentPath(String(req.params.domain), String(req.params.collection));
     if (!owlPath) {
@@ -56,19 +69,23 @@ export function apiDocsViewer(read: ReadDocument) {
     }
     const wantsDocument = req.path === '/' || req.path.endsWith('/swagger-ui-init.js');
     if (!wantsDocument) return next();
+    let answer: { status: number; text: string };
     try {
-      const { status, body } = await read(owlPath);
-      const doc = body as { openapi?: unknown } | null;
-      if (status !== 200 || !doc || typeof doc.openapi !== 'string') {
-        const [s, b] = page(status === 404 ? 404 : 502, `no OpenAPI document at ${owlPath} (${status})`);
-        return res.status(s).type('html').send(b);
-      }
-      (req as Request & { swaggerDoc?: unknown }).swaggerDoc = doc;
-      return next();
-    } catch {
-      const [s, b] = page(502, `${owlPath} could not be read`);
+      answer = await read(owlPath);
+    } catch (e) {
+      const why = `${owlPath} could not be read: ${(e as Error).message}`;
+      log(`api-docs: ${why}`);
+      const [s, b] = page(502, why);
       return res.status(s).type('html').send(b);
     }
+    const got = documentFrom(owlPath, answer.status, answer.text);
+    if (!('doc' in got)) {
+      if (got.status !== 404) log(`api-docs: ${got.why}`);
+      const [s, b] = page(got.status, got.why);
+      return res.status(s).type('html').send(b);
+    }
+    (req as Request & { swaggerDoc?: unknown }).swaggerDoc = got.doc;
+    return next();
   };
   return [loadDocument, ...swaggerUi.serveFiles(undefined, VIEWER_OPTIONS), swaggerUi.setup(undefined, VIEWER_OPTIONS)];
 }

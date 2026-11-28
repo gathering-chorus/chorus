@@ -157,7 +157,7 @@ const json = (res: http.ServerResponse, status: number, body: unknown): void => 
 const viewer = express();
 viewer.use(`${API_DOCS_MOUNT}/:domain/:collection`, ...apiDocsViewer(async (owlPath) => {
   const r = await fetch(`${LIVE}/owl${owlPath}`, { signal: AbortSignal.timeout(30_000) });
-  return { status: r.status, body: r.ok ? await r.json().catch(() => null) : null };
+  return { status: r.status, text: await r.text() };
 }));
 
 const server = http.createServer(async (req, res) => {

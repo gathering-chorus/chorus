@@ -526,7 +526,7 @@ test.describe('#5045 AC5 the four parts read on a phone, through the sign-in doo
 
   /** What the reader sees on the opened page, its first route opened as a tap would open it. */
   async function readApiPage(page) {
-    await page.waitForFunction(() => document.contentType !== 'text/html' || document.querySelector('.swagger-ui .opblock, .api-docs-refused'), null, { timeout: 60_000 }).catch(() => {});
+    await page.waitForFunction(() => document.contentType !== 'text/html' || document.querySelector('.swagger-ui .opblock, .api-docs-refused'), null, { timeout: 60_000 });
     const first = page.locator('.swagger-ui .opblock-summary').first();
     if (await first.count()) { await first.click(); await page.locator('.swagger-ui .opblock.is-open .opblock-section-header').first().waitFor({ timeout: 10_000 }); }
     return page.evaluate(() => {

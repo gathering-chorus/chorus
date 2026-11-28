@@ -1,0 +1,47 @@
+{
+  "page": {
+    "status": 200
+  },
+  "init": {
+    "status": 200,
+    "swaggerDoc": {
+      "openapi": "3.1.0",
+      "info": {
+        "title": "principles API",
+        "version": "1"
+      },
+      "paths": {
+        "/principles/principles": {
+          "get": {
+            "summary": "list"
+          }
+        }
+      }
+    },
+    "customOptions": {
+      "supportedSubmitMethods": [],
+      "tryItOutEnabled": false
+    }
+  },
+  "missing": {
+    "status": 404,
+    "says": "no OpenAPI document at /v1/principles/nosuch/openapi.json (HTTP 404)"
+  },
+  "notJson": {
+    "status": 502,
+    "says": "/v1/principles/garbled/openapi.json answered 200 with a body that is not JSON (Unexpected token '&lt;', &quot;&lt;html&gt;not &quot;... is not valid JSON)"
+  },
+  "notOpenApi": {
+    "status": 502,
+    "says": "/v1/principles/plain/openapi.json answered 200 with JSON that is not an OpenAPI document"
+  },
+  "unreadable": {
+    "status": 502,
+    "says": "/v1/principles/down/openapi.json could not be read: connect ECONNREFUSED"
+  },
+  "logged": [
+    "api-docs: /v1/principles/garbled/openapi.json answered 200 with a body that is not JSON (Unexpected token '<', \"<html>not \"... is not valid JSON)",
+    "api-docs: /v1/principles/plain/openapi.json answered 200 with JSON that is not an OpenAPI document",
+    "api-docs: /v1/principles/down/openapi.json could not be read: connect ECONNREFUSED"
+  ]
+}
