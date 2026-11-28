@@ -12,6 +12,7 @@
  * RUN: ATHENA_URL=http://localhost:3340 npx playwright test proving/flows/athena-domain-folds-5034.spec.cjs
  */
 const { test, expect } = require('@playwright/test');
+test.afterEach(require('./lib/athena-page-5034.cjs').letRoutesGo);   // nightly 11-28: no route outlives its test
 const { DOMAIN, openDomainPage } = require('./lib/athena-page-5034.cjs');
 
 /**

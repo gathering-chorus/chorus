@@ -18,6 +18,7 @@
  * RUN: ATHENA_URL=http://localhost:3340 npx playwright test proving/flows/athena-domain-links-5034.spec.cjs
  */
 const { test, expect } = require('@playwright/test');
+test.afterEach(require('./lib/athena-page-5034.cjs').letRoutesGo);   // nightly 11-28: no route outlives its test
 const { BASE, DOMAIN, openDomainPage, openModelView, sameOriginLinks, deadLinks } = require('./lib/athena-page-5034.cjs');
 
 test.describe(`#5034 every link on the ${DOMAIN} domain pages leads somewhere`, () => {
@@ -363,3 +364,36 @@ test.describe('#5041 NEGATIVE: the link checks are red on the page Jeff walked, 
     await context.close();
   });
 });
+
+// ---------------------------------------------------------------------------------------------
+// #5042 (nightly 2026-11-28: 13 reds) — the policies lint is read once per test process and cached.
+// It was read with a test's own `page.context().request`, so the test ending rejected it and every
+// later test was handed that rejection. A stand-in server answers the lint slowly: the first test
+// ends while it is read, and the second must still be given the answer. NEGATIVE (run by hand,
+// recorded on the card): with the read as it was, the second test is red.
+{
+  const http = require('http');
+  const { serveLintOnce } = require('./lib/athena-page-5034.cjs');
+  const slow = http.createServer((req, res) => {
+    if (!req.url.startsWith('/api/chorus/policies/counts')) { res.writeHead(200, { 'content-type': 'text/html' }); return res.end('<!doctype html><title>stand-in</title>'); }
+    setTimeout(() => { res.writeHead(200, { 'content-type': 'application/json' }); res.end('{"red":0}'); }, 1500);
+  });
+  let at;
+  const ask = (page) => page.evaluate((u) => fetch(u).then((r) => `${r.status}`).catch((e) => `failed: ${e.message}`), `${at}/api/chorus/policies/counts?domain=principles`);
+  test.describe('#5042 the lint read outlives the test that asked it first', () => {
+    test.describe.configure({ mode: 'serial' });
+    test.beforeAll(async () => { await new Promise((r) => slow.listen(0, '127.0.0.1', r)); at = `http://127.0.0.1:${slow.address().port}`; });
+    test.afterAll(() => new Promise((r) => slow.close(r)));
+    test('a test that ends while the lint is still being read', async ({ page }) => {
+      await serveLintOnce(page, at);
+      await page.goto(at + '/');
+      page.evaluate((u) => { fetch(u).catch(() => {}); }, `${at}/api/chorus/policies/counts?domain=principles`).catch(() => {});
+      await page.waitForTimeout(200);   // the read is in flight; the test ends here
+    });
+    test('the next test is still given the lint, not the first test\'s ending', async ({ page }) => {
+      await serveLintOnce(page, at);
+      await page.goto(at + '/');
+      expect(await ask(page)).toBe('200');
+    });
+  });
+}

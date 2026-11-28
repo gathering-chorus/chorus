@@ -55,25 +55,30 @@ async function serveOwnAthenaFiles(page) {
  * Named limit: a phone still waits on the live lint, and under load it can still pass 30 s.
  */
 const lintAnswers = new Map();
-function lintAnswer(request, search) {
-  if (!lintAnswers.has(search)) lintAnswers.set(search, (async () => {
+// Asked with the test process's own fetch, never a test's `page.context().request`: the answer is
+// cached for the whole process, and a context's request dies with its test (nightly 11-28: 13 later
+// tests read the first test's "Test ended" rejection). A read that fails is not kept.
+function lintAnswer(search, base = BASE) {
+  const key = base + search;
+  if (!lintAnswers.has(key)) lintAnswers.set(key, (async () => {
     // #5044 — a server with this card answers a domain's read at once, and says `checking` while
     // its check runs: ask again until it has a measured result (five minutes at most). A server
     // without the card answers once, when its lint is done.
     for (let asked = 0; ; asked++) {
-      const r = await request.get(`${BASE}/api/chorus/policies/counts${search}`, { timeout: 300_000 });
+      const r = await fetch(`${base}/api/chorus/policies/counts${search}`, { signal: AbortSignal.timeout(300_000) });
       const body = await r.text();
       let b = null;
       try { b = JSON.parse(body); } catch (e) { b = null; }   // not JSON: handed on as it is, for the page to report
-      if (!(b && b.checking && asked < 100)) return { status: r.status(), body };
+      if (!(b && b.checking && asked < 100)) return { status: r.status, body };
       await new Promise((done) => setTimeout(done, 3000));
     }
-  })());
-  return lintAnswers.get(search);
+  })().catch((e) => { lintAnswers.delete(key); throw e; }));
+  return lintAnswers.get(key);
 }
-async function serveLintOnce(page) {
+// `base` is the server asked: chorus-api, or a stand-in in the helper's own test
+async function serveLintOnce(page, base = BASE) {
   await page.route((url) => /\/api\/chorus\/policies\/counts$/.test(url.pathname), async (route) => {
-    const a = await lintAnswer(page.context().request, new URL(route.request().url()).search);
+    const a = await lintAnswer(new URL(route.request().url()).search, base);
     return route.fulfill({ status: a.status, contentType: 'application/json', body: a.body });
   });
 }
@@ -239,17 +244,34 @@ async function serveOpenapiAsLanded(page) {
   await page.route((url) => landedDocument(url.pathname) !== null, (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: landedDocument(new URL(route.request().url()).pathname) }));
 }
+/**
+ * A route that answers with the live door's JSON, changed by `change(body)` (which edits it in place).
+ * The body is read at once, as text: a page.reload or the test's end while it is read disposes the
+ * live response (run 13's "Response has been disposed"), and that request is let go, since the
+ * reloaded page asks again. Any other failure is thrown. The answer is JSON with no copied headers:
+ * the old content-length and content-encoding would not fit the changed body.
+ */
+function rewriteLive(change) {
+  return async (route) => {
+    let live, text;
+    try { live = await route.fetch(); text = await live.text(); } catch (e) {
+      if (/disposed|closed|Test ended/.test(String(e && e.message))) return route.abort().catch(() => {});
+      throw e;
+    }
+    const body = JSON.parse(text);
+    await change(body);
+    return route.fulfill({ status: live.status(), contentType: 'application/json', body: JSON.stringify(body) });
+  };
+}
 // `under` is where the page is opened: BASE, or a door's origin + mount (#5042: one stand-in for both)
 async function serveDiscoveryAsLanded(page, omit = [], under = BASE) {
   if (LIVE_DISCOVERY && !omit.length) return;
   await serveOpenapiAsLanded(page);
   const at = new URL(under);
-  await page.route((url) => url.origin === at.origin && url.pathname === at.pathname.replace(/\/$/, '') + '/owl/', async (route) => {
-    const live = await route.fetch();
-    const body = asLanded(await live.json());
+  await page.route((url) => url.origin === at.origin && url.pathname === at.pathname.replace(/\/$/, '') + '/owl/', rewriteLive((body) => {
+    Object.assign(body, asLanded(body));
     body.primitives = (body.primitives || []).filter((p) => !omit.includes(p.kind));
-    return route.fulfill({ response: live, json: body });
-  });
+  }));
 }
 
 /**
@@ -444,6 +466,7 @@ async function signedInPage(browser, door, { width = PHONE.width, height = PHONE
   const context = await browser.newContext({ viewport: { width, height }, ...(timezoneId ? { timezoneId } : {}) });
   await context.addCookies([{ name: 'chorus_share_session', value: door.cookie, url: door.origin }]);
   const page = await context.newPage();
+  openedPages.add(page);   // let go by letRoutesGo after the test
   if (lint !== 'live') { await serveLintOnce(page); await serveOwnRoutes(page); }   // see serveLintOnce: one lint per test process, not one per open; #5044: the card's two routes from this tree
   const refused = [];
   const M = door.mount;
@@ -486,4 +509,15 @@ async function openOldDomainPage(page, under, { domain = DOMAIN } = {}) {
     && !/loading the materialized view|loading live from the model|running the domain lint/.test(document.body.innerText), null, { timeout: 180_000 });
 }
 
-module.exports = { serveOwnApiDocs, ownApiDocs, LANDED_OPENAPI, asLanded, landedDocument, serveOwnGaps, serveOwnRoutes, ownControl, ownSettled, ownMeasured, ownPipeline, serveLintOnce, BEFORE_5041, athenaFileAt, serveAthenaFilesAsOf, openOldDomainPage, LIVE_DISCOVERY, ROOT, ATHENA_DIR, BASE, DOMAIN, PHONE, ownAthenaFile, serveOwnAthenaFiles, serveOwnModelView, serveDiscoveryAsLanded, openDomainPage, openModelView, sameOriginLinks, deadLinks, doorTruth, startDoor, signedInPage };
+/** After each test: the routes still answering are let go, so no route callback outlives its test
+ * (nightly 11-28: "Test ended while running route callback"), the test's own page and every page
+ * signedInPage opened. Every spec that serves through this file runs it as its afterEach. */
+const openedPages = new Set();   // pages signedInPage opened in contexts of their own
+async function letRoutesGo({ page }) {
+  const pages = [page, ...openedPages];
+  openedPages.clear();
+  await Promise.all(pages.map((p) => (p.isClosed() ? null : p.unrouteAll({ behavior: 'ignoreErrors' }))));
+}
+
+module.exports = {
+  letRoutesGo, rewriteLive, serveOwnApiDocs, ownApiDocs, LANDED_OPENAPI, asLanded, landedDocument, serveOwnGaps, serveOwnRoutes, ownControl, ownSettled, ownMeasured, ownPipeline, serveLintOnce, BEFORE_5041, athenaFileAt, serveAthenaFilesAsOf, openOldDomainPage, LIVE_DISCOVERY, ROOT, ATHENA_DIR, BASE, DOMAIN, PHONE, ownAthenaFile, serveOwnAthenaFiles, serveOwnModelView, serveDiscoveryAsLanded, openDomainPage, openModelView, sameOriginLinks, deadLinks, doorTruth, startDoor, signedInPage };

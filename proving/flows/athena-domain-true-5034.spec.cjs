@@ -17,7 +17,8 @@
  * RUN: ATHENA_URL=http://localhost:3340 npx playwright test proving/flows/athena-domain-true-5034.spec.cjs
  */
 const { test, expect } = require('@playwright/test');
-const { BASE, DOMAIN, openDomainPage, openModelView, doorTruth, serveOwnAthenaFiles, serveDiscoveryAsLanded } = require('./lib/athena-page-5034.cjs');
+test.afterEach(require('./lib/athena-page-5034.cjs').letRoutesGo);   // nightly 11-28: no route outlives its test
+const { rewriteLive, BASE, DOMAIN, openDomainPage, openModelView, doorTruth, serveOwnAthenaFiles, serveDiscoveryAsLanded } = require('./lib/athena-page-5034.cjs');
 
 /** Run in the page: what the model fold shows for each class, { kind: { cards: [names], says: 'note text'|null } }. */
 function drawnClasses() {
@@ -226,14 +227,11 @@ test.describe(`#5041 the ${DOMAIN} ops view says each thing once and counts it t
     // the Domain row as the door serves it, with its comment replaced: once by the purpose in other
     // capitals and spacing (a repeat), once by the purpose and more (not a repeat)
     let comment = (purpose) => `  ${purpose.toUpperCase().replace(/ /g, '   ')}\n`;
-    await page.route((url) => url.pathname === `/owl/domains/${DOMAIN}`, async (route) => {
-      const live = await route.fetch();
-      const body = await live.json();
+    await page.route((url) => url.pathname === `/owl/domains/${DOMAIN}`, rewriteLive((body) => {
       const data = Array.isArray(body.data) ? body.data[0] : body.data;
       expect(data.purpose, 'the Domain row has no purpose: this proof needs one').toBeTruthy();
       data.comment = comment(data.purpose);
-      return route.fulfill({ response: live, json: body });
-    });
+    }));
     const names = () => page.evaluate(() => [...document.querySelectorAll('details.fold > summary')].map((s) => (s.childNodes[0]?.textContent || '').trim()));
     await openDomainPage(page);
     expect(await names(), 'a Description that only repeats the purpose is not drawn').not.toContain('Description');
@@ -245,12 +243,9 @@ test.describe(`#5041 the ${DOMAIN} ops view says each thing once and counts it t
     // a domain with no description at all draws no Description fold (it drew an open, empty one:
     // Borg Queen, 11-25 12:34). The page falls back to the collection row's comment, so both are blanked.
     comment = () => '';
-    await page.route((url) => url.pathname === '/owl/domains', async (route) => {
-      const live = await route.fetch();
-      const body = await live.json();
+    await page.route((url) => url.pathname === '/owl/domains', rewriteLive((body) => {
       for (const row of body.data || []) if (row.name === DOMAIN) delete row.comment;
-      return route.fulfill({ response: live, json: body });
-    });
+    }));
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#code-slot details');
     expect(await names(), 'a domain with no description draws no Description fold').not.toContain('Description');
@@ -272,13 +267,10 @@ test.describe(`#5041 the ${DOMAIN} ops view says each thing once and counts it t
     const kind = Object.keys(store).find((k) => k !== 'no kind' && store[k].n > 1);
     expect(kind, 'this proof needs a kind with two files or more').toBeTruthy();
     // the door's own answer, one file of that kind short: the page draws what it was given
-    await page.route((url) => url.pathname === '/owl/code/files', async (route) => {
-      const live = await route.fetch();
-      const body = await live.json();
+    await page.route((url) => url.pathname === '/owl/code/files', rewriteLive((body) => {
       const i = body.data.findIndex((f) => String(f.hasKind).endsWith(kind));
       if (i >= 0) body.data.splice(i, 1);
-      return route.fulfill({ response: live, json: body });
-    });
+    }));
     await openDomainPage(page);
     const drawn = await page.evaluate(drawnOnce);
     const faults = onceFaults(drawn, store).join('\n');
@@ -481,12 +473,9 @@ async function redraw(page) {
  * route wins), then the page is drawn again.
  */
 async function withDiscovery(page, change) {
-  await page.route((url) => url.origin === new URL(BASE).origin && url.pathname === '/owl/', async (route) => {
-    const live = await route.fetch();
-    const body = await live.json();
+  await page.route((url) => url.origin === new URL(BASE).origin && url.pathname === '/owl/', rewriteLive((body) => {
     body.primitives = (body.primitives || []).map((p) => change({ ...p })).filter(Boolean);
-    return route.fulfill({ response: live, json: body });
-  });
+  }));
 }
 
 test.describe('#5045 AC1 the tile shows the API version in production, never a typed status', () => {
@@ -544,12 +533,9 @@ test.describe('#5045 AC1 the tile shows the API version in production, never a t
   test('NEGATIVE: a status typed on the row is never shown, and the open cards do not change the tile', async ({ page }) => {
     const truth = await apiTruth(page, 'logs');
     // the Domain row as served, with a typed status put back on it
-    await page.route((url) => url.origin === new URL(BASE).origin && /\/owl\/domains(\/logs)?$/.test(url.pathname), async (route) => {
-      const live = await route.fetch();
-      const body = await live.json();
+    await page.route((url) => url.origin === new URL(BASE).origin && /\/owl\/domains(\/logs)?$/.test(url.pathname), rewriteLive((body) => {
       for (const row of [].concat(body.data || [])) if (row && row.name === 'logs') row.status = 'retiring-typed-5045';
-      return route.fulfill({ response: live, json: body });
-    });
+    }));
     // and a board with an open card on the domain
     await page.route((url) => /\/api\/chorus\/domain\/logs\/cards$/.test(url.pathname), (route) => route.fulfill({ status: 200, contentType: 'application/json',
       body: JSON.stringify({ domain: 'logs', cards: [{ id: '1', title: 'an open card planted by the test', owner: 'wren', status: 'WIP', priority: 'P1' }] }) }));

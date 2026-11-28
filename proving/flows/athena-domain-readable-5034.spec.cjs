@@ -15,6 +15,7 @@
  * RUN: ATHENA_URL=http://localhost:3340 npx playwright test proving/flows/athena-domain-readable-5034.spec.cjs
  */
 const { test, expect } = require('@playwright/test');
+test.afterEach(require('./lib/athena-page-5034.cjs').letRoutesGo);   // nightly 11-28: no route outlives its test
 const { DOMAIN, PHONE, openDomainPage } = require('./lib/athena-page-5034.cjs');
 
 test.describe(`#5034 the ${DOMAIN} domain page reads on a phone`, () => {

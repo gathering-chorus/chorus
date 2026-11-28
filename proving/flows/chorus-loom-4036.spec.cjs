@@ -18,6 +18,7 @@
  *   FLOW_BASE=http://localhost:3345 npx playwright test proving/flows/chorus-loom-4036.spec.cjs
  */
 const { test, expect } = require('@playwright/test');
+test.afterEach(require('./lib/athena-page-5034.cjs').letRoutesGo);   // nightly 11-28: no route outlives its test
 const { execFileSync } = require('child_process');
 const http = require('http');
 const fs = require('fs');
