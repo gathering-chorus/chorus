@@ -110,7 +110,7 @@ describe('#5034 — /domains/<domain>: the status says whether the model has the
   test('the catalog and a known domain answer 200 with the template', async () => {
     resetGeneratedApisCache();
     for (const path of ['/domains', '/domains/principles', '/domains/domains']) {
-      const r = await hit(app.listen(0), path);
+      const r = await hit(app.listen(0, '127.0.0.1'), path);
       expect(r.status).toBe(200);
       expect(r.body).toContain(TEMPLATE);
     }
@@ -118,28 +118,28 @@ describe('#5034 — /domains/<domain>: the status says whether the model has the
 
   test('an unknown domain answers 404, still with the template body', async () => {
     resetGeneratedApisCache();
-    const r = await hit(app.listen(0), '/domains/nosuch');
+    const r = await hit(app.listen(0, '127.0.0.1'), '/domains/nosuch');
     expect(r.status).toBe(404);
     expect(r.body).toContain(TEMPLATE);
-    const head = await hit(app.listen(0), '/domains/nosuch', 'HEAD');
+    const head = await hit(app.listen(0, '127.0.0.1'), '/domains/nosuch', 'HEAD');
     expect(head.status).toBe(404);
   });
 
   test('NEGATIVE: the same stubs with the Domain row removed turn 200 into 404', async () => {
     resetGeneratedApisCache();
-    expect((await hit(app.listen(0), '/domains/principles')).status).toBe(200);
+    expect((await hit(app.listen(0, '127.0.0.1'), '/domains/principles')).status).toBe(200);
     domainRows = MODEL.filter((r) => r.name !== 'principles');
-    expect((await hit(app.listen(0), '/domains/principles')).status).toBe(404);
+    expect((await hit(app.listen(0, '127.0.0.1'), '/domains/principles')).status).toBe(404);
   });
 });
 
 describe('#5034 — /domains/<domain>/<instance>: the status says whether the domain has the row', () => {
   test('a row athena-make serves and a row a generated API serves both answer 200', async () => {
     resetGeneratedApisCache();
-    let r = await hit(app.listen(0), '/domains/domains/principles');
+    let r = await hit(app.listen(0, '127.0.0.1'), '/domains/domains/principles');
     expect(r.status).toBe(200);
     expect(r.body).toContain(TEMPLATE);
-    r = await hit(app.listen(0), '/domains/principles/hemenway-observe');
+    r = await hit(app.listen(0, '127.0.0.1'), '/domains/principles/hemenway-observe');
     expect(r.status).toBe(200);
     expect(r.body).toContain(TEMPLATE);
   });
@@ -147,7 +147,7 @@ describe('#5034 — /domains/<domain>/<instance>: the status says whether the do
   test('an unknown instance, an instance of an unknown domain, and one in a domain with no vocabulary answer 404 with the template', async () => {
     resetGeneratedApisCache();
     for (const path of ['/domains/principles/no-such-row', '/domains/domains/no-such-row', '/domains/nosuch/thing', '/domains/empty/thing']) {
-      const r = await hit(app.listen(0), path);
+      const r = await hit(app.listen(0, '127.0.0.1'), path);
       expect(r.status).toBe(404);
       expect(r.body).toContain(TEMPLATE);
     }
@@ -156,11 +156,11 @@ describe('#5034 — /domains/<domain>/<instance>: the status says whether the do
   test('NEGATIVE: a row of another domain is not this domain’s, and removing the row turns 200 into 404', async () => {
     resetGeneratedApisCache();
     // `principles` is a Domain row, not a Principle row; `hemenway-observe` is the reverse
-    expect((await hit(app.listen(0), '/domains/principles/principles')).status).toBe(404);
-    expect((await hit(app.listen(0), '/domains/domains/hemenway-observe')).status).toBe(404);
-    expect((await hit(app.listen(0), '/domains/principles/hemenway-observe')).status).toBe(200);
+    expect((await hit(app.listen(0, '127.0.0.1'), '/domains/principles/principles')).status).toBe(404);
+    expect((await hit(app.listen(0, '127.0.0.1'), '/domains/domains/hemenway-observe')).status).toBe(404);
+    expect((await hit(app.listen(0, '127.0.0.1'), '/domains/principles/hemenway-observe')).status).toBe(200);
     principleNames = [];
-    expect((await hit(app.listen(0), '/domains/principles/hemenway-observe')).status).toBe(404);
+    expect((await hit(app.listen(0, '127.0.0.1'), '/domains/principles/hemenway-observe')).status).toBe(404);
   });
 });
 
@@ -169,24 +169,24 @@ describe('#5034 — a model that cannot be read is 502, never a guess', () => {
     process.env.OWL_UPSTREAM = 'http://127.0.0.1:1';
     resetGeneratedApisCache();
     for (const path of ['/domains/principles', '/domains/nosuch', '/domains/principles/hemenway-observe']) {
-      const r = await hit(app.listen(0), path);
+      const r = await hit(app.listen(0, '127.0.0.1'), path);
       expect(r.status).toBe(502);
       expect(r.body).toContain(TEMPLATE);
     }
-    expect((await hit(app.listen(0), '/domains')).status).toBe(200);
+    expect((await hit(app.listen(0, '127.0.0.1'), '/domains')).status).toBe(200);
   });
 
   test('the generated API of the domain down → 502 for its instances, while the domain itself is still 200', async () => {
     bind = '127.0.0.1:1';
     resetGeneratedApisCache();
-    let r = await hit(app.listen(0), '/domains/principles/hemenway-observe');
+    let r = await hit(app.listen(0, '127.0.0.1'), '/domains/principles/hemenway-observe');
     expect(r.status).toBe(502);
     expect(r.body).toContain(TEMPLATE);
-    r = await hit(app.listen(0), '/domains/principles/no-such-row');
+    r = await hit(app.listen(0, '127.0.0.1'), '/domains/principles/no-such-row');
     expect(r.status).toBe(502);
-    expect((await hit(app.listen(0), '/domains/principles')).status).toBe(200);
+    expect((await hit(app.listen(0, '127.0.0.1'), '/domains/principles')).status).toBe(200);
     // another domain's rows are still decided: its own upstream answers
-    expect((await hit(app.listen(0), '/domains/domains/no-such-row')).status).toBe(404);
+    expect((await hit(app.listen(0, '127.0.0.1'), '/domains/domains/no-such-row')).status).toBe(404);
   });
 });
 
@@ -211,7 +211,7 @@ describe('#5034 — a 502 from the model view is logged, with the path and the r
   test('athena-make down → one line naming the path and that the Domain rows could not be read', async () => {
     process.env.OWL_UPSTREAM = 'http://127.0.0.1:1';
     resetGeneratedApisCache();
-    expect((await hit(app.listen(0), '/domains/principles')).status).toBe(502);
+    expect((await hit(app.listen(0, '127.0.0.1'), '/domains/principles')).status).toBe(502);
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain('[chorus-api] domains-view upstream unreadable');
     expect(fields(lines[0]).path).toBe('/domains/principles');
@@ -222,7 +222,7 @@ describe('#5034 — a 502 from the model view is logged, with the path and the r
   test('the generated API of the domain down → the reason names that API, a different reason from athena-make down', async () => {
     bind = '127.0.0.1:1';
     resetGeneratedApisCache();
-    expect((await hit(app.listen(0), '/domains/principles/hemenway-observe')).status).toBe(502);
+    expect((await hit(app.listen(0, '127.0.0.1'), '/domains/principles/hemenway-observe')).status).toBe(502);
     expect(lines).toHaveLength(1);
     expect(fields(lines[0]).path).toBe('/domains/principles/hemenway-observe');
     expect(fields(lines[0]).reason).toBe('principles-api did not answer its discovery');
@@ -230,9 +230,9 @@ describe('#5034 — a 502 from the model view is logged, with the path and the r
 
   test('NEGATIVE: a 200 and a 404 log nothing — the line is for an unreadable upstream only', async () => {
     resetGeneratedApisCache();
-    expect((await hit(app.listen(0), '/domains/principles')).status).toBe(200);
-    expect((await hit(app.listen(0), '/domains/nosuch')).status).toBe(404);
-    expect((await hit(app.listen(0), '/domains/principles/no-such-row')).status).toBe(404);
+    expect((await hit(app.listen(0, '127.0.0.1'), '/domains/principles')).status).toBe(200);
+    expect((await hit(app.listen(0, '127.0.0.1'), '/domains/nosuch')).status).toBe(404);
+    expect((await hit(app.listen(0, '127.0.0.1'), '/domains/principles/no-such-row')).status).toBe(404);
     expect(lines).toEqual([]);
   });
 });
